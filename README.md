@@ -1,6 +1,6 @@
 # Antiknob
 
-A native macOS Apple Silicon (`arm64`) configurator for the **Anticater VK01 Knob** mechanical keyboard.
+A modern native macOS Apple Silicon (`arm64`) configurator and GUI utility for the **Anticater VK01 Knob** mechanical keyboard.
 
 Antiknob is written in 100% pure Rust, permissively licensed (**MIT OR Apache-2.0**), fully commercializable with zero copyleft/dual-license traps, and operates completely unprivileged (**no `sudo` required**) via Apple's native `IOHIDManager`.
 
@@ -8,12 +8,16 @@ Antiknob is written in 100% pure Rust, permissively licensed (**MIT OR Apache-2.
 
 ## Features
 
-* **Apple Silicon Native (`arm64`)**: Fully prepared for macOS 27+ (with zero reliance on Rosetta 2).
-* **Unprivileged USB HID (`no sudo`)**: Targets the dedicated vendor usage page (`0xFF00`), avoiding macOS kernel driver collisions and running cleanly as a regular user.
+* **Apple Silicon Native (`arm64`)**: Prepared for macOS 27+ with zero reliance on Rosetta 2.
+* **Modern Desktop GUI (`antiknob-gui` / `Antiknob.app`)**:
+  * **Interactive Radial Dial**: Visual rotary dial with 5 distinct interactive sectors (<- CCW, CW ->, Press, <- Press+CCW, Press+CW ->).
+  * **Direct Keyboard Shortcut Recorder**: Click any knob action or key and press the keys on your keyboard ("Press to Assign").
+  * **Curated Workflow Presets**: 1-click profiles for Video Scrubbing (Final Cut / Premiere), Media Master, Digital Art (Photoshop / Procreate), Spaces & Window Tiling, Developer, and Web Reading.
+  * **Live Animated RGB LED Ring Simulator**: Real-time breathing, shock, and backlight pulse waveforms matching active device lighting.
+  * **Profile Management**: Human-readable YAML profiles with 1-click Import / Export and layer sync.
+* **Unprivileged USB HID (`no sudo`)**: Targets vendor usage page (`0xFF00`), avoiding macOS kernel driver collisions and running cleanly as a regular user.
+* **Dual Binaries**: CLI tool (`antiknob`) for headless automation and full macOS GUI (`antiknob-gui`).
 * **100% Permissive Open Source**: Dual-licensed under MIT OR Apache-2.0 with an audited dependency tree (0% copyleft/GPL/AGPL/LGPL).
-* **Declarative YAML Mapping**: Easily configure buttons, knobs, and multiple layers in simple YAML files.
-* **Multi-Action Knob Support**: Program clockwise rotation (`cw`), counter-clockwise rotation (`ccw`), and center press (`press`).
-* **RGB LED Management**: Control backlighting, reactive shock effects, keypress lighting, and colors.
 
 ---
 
@@ -26,114 +30,75 @@ Tested and verified with the following hardware:
 
 ---
 
-## Installation & Build
+## Installation to macOS `/Applications`
 
-Requires Rust toolchain (`cargo`):
+Run the included installer to build and install `Antiknob.app` and CLI tools:
 
 ```bash
-cd ~/Projects/antiknob
-cargo build --release
-cargo install --path . --root .
+./install.sh
 ```
 
-The native binary is installed to `bin/antiknob`.
+This will:
+1. Build native Apple Silicon release binaries.
+2. Install to `/Applications/Antiknob`.
+3. Create and ad-hoc codesign `/Applications/Antiknob/Antiknob.app` and `/Applications/Antiknob.app` for Spotlight and Finder.
+4. Symlink the CLI to `~/.local/bin/antiknob`.
 
 ---
 
-## Usage
+## Quick Start
 
-You can use either `./bin/antiknob` or the convenience wrapper `./antiknob.sh`:
-
-### 1. Check Connected Device Status (No Sudo)
+### Graphical User Interface
 ```bash
-./antiknob.sh status
+# Launch via terminal or Spotlight:
+open -a Antiknob
+
+# Or run directly:
+./bin/antiknob-gui
 ```
 
-Example Output:
-```text
-[ ==> ] Scanning for Anticater / CH57x USB devices...
-[ Ok  ] Found: Anticater / LQKJ VK01 (0x514c:0x8850) (VID: 0x514c, PID: 0x8850, UsagePage: 0xff00)
-        Serial Number: EB60121120051103
-[ Ok  ] Unprivileged access verified: Device can be configured WITHOUT sudo!
-```
-
-### 2. Validate Configuration File
+### Command-Line Interface
 ```bash
-./antiknob.sh validate config.yaml
-./antiknob.sh validate config_knob_only.yaml
-```
+# 1. Probe connected USB device
+antiknob status
 
-### 3. Flash Keymap to Keyboard Over USB (No Sudo)
-```bash
-./antiknob.sh upload config.yaml
-```
+# 2. List supported keys, media keys, and mouse actions
+antiknob show-keys
 
-### 4. Adjust RGB LED Lighting
-```bash
-# Set layer 0 to white steady backlight
-./antiknob.sh led 0 backlight white
+# 3. Validate configuration file
+antiknob validate config.yaml
 
-# Set layer 0 to blue reactive shock effect
-./antiknob.sh led 0 shock blue
+# 4. Flash configuration to hardware (No sudo required)
+antiknob upload config.yaml
 
-# Turn off LEDs
-./antiknob.sh led 0 off
-```
-
-### 5. View Supported Keycodes
-```bash
-./antiknob.sh show-keys
+# 5. Set LED lighting
+antiknob led 0 backlight white
+antiknob led 0 shock blue
+antiknob led 0 off
 ```
 
 ---
 
-## Configuration Example (`config.yaml`)
+## Automated Test Suite
 
-```yaml
-model: ch57x-1
-orientation: normal
-rows: 1
-columns: 3
-knobs: 1
+Antiknob includes unit tests, end-to-end integration tests, and headless GUI state machine tests:
 
-layers:
-  # Layer 0: Media & Audio Controls
-  - buttons:
-      - ["play", "prev", "next"]
-    knobs:
-      - ccw: "volumedown"
-        press: "mute"
-        cw: "volumeup"
-
-  # Layer 1: Navigation & Productivity Shortcuts
-  - buttons:
-      - ["cmd-c", "cmd-v", "cmd-z"]
-    knobs:
-      - ccw: "wheelup"
-        press: "click"
-        cw: "wheeldown"
-
-  # Layer 2: Workspace & Zoom Controls
-  - buttons:
-      - ["ctrl-left", "ctrl-up", "ctrl-right"]
-    knobs:
-      - ccw: "cmd-minus"
-        press: "cmd-0"
-        cw: "cmd-equal"
+```bash
+cargo test --all-targets --all-features
 ```
 
 ---
 
-## Quality Assurance & Local Gates (`gates_of_heck`)
+## Quality Assurance (`gates_of_heck`)
 
-Antiknob is wired into the local quality gate system [`gates_of_heck`](file:///Users/ztomer/Projects/gates_of_heck) via `.githooks/`:
+Antiknob is wired into the local quality gate system [`gates_of_heck`](https://github.com/ztomer/gates_of_heck) via `.githooks/`:
 
-* **`pre-commit`**: Automatically runs structural gates over staged files (file length <= 500 lines, emoji policy, shell lint, no committed secrets, no conflict markers).
+* **`pre-commit`**: Automatically runs structural gates over staged files (file length <= 500 lines, emoji policy, shell lint, no committed secrets).
 * **`pre-push` / Full Gates**:
   ```bash
-  tools/gate.sh --full
+  ./tools/gate.sh --full
   ```
-  Runs full structural checks, Rust formatting (`cargo fmt --check`), strict Clippy (`-D warnings`, all targets, all features), manifest linting, and `no #[allow]` policy enforcement.
+  Enforces strict formatting (`cargo fmt --check`), Clippy (`-D warnings`), manifest linting, and `no #[allow]` policy.
 
 ---
 
@@ -143,4 +108,4 @@ Antiknob is dual-licensed under either:
 * **MIT License** ([LICENSE-MIT](LICENSE-MIT))
 * **Apache License, Version 2.0** ([LICENSE-APACHE](LICENSE-APACHE))
 
-at your option. All crate dependencies are exclusively permissive (MIT / Apache-2.0 / BSD) with zero copyleft licenses.
+at your option. All crate dependencies are strictly permissive (MIT / Apache-2.0 / BSD) with zero copyleft licenses.

@@ -67,23 +67,33 @@ impl DeviceConfig {
         for (idx, layer) in self.layers.iter().enumerate() {
             for row in &layer.buttons {
                 for key_str in row {
-                    crate::protocol::Action::parse(key_str)
-                        .with_context(|| format!("Invalid button action '{}' in layer {}", key_str, idx))?;
+                    crate::protocol::Action::parse(key_str).with_context(|| {
+                        format!("Invalid button action '{}' in layer {}", key_str, idx)
+                    })?;
                 }
             }
 
             for (k_idx, knob) in layer.knobs.iter().enumerate() {
                 if let Some(ref ccw) = knob.ccw {
-                    crate::protocol::Action::parse(ccw)
-                        .with_context(|| format!("Invalid knob {} CCW action '{}' in layer {}", k_idx, ccw, idx))?;
+                    crate::protocol::Action::parse(ccw).with_context(|| {
+                        format!(
+                            "Invalid knob {} CCW action '{}' in layer {}",
+                            k_idx, ccw, idx
+                        )
+                    })?;
                 }
                 if let Some(ref press) = knob.press {
-                    crate::protocol::Action::parse(press)
-                        .with_context(|| format!("Invalid knob {} press action '{}' in layer {}", k_idx, press, idx))?;
+                    crate::protocol::Action::parse(press).with_context(|| {
+                        format!(
+                            "Invalid knob {} press action '{}' in layer {}",
+                            k_idx, press, idx
+                        )
+                    })?;
                 }
                 if let Some(ref cw) = knob.cw {
-                    crate::protocol::Action::parse(cw)
-                        .with_context(|| format!("Invalid knob {} CW action '{}' in layer {}", k_idx, cw, idx))?;
+                    crate::protocol::Action::parse(cw).with_context(|| {
+                        format!("Invalid knob {} CW action '{}' in layer {}", k_idx, cw, idx)
+                    })?;
                 }
             }
         }

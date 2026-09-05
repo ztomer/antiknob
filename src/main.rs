@@ -63,9 +63,10 @@ fn main() -> Result<()> {
 
             for d in &devices {
                 println!(
-                    "[ Ok  ] Found: {} (VID: 0x{:04x}, PID: 0x{:04x}, UsagePage: 0x{:04x})",
-                    d.name, d.vendor_id, d.product_id, d.usage_page
+                    "[ Ok  ] Found: {} (VID: 0x{:04x}, PID: 0x{:04x}, UsagePage: 0x{:04x}, Usage: 0x{:04x})",
+                    d.name, d.vendor_id, d.product_id, d.usage_page, d.usage
                 );
+                println!("        Path: {}", d.path);
                 if let Some(ref sn) = d.serial_number {
                     println!("        Serial Number: {}", sn);
                 }
@@ -86,7 +87,10 @@ fn main() -> Result<()> {
             println!("[ ==> ] Validating configuration file '{:?}'...", file);
             let cfg = config::DeviceConfig::load_from_file(&file)?;
             cfg.validate()?;
-            println!("[ Ok  ] Configuration is valid ({} layers defined).", cfg.layers.len());
+            println!(
+                "[ Ok  ] Configuration is valid ({} layers defined).",
+                cfg.layers.len()
+            );
         }
 
         Commands::Upload { file } => {
@@ -97,7 +101,10 @@ fn main() -> Result<()> {
             println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
             let dev = device::open_device()?;
 
-            println!("[ ==> ] Flashing keymaps across {} layer(s)...", cfg.layers.len());
+            println!(
+                "[ ==> ] Flashing keymaps across {} layer(s)...",
+                cfg.layers.len()
+            );
 
             for (layer_idx, layer) in cfg.layers.iter().enumerate() {
                 let layer_u8 = layer_idx as u8;
@@ -119,21 +126,24 @@ fn main() -> Result<()> {
                 for (knob_idx, knob) in layer.knobs.iter().enumerate() {
                     if let Some(ref ccw_str) = knob.ccw {
                         let action = protocol::Action::parse(ccw_str)?;
-                        let key_id = protocol::key_id_for_knob(knob_idx, protocol::KnobEvent::RotateCCW);
+                        let key_id =
+                            protocol::key_id_for_knob(knob_idx, protocol::KnobEvent::RotateCCW);
                         let packet = action.to_packet(key_id, layer_u8);
                         device::send_report(&dev, &packet)?;
                         sleep(Duration::from_millis(10));
                     }
                     if let Some(ref press_str) = knob.press {
                         let action = protocol::Action::parse(press_str)?;
-                        let key_id = protocol::key_id_for_knob(knob_idx, protocol::KnobEvent::Press);
+                        let key_id =
+                            protocol::key_id_for_knob(knob_idx, protocol::KnobEvent::Press);
                         let packet = action.to_packet(key_id, layer_u8);
                         device::send_report(&dev, &packet)?;
                         sleep(Duration::from_millis(10));
                     }
                     if let Some(ref cw_str) = knob.cw {
                         let action = protocol::Action::parse(cw_str)?;
-                        let key_id = protocol::key_id_for_knob(knob_idx, protocol::KnobEvent::RotateCW);
+                        let key_id =
+                            protocol::key_id_for_knob(knob_idx, protocol::KnobEvent::RotateCW);
                         let packet = action.to_packet(key_id, layer_u8);
                         device::send_report(&dev, &packet)?;
                         sleep(Duration::from_millis(10));
@@ -153,7 +163,10 @@ fn main() -> Result<()> {
 
         Commands::Led { layer, mode } => {
             let mode_str = mode.join(" ");
-            println!("[ ==> ] Setting LED mode for layer {}: '{}'...", layer, mode_str);
+            println!(
+                "[ ==> ] Setting LED mode for layer {}: '{}'...",
+                layer, mode_str
+            );
             let packet = protocol::build_led_packet(layer, &mode_str)?;
             let dev = device::open_device()?;
             device::send_report(&dev, &packet)?;
@@ -162,7 +175,9 @@ fn main() -> Result<()> {
 
         Commands::ShowKeys => {
             println!("Modifiers:");
-            println!("  ctrl, shift, alt / opt, cmd / win, rctrl, rshift, ralt / ropt, rcmd / rwin");
+            println!(
+                "  ctrl, shift, alt / opt, cmd / win, rctrl, rshift, ralt / ropt, rcmd / rwin"
+            );
             println!();
             println!("Keys:");
             println!("  a-z, 1-0, enter, esc, backspace, tab, space, minus, equal");

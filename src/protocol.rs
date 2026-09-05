@@ -203,25 +203,54 @@ fn parse_color(s: &str) -> Result<(u8, u8, u8)> {
         "cyan" => Ok((0, 255, 255)),
         "blue" => Ok((0, 0, 255)),
         "purple" | "magenta" => Ok((255, 0, 255)),
-        other => Err(anyhow!("Unknown color '{}'. Supported: white, red, orange, yellow, green, cyan, blue, purple", other)),
+        other => Err(anyhow!(
+            "Unknown color '{}'. Supported: white, red, orange, yellow, green, cyan, blue, purple",
+            other
+        )),
     }
 }
 
 fn parse_keycode(s: &str) -> Option<u8> {
     match s {
         // Letters a-z
-        "a" => Some(0x04), "b" => Some(0x05), "c" => Some(0x06), "d" => Some(0x07),
-        "e" => Some(0x08), "f" => Some(0x09), "g" => Some(0x0A), "h" => Some(0x0B),
-        "i" => Some(0x0C), "j" => Some(0x0D), "k" => Some(0x0E), "l" => Some(0x0F),
-        "m" => Some(0x10), "n" => Some(0x11), "o" => Some(0x12), "p" => Some(0x13),
-        "q" => Some(0x14), "r" => Some(0x15), "s" => Some(0x16), "t" => Some(0x17),
-        "u" => Some(0x18), "v" => Some(0x19), "w" => Some(0x1A), "x" => Some(0x1B),
-        "y" => Some(0x1C), "z" => Some(0x1D),
+        "a" => Some(0x04),
+        "b" => Some(0x05),
+        "c" => Some(0x06),
+        "d" => Some(0x07),
+        "e" => Some(0x08),
+        "f" => Some(0x09),
+        "g" => Some(0x0A),
+        "h" => Some(0x0B),
+        "i" => Some(0x0C),
+        "j" => Some(0x0D),
+        "k" => Some(0x0E),
+        "l" => Some(0x0F),
+        "m" => Some(0x10),
+        "n" => Some(0x11),
+        "o" => Some(0x12),
+        "p" => Some(0x13),
+        "q" => Some(0x14),
+        "r" => Some(0x15),
+        "s" => Some(0x16),
+        "t" => Some(0x17),
+        "u" => Some(0x18),
+        "v" => Some(0x19),
+        "w" => Some(0x1A),
+        "x" => Some(0x1B),
+        "y" => Some(0x1C),
+        "z" => Some(0x1D),
 
         // Digits 1-0
-        "1" => Some(0x1E), "2" => Some(0x1F), "3" => Some(0x20), "4" => Some(0x21),
-        "5" => Some(0x22), "6" => Some(0x23), "7" => Some(0x24), "8" => Some(0x25),
-        "9" => Some(0x26), "0" => Some(0x27),
+        "1" => Some(0x1E),
+        "2" => Some(0x1F),
+        "3" => Some(0x20),
+        "4" => Some(0x21),
+        "5" => Some(0x22),
+        "6" => Some(0x23),
+        "7" => Some(0x24),
+        "8" => Some(0x25),
+        "9" => Some(0x26),
+        "0" => Some(0x27),
 
         // Controls
         "enter" | "return" => Some(0x28),
@@ -243,9 +272,18 @@ fn parse_keycode(s: &str) -> Option<u8> {
         "capslock" => Some(0x39),
 
         // Function keys F1-F12
-        "f1" => Some(0x3A), "f2" => Some(0x3B), "f3" => Some(0x3C), "f4" => Some(0x3D),
-        "f5" => Some(0x3E), "f6" => Some(0x3F), "f7" => Some(0x40), "f8" => Some(0x41),
-        "f9" => Some(0x42), "f10" => Some(0x43), "f11" => Some(0x44), "f12" => Some(0x45),
+        "f1" => Some(0x3A),
+        "f2" => Some(0x3B),
+        "f3" => Some(0x3C),
+        "f4" => Some(0x3D),
+        "f5" => Some(0x3E),
+        "f6" => Some(0x3F),
+        "f7" => Some(0x40),
+        "f8" => Some(0x41),
+        "f9" => Some(0x42),
+        "f10" => Some(0x43),
+        "f11" => Some(0x44),
+        "f12" => Some(0x45),
 
         // Navigation
         "printscreen" | "prtscn" => Some(0x46),
@@ -273,10 +311,22 @@ mod tests {
     #[test]
     fn test_parse_key_with_modifiers() {
         let action = Action::parse("cmd-c").unwrap();
-        assert_eq!(action, Action::Key { modifiers: 0x08, code: 0x06 });
+        assert_eq!(
+            action,
+            Action::Key {
+                modifiers: 0x08,
+                code: 0x06
+            }
+        );
 
         let combo = Action::parse("ctrl-alt-del").unwrap();
-        assert_eq!(combo, Action::Key { modifiers: 0x01 | 0x04, code: 0x4C });
+        assert_eq!(
+            combo,
+            Action::Key {
+                modifiers: 0x01 | 0x04,
+                code: 0x4C
+            }
+        );
     }
 
     #[test]
@@ -305,8 +355,8 @@ mod tests {
         assert_eq!(packet[0], 0x03);
         assert_eq!(packet[1], 0xFE);
         assert_eq!(packet[2], 16); // Knob 0 CCW ID
-        assert_eq!(packet[3], 1);  // Layer 0 + 1
-        assert_eq!(packet[4], 2);  // Media kind
+        assert_eq!(packet[3], 1); // Layer 0 + 1
+        assert_eq!(packet[4], 2); // Media kind
     }
 
     #[test]

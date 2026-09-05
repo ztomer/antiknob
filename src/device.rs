@@ -14,7 +14,6 @@ pub const VENDOR_USAGE_PAGE: u16 = 0xFF00;
 pub const REPORT_ID: u8 = 0x03;
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct DeviceMatch {
     pub vendor_id: u16,
     pub product_id: u16,
@@ -33,7 +32,10 @@ pub fn list_devices() -> Result<Vec<DeviceMatch>> {
         let vid = dev.vendor_id();
         let pid = dev.product_id();
 
-        if let Some((_, _, name)) = SUPPORTED_DEVICES.iter().find(|(v, p, _)| *v == vid && *p == pid) {
+        if let Some((_, _, name)) = SUPPORTED_DEVICES
+            .iter()
+            .find(|(v, p, _)| *v == vid && *p == pid)
+        {
             matches.push(DeviceMatch {
                 vendor_id: vid,
                 product_id: pid,
@@ -86,6 +88,7 @@ pub fn send_report(dev: &HidDevice, payload: &[u8]) -> Result<()> {
     let len = payload.len().min(64);
     buf[1..1 + len].copy_from_slice(&payload[..len]);
 
-    dev.write(&buf).context("Failed to write HID report to device")?;
+    dev.write(&buf)
+        .context("Failed to write HID report to device")?;
     Ok(())
 }

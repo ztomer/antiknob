@@ -124,6 +124,19 @@ layers:
 
 ---
 
+## Quality Assurance & Local Gates (`gates_of_heck`)
+
+Antiknob is wired into the local quality gate system [`gates_of_heck`](file:///Users/ztomer/Projects/gates_of_heck) via `.githooks/`:
+
+* **`pre-commit`**: Automatically runs structural gates over staged files (file length <= 500 lines, emoji policy, shell lint, no committed secrets, no conflict markers).
+* **`pre-push` / Full Gates**:
+  ```bash
+  tools/gate.sh --full
+  ```
+  Runs full structural checks, Rust formatting (`cargo fmt --check`), strict Clippy (`-D warnings`, all targets, all features), manifest linting, and `no #[allow]` policy enforcement.
+
+---
+
 ## License & Commercialization
 
 Antiknob is dual-licensed under either:

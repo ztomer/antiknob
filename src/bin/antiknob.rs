@@ -1,6 +1,4 @@
-mod config;
-mod device;
-mod protocol;
+use antiknob::{config, device, protocol};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};

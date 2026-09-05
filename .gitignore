@@ -1,6 +1,6 @@
 .crates.toml
 .crates2.json
-bin/
+/bin/
 target/
 .DS_Store
 __pycache__/

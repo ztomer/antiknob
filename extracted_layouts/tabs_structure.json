@@ -1,0 +1,1076 @@
+{
+  "BaseKeys": [
+    {
+      "role": "AXButton",
+      "name": "Ctrl+"
+    },
+    {
+      "role": "AXButton",
+      "name": "Shift+"
+    },
+    {
+      "role": "AXButton",
+      "name": "Win+"
+    },
+    {
+      "role": "AXButton",
+      "name": "Alt+"
+    },
+    {
+      "role": "AXButton",
+      "name": "Space"
+    },
+    {
+      "role": "AXButton",
+      "name": "\uff0b"
+    },
+    {
+      "role": "AXButton",
+      "name": "\uff0d"
+    },
+    {
+      "role": "AXButton",
+      "name": "\u00d7"
+    },
+    {
+      "role": "AXButton",
+      "name": "\u00f7"
+    },
+    {
+      "role": "AXButton",
+      "name": "><"
+    },
+    {
+      "role": "AXButton",
+      "name": "~\u3001"
+    },
+    {
+      "role": "AXButton",
+      "name": "1!"
+    },
+    {
+      "role": "AXButton",
+      "name": "2@"
+    },
+    {
+      "role": "AXButton",
+      "name": "3#"
+    },
+    {
+      "role": "AXButton",
+      "name": "4$"
+    },
+    {
+      "role": "AXButton",
+      "name": "5%"
+    },
+    {
+      "role": "AXButton",
+      "name": "6^"
+    },
+    {
+      "role": "AXButton",
+      "name": "7\uff06"
+    },
+    {
+      "role": "AXButton",
+      "name": "8*"
+    },
+    {
+      "role": "AXButton",
+      "name": "9("
+    },
+    {
+      "role": "AXButton",
+      "name": "0)"
+    },
+    {
+      "role": "AXButton",
+      "name": "-_"
+    },
+    {
+      "role": "AXButton",
+      "name": "=+"
+    },
+    {
+      "role": "AXButton",
+      "name": "\u2191"
+    },
+    {
+      "role": "AXButton",
+      "name": "N"
+    },
+    {
+      "role": "AXButton",
+      "name": "O"
+    },
+    {
+      "role": "AXButton",
+      "name": "P"
+    },
+    {
+      "role": "AXButton",
+      "name": "Q"
+    },
+    {
+      "role": "AXButton",
+      "name": "R"
+    },
+    {
+      "role": "AXButton",
+      "name": "S"
+    },
+    {
+      "role": "AXButton",
+      "name": "T"
+    },
+    {
+      "role": "AXButton",
+      "name": "U"
+    },
+    {
+      "role": "AXButton",
+      "name": "V"
+    },
+    {
+      "role": "AXButton",
+      "name": "W"
+    },
+    {
+      "role": "AXButton",
+      "name": "X"
+    },
+    {
+      "role": "AXButton",
+      "name": "Y"
+    },
+    {
+      "role": "AXButton",
+      "name": "Z"
+    },
+    {
+      "role": "AXButton",
+      "name": "\u25a4"
+    },
+    {
+      "role": "AXButton",
+      "name": "A"
+    },
+    {
+      "role": "AXButton",
+      "name": "B"
+    },
+    {
+      "role": "AXButton",
+      "name": "C"
+    },
+    {
+      "role": "AXButton",
+      "name": "D"
+    },
+    {
+      "role": "AXButton",
+      "name": "E"
+    },
+    {
+      "role": "AXButton",
+      "name": "F"
+    },
+    {
+      "role": "AXButton",
+      "name": "G"
+    },
+    {
+      "role": "AXButton",
+      "name": "H"
+    },
+    {
+      "role": "AXButton",
+      "name": "I"
+    },
+    {
+      "role": "AXButton",
+      "name": "J"
+    },
+    {
+      "role": "AXButton",
+      "name": "K"
+    },
+    {
+      "role": "AXButton",
+      "name": "L"
+    },
+    {
+      "role": "AXButton",
+      "name": "M"
+    },
+    {
+      "role": "AXButton",
+      "name": "\u2193"
+    },
+    {
+      "role": "AXButton",
+      "name": "Tab"
+    },
+    {
+      "role": "AXButton",
+      "name": "Caps Lock"
+    },
+    {
+      "role": "AXButton",
+      "name": "ENTER"
+    },
+    {
+      "role": "AXButton",
+      "name": "[{"
+    },
+    {
+      "role": "AXButton",
+      "name": "]}"
+    },
+    {
+      "role": "AXButton",
+      "name": "\\|"
+    },
+    {
+      "role": "AXButton",
+      "name": ";:"
+    },
+    {
+      "role": "AXButton",
+      "name": "' \""
+    },
+    {
+      "role": "AXButton",
+      "name": ",<"
+    },
+    {
+      "role": "AXButton",
+      "name": ".>"
+    },
+    {
+      "role": "AXButton",
+      "name": "?/"
+    },
+    {
+      "role": "AXButton",
+      "name": "ESC"
+    },
+    {
+      "role": "AXButton",
+      "name": "F1"
+    },
+    {
+      "role": "AXButton",
+      "name": "F2"
+    },
+    {
+      "role": "AXButton",
+      "name": "F3"
+    },
+    {
+      "role": "AXButton",
+      "name": "F4"
+    },
+    {
+      "role": "AXButton",
+      "name": "F5"
+    },
+    {
+      "role": "AXButton",
+      "name": "F6"
+    },
+    {
+      "role": "AXButton",
+      "name": "F7"
+    },
+    {
+      "role": "AXButton",
+      "name": "F8"
+    },
+    {
+      "role": "AXButton",
+      "name": "F9"
+    },
+    {
+      "role": "AXButton",
+      "name": "F10"
+    },
+    {
+      "role": "AXButton",
+      "name": "F11"
+    },
+    {
+      "role": "AXButton",
+      "name": "F12"
+    },
+    {
+      "role": "AXButton",
+      "name": "\u2190"
+    },
+    {
+      "role": "AXButton",
+      "name": "Scroll"
+    },
+    {
+      "role": "AXButton",
+      "name": "PrtSc"
+    },
+    {
+      "role": "AXButton",
+      "name": "Insert"
+    },
+    {
+      "role": "AXButton",
+      "name": "End"
+    },
+    {
+      "role": "AXButton",
+      "name": "Delete"
+    },
+    {
+      "role": "AXButton",
+      "name": "Home"
+    },
+    {
+      "role": "AXButton",
+      "name": "Page"
+    },
+    {
+      "role": "AXButton",
+      "name": "Page"
+    },
+    {
+      "role": "AXButton",
+      "name": "Pause"
+    },
+    {
+      "role": "AXButton",
+      "name": "\u2190Back"
+    },
+    {
+      "role": "AXButton",
+      "name": "\u2192"
+    },
+    {
+      "role": "AXButton",
+      "name": "NumLock"
+    },
+    {
+      "role": "AXButton",
+      "name": "ENTER"
+    },
+    {
+      "role": "AXButton",
+      "name": "1"
+    },
+    {
+      "role": "AXButton",
+      "name": "2"
+    },
+    {
+      "role": "AXButton",
+      "name": "3"
+    },
+    {
+      "role": "AXButton",
+      "name": "4"
+    },
+    {
+      "role": "AXButton",
+      "name": "5"
+    },
+    {
+      "role": "AXButton",
+      "name": "6"
+    },
+    {
+      "role": "AXButton",
+      "name": "7"
+    },
+    {
+      "role": "AXButton",
+      "name": "8"
+    },
+    {
+      "role": "AXButton",
+      "name": "9"
+    },
+    {
+      "role": "AXButton",
+      "name": "0"
+    },
+    {
+      "role": "AXButton",
+      "name": "\u25aa"
+    },
+    {
+      "role": "AXButton",
+      "name": "NULL"
+    }
+  ],
+  "Ctrl Shift Alt": [
+    {
+      "role": "AXButton",
+      "name": "Shift+Win+"
+    },
+    {
+      "role": "AXButton",
+      "name": "Alt+Shift+"
+    },
+    {
+      "role": "AXButton",
+      "name": "Ctrl+Shift+"
+    },
+    {
+      "role": "AXButton",
+      "name": "Ctrl+Alt+"
+    },
+    {
+      "role": "AXButton",
+      "name": "Right Shift+"
+    },
+    {
+      "role": "AXButton",
+      "name": "Right Alt+"
+    },
+    {
+      "role": "AXButton",
+      "name": "Right Ctrl+"
+    },
+    {
+      "role": "AXButton",
+      "name": "Right Win+"
+    },
+    {
+      "role": "AXButton",
+      "name": "}"
+    },
+    {
+      "role": "AXButton",
+      "name": "|"
+    },
+    {
+      "role": "AXButton",
+      "name": ":"
+    },
+    {
+      "role": "AXButton",
+      "name": "\""
+    },
+    {
+      "role": "AXButton",
+      "name": "<"
+    },
+    {
+      "role": "AXButton",
+      "name": ">"
+    },
+    {
+      "role": "AXButton",
+      "name": "?"
+    },
+    {
+      "role": "AXButton",
+      "name": "F13"
+    },
+    {
+      "role": "AXButton",
+      "name": "F14"
+    },
+    {
+      "role": "AXButton",
+      "name": "F15"
+    },
+    {
+      "role": "AXButton",
+      "name": "F16"
+    },
+    {
+      "role": "AXButton",
+      "name": "F17"
+    },
+    {
+      "role": "AXButton",
+      "name": "F18"
+    },
+    {
+      "role": "AXButton",
+      "name": "F19"
+    },
+    {
+      "role": "AXButton",
+      "name": "Win+"
+    },
+    {
+      "role": "AXButton",
+      "name": "Shift+"
+    },
+    {
+      "role": "AXButton",
+      "name": "Alt+"
+    },
+    {
+      "role": "AXButton",
+      "name": "Ctrl+"
+    },
+    {
+      "role": "AXButton",
+      "name": "Ctrl+Alt+Shift+Win+"
+    },
+    {
+      "role": "AXButton",
+      "name": "Ctrl+Alt+Win+"
+    },
+    {
+      "role": "AXButton",
+      "name": "Ctrl+Shift+Alt+"
+    },
+    {
+      "role": "AXButton",
+      "name": "command"
+    },
+    {
+      "role": "AXButton",
+      "name": "F20"
+    },
+    {
+      "role": "AXButton",
+      "name": "F21"
+    },
+    {
+      "role": "AXButton",
+      "name": "F22"
+    },
+    {
+      "role": "AXButton",
+      "name": "F23"
+    },
+    {
+      "role": "AXButton",
+      "name": "F24"
+    },
+    {
+      "role": "AXButton",
+      "name": "~"
+    },
+    {
+      "role": "AXButton",
+      "name": "!"
+    },
+    {
+      "role": "AXButton",
+      "name": "@"
+    },
+    {
+      "role": "AXButton",
+      "name": "#"
+    },
+    {
+      "role": "AXButton",
+      "name": "$"
+    },
+    {
+      "role": "AXButton",
+      "name": "%"
+    },
+    {
+      "role": "AXButton",
+      "name": "^"
+    },
+    {
+      "role": "AXButton",
+      "name": "option"
+    },
+    {
+      "role": "AXButton",
+      "name": "control"
+    },
+    {
+      "role": "AXButton",
+      "name": "Right option"
+    },
+    {
+      "role": "AXButton",
+      "name": "Right command"
+    },
+    {
+      "role": "AXButton",
+      "name": "\uff06"
+    },
+    {
+      "role": "AXButton",
+      "name": "*"
+    },
+    {
+      "role": "AXButton",
+      "name": "("
+    },
+    {
+      "role": "AXButton",
+      "name": ")"
+    },
+    {
+      "role": "AXButton",
+      "name": "-"
+    },
+    {
+      "role": "AXButton",
+      "name": "+"
+    },
+    {
+      "role": "AXButton",
+      "name": "{"
+    }
+  ],
+  "MutiMedia": [
+    {
+      "role": "AXButton",
+      "name": "Next track"
+    },
+    {
+      "role": "AXButton",
+      "name": "Stop"
+    },
+    {
+      "role": "AXButton",
+      "name": "Previous track"
+    },
+    {
+      "role": "AXButton",
+      "name": "Play/Pause"
+    },
+    {
+      "role": "AXButton",
+      "name": "Screen brightness+"
+    },
+    {
+      "role": "AXButton",
+      "name": "My Computer"
+    },
+    {
+      "role": "AXButton",
+      "name": "Screen brightness-"
+    },
+    {
+      "role": "AXButton",
+      "name": "Bass+"
+    },
+    {
+      "role": "AXButton",
+      "name": "WWW Pagerefresh"
+    },
+    {
+      "role": "AXButton",
+      "name": "Treble-"
+    },
+    {
+      "role": "AXButton",
+      "name": "Treble+"
+    },
+    {
+      "role": "AXButton",
+      "name": "WWW Pageforward"
+    },
+    {
+      "role": "AXButton",
+      "name": "Bass-"
+    },
+    {
+      "role": "AXButton",
+      "name": "WWW Pageback"
+    },
+    {
+      "role": "AXButton",
+      "name": "Volume-"
+    },
+    {
+      "role": "AXButton",
+      "name": "Volume+"
+    },
+    {
+      "role": "AXButton",
+      "name": "Mute"
+    },
+    {
+      "role": "AXButton",
+      "name": "Multimedia"
+    },
+    {
+      "role": "AXButton",
+      "name": "Calculator"
+    },
+    {
+      "role": "AXButton",
+      "name": "WWW home"
+    },
+    {
+      "role": "AXButton",
+      "name": "E-mail"
+    }
+  ],
+  "RGB LED": [
+    {
+      "role": "AXButton",
+      "name": "LED Mode2"
+    },
+    {
+      "role": "AXButton",
+      "name": "LED Mode5"
+    },
+    {
+      "role": "AXButton",
+      "name": "LED Mode1"
+    },
+    {
+      "role": "AXButton",
+      "name": "LED Mode4"
+    },
+    {
+      "role": "AXButton",
+      "name": "LED Mode3"
+    },
+    {
+      "role": "AXButton",
+      "name": "LED Mode0"
+    }
+  ],
+  "Mouse/Swipe screen": [
+    {
+      "role": "AXButton",
+      "name": "Ctrl+Mouse Down"
+    },
+    {
+      "role": "AXButton",
+      "name": "Mouse Wheel+"
+    },
+    {
+      "role": "AXButton",
+      "name": "Mouse Middle"
+    },
+    {
+      "role": "AXButton",
+      "name": "Shift+Mouse Down"
+    },
+    {
+      "role": "AXButton",
+      "name": "Alt+Mouse Up"
+    },
+    {
+      "role": "AXButton",
+      "name": "Alt+Mouse Down"
+    },
+    {
+      "role": "AXButton",
+      "name": "Mouse Wheel-"
+    },
+    {
+      "role": "AXButton",
+      "name": "Ctrl+Mouse Up"
+    },
+    {
+      "role": "AXButton",
+      "name": "Mouse LeftKey"
+    },
+    {
+      "role": "AXButton",
+      "name": "Shift+Mouse Up"
+    },
+    {
+      "role": "AXButton",
+      "name": "Mouse Right"
+    },
+    {
+      "role": "AXButton",
+      "name": "Like"
+    },
+    {
+      "role": "AXButton",
+      "name": "Left Swipe"
+    },
+    {
+      "role": "AXButton",
+      "name": "Right Swipe"
+    },
+    {
+      "role": "AXButton",
+      "name": "Up Swipe"
+    },
+    {
+      "role": "AXButton",
+      "name": "Down Swipe"
+    }
+  ],
+  "DelaySetting": [
+    {
+      "role": "AXIncrementor",
+      "name": "missing value"
+    },
+    {
+      "role": "AXButton",
+      "name": "NULL"
+    },
+    {
+      "role": "AXIncrementor",
+      "name": "missing value"
+    },
+    {
+      "role": "AXButton",
+      "name": "NULL"
+    },
+    {
+      "role": "AXIncrementor",
+      "name": "missing value"
+    },
+    {
+      "role": "AXButton",
+      "name": "NULL"
+    },
+    {
+      "role": "AXIncrementor",
+      "name": "missing value"
+    },
+    {
+      "role": "AXButton",
+      "name": "NULL"
+    },
+    {
+      "role": "AXIncrementor",
+      "name": "missing value"
+    },
+    {
+      "role": "AXButton",
+      "name": "NULL"
+    },
+    {
+      "role": "AXIncrementor",
+      "name": "missing value"
+    },
+    {
+      "role": "AXButton",
+      "name": "NULL"
+    },
+    {
+      "role": "AXIncrementor",
+      "name": "missing value"
+    },
+    {
+      "role": "AXButton",
+      "name": "NULL"
+    },
+    {
+      "role": "AXIncrementor",
+      "name": "missing value"
+    },
+    {
+      "role": "AXButton",
+      "name": "NULL"
+    },
+    {
+      "role": "AXIncrementor",
+      "name": "missing value"
+    },
+    {
+      "role": "AXButton",
+      "name": "NULL"
+    },
+    {
+      "role": "AXIncrementor",
+      "name": "missing value"
+    },
+    {
+      "role": "AXButton",
+      "name": "NULL"
+    },
+    {
+      "role": "AXIncrementor",
+      "name": "missing value"
+    },
+    {
+      "role": "AXButton",
+      "name": "NULL"
+    },
+    {
+      "role": "AXIncrementor",
+      "name": "missing value"
+    },
+    {
+      "role": "AXButton",
+      "name": "NULL"
+    },
+    {
+      "role": "AXIncrementor",
+      "name": "missing value"
+    },
+    {
+      "role": "AXButton",
+      "name": "NULL"
+    },
+    {
+      "role": "AXIncrementor",
+      "name": "missing value"
+    },
+    {
+      "role": "AXButton",
+      "name": "NULL"
+    },
+    {
+      "role": "AXIncrementor",
+      "name": "missing value"
+    },
+    {
+      "role": "AXButton",
+      "name": "NULL"
+    },
+    {
+      "role": "AXIncrementor",
+      "name": "missing value"
+    },
+    {
+      "role": "AXButton",
+      "name": "NULL"
+    },
+    {
+      "role": "AXIncrementor",
+      "name": "missing value"
+    },
+    {
+      "role": "AXButton",
+      "name": "NULL"
+    },
+    {
+      "role": "AXIncrementor",
+      "name": "missing value"
+    },
+    {
+      "role": "AXButton",
+      "name": "NULL"
+    }
+  ],
+  "Procreate": [
+    {
+      "role": "AXButton",
+      "name": "QuickMenu"
+    },
+    {
+      "role": "AXButton",
+      "name": "Debug"
+    },
+    {
+      "role": "AXButton",
+      "name": "Activate"
+    },
+    {
+      "role": "AXButton",
+      "name": "Open"
+    },
+    {
+      "role": "AXButton",
+      "name": "Activate"
+    },
+    {
+      "role": "AXButton",
+      "name": "Open"
+    },
+    {
+      "role": "AXButton",
+      "name": "Enter"
+    },
+    {
+      "role": "AXButton",
+      "name": "Enter"
+    },
+    {
+      "role": "AXButton",
+      "name": "Switch "
+    },
+    {
+      "role": "AXButton",
+      "name": "Color"
+    },
+    {
+      "role": "AXButton",
+      "name": "Color Pick"
+    },
+    {
+      "role": "AXButton",
+      "name": "Clear"
+    },
+    {
+      "role": "AXButton",
+      "name": "Toggle"
+    },
+    {
+      "role": "AXButton",
+      "name": "Toggle"
+    },
+    {
+      "role": "AXButton",
+      "name": "Decrease"
+    },
+    {
+      "role": "AXButton",
+      "name": "Increase"
+    },
+    {
+      "role": "AXButton",
+      "name": "Decrease"
+    },
+    {
+      "role": "AXButton",
+      "name": "Increase"
+    },
+    {
+      "role": "AXButton",
+      "name": "Decrease"
+    },
+    {
+      "role": "AXButton",
+      "name": "Increase"
+    },
+    {
+      "role": "AXButton",
+      "name": "Copy All"
+    },
+    {
+      "role": "AXButton",
+      "name": "Apply Color"
+    },
+    {
+      "role": "AXButton",
+      "name": "Copy"
+    },
+    {
+      "role": "AXButton",
+      "name": "Clear"
+    },
+    {
+      "role": "AXButton",
+      "name": "Duplicate"
+    },
+    {
+      "role": "AXButton",
+      "name": "Open"
+    },
+    {
+      "role": "AXButton",
+      "name": "Apply"
+    },
+    {
+      "role": "AXButton",
+      "name": "Paste"
+    },
+    {
+      "role": "AXButton",
+      "name": "Cut"
+    },
+    {
+      "role": "AXButton",
+      "name": "Undo"
+    },
+    {
+      "role": "AXButton",
+      "name": "Redo"
+    }
+  ]
+}

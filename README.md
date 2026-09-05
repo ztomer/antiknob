@@ -156,3 +156,34 @@ def find_anticater():
 if __name__ == "__main__":
     find_anticater()
 ```
+
+---
+
+## 5. Native ARM64 CLI Tool (`antiknob.sh`)
+
+The repository includes a pre-compiled native ARM64 tool (`bin/ch57x-keyboard-tool`) and an orchestration script [`antiknob.sh`](file:///Users/ztomer/Projects/antiknob/antiknob.sh) that manages your Anticater VK01 Knob without any Rosetta or Qt dependencies.
+
+### 5.1 Basic Commands
+
+```bash
+# Display binary architecture and system info
+./antiknob.sh info
+
+# Validate configuration file syntax
+./antiknob.sh validate config.yaml
+./antiknob.sh validate config_knob_only.yaml
+
+# Flash configuration to keyboard over USB (requires cable connection)
+sudo ./antiknob.sh upload config.yaml
+
+# Configure RGB LED mode (Layer 0, white backlight)
+sudo ./antiknob.sh led 0 backlight white
+
+# List all available key names, media codes, and modifiers
+./antiknob.sh show-keys
+```
+
+### 5.2 Provided Configuration Templates
+* [`config.yaml`](file:///Users/ztomer/Projects/antiknob/config.yaml): 1 knob + 3 buttons across 3 layers (Media, Productivity, Window/Zoom).
+* [`config_knob_only.yaml`](file:///Users/ztomer/Projects/antiknob/config_knob_only.yaml): Pure single-knob layout without extra buttons across 3 layers (Volume, Scroll, Zoom).
+

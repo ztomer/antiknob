@@ -1,0 +1,47 @@
+# ==============================================================================
+# Antiknob / Anticater VK01 Knob Configuration (model: ch57x-1)
+# Native ARM64 configuration for macOS 27+
+# ==============================================================================
+# Model identifier for CH57x microcontrollers (VID: 0x1189, PID: 0x8840 / 0x8842)
+model: ch57x-1
+
+# Orientation options: normal, upsidedown, clockwise, counterclockwise
+orientation: normal
+
+# Hardware layout dimensions:
+# - For 1 knob and 3 keys (default): rows: 1, columns: 3, knobs: 1
+# - For pure knob with no keys:      rows: 0, columns: 0, knobs: 1 (buttons: [])
+rows: 1
+columns: 3
+knobs: 1
+
+layers:
+  # ----------------------------------------------------------------------------
+  # Layer 0: Default Media & Audio Controls
+  # ----------------------------------------------------------------------------
+  - buttons:
+      - ["play", "prev", "next"]
+    knobs:
+      - ccw: "volumedown"
+        press: "mute"
+        cw: "volumeup"
+
+  # ----------------------------------------------------------------------------
+  # Layer 1: Navigation & Productivity Shortcuts
+  # ----------------------------------------------------------------------------
+  - buttons:
+      - ["cmd-c", "cmd-v", "cmd-z"]
+    knobs:
+      - ccw: "wheelup"
+        press: "click"
+        cw: "wheeldown"
+
+  # ----------------------------------------------------------------------------
+  # Layer 2: Workspace & Zoom Controls
+  # ----------------------------------------------------------------------------
+  - buttons:
+      - ["ctrl-left", "ctrl-up", "ctrl-right"]
+    knobs:
+      - ccw: "cmd-minus"
+        press: "cmd-0"
+        cw: "cmd-equal"

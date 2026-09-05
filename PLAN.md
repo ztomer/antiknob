@@ -1,13 +1,18 @@
-# Antiknob: Native ARM64 Plan for Anticater VK01 Knob
+# Antiknob: Pure Rust Native Plan for Anticater VK01 Knob
 
-## Strategic Context & Deadline
+## Strategic Context & Hardware Discovery
 
-* **Urgency**: **Rosetta 2 deprecation in macOS 27 (September 2026)**.
-  The vendor application (`/Applications/ANTICATER.app`) is strictly `x86_64` and will cease functioning when macOS 27 releases. A native Apple Silicon (`arm64`) solution is mandatory.
-* **No Qt Requirement**:
-  Qt 5.12 was an artifact of the vendor's legacy stack. There is no requirement to retain Qt.
-* **Foundational Project Found**:
-  [`kriomant/ch57x-keyboard-tool`](https://github.com/kriomant/ch57x-keyboard-tool) already provides an open-source Rust implementation of the CH57x USB protocol, with explicit built-in support for model `ch57x-1` (`VID 0x1189`, `PID 0x8840` / `0x8842` / `0x8850` / `0x514C:0x8851`), matching the exact USB identifiers extracted from `/Applications/ANTICATER.app`.
+* **Hardware Identified & Verified On USB**:
+  * Connected device: **VID `0x514C` (LQKJ), PID `0x8850`**
+  * Product: `USB Composite Device`, Serial: `EB60121120051103`
+  * Vendor Usage Page: `0xFF00`, Usage `0x0001`, Report ID `0x03` (64 bytes).
+  * **Zero Sudo Requirement**: Dynamic testing confirmed that macOS `IOHIDManager` allows opening the `0xFF00` configuration interface without root/sudo privileges.
+* **Licensing & Commercialization**:
+  * **100% Permissive Open Source**: Dual-licensed under **MIT OR Apache-2.0**.
+  * **No Dual-Licensing / No Copyleft**: Clean commercialization with zero GPL, AGPL, or SSPL encumbrance.
+  * All crate dependencies (`hidapi`, `serde`, `clap`, `anyhow`) are MIT / Apache-2.0.
+* **Rosetta 2 Deprecation (macOS 27, September 2026)**:
+  * Pure native `aarch64-apple-darwin` binary built with Rust.
 
 ---
 
@@ -21,50 +26,37 @@
                            |
                            v
 +-------------------------------------------------------+
-|               ch57x-keyboard-tool                     |
-|           (Native Rust binary: aarch64)               |
+|                       antiknob                        |
+|        (Pure Rust Native Binary: aarch64-apple-darwin)|
+|              Dual-licensed: MIT / Apache-2.0          |
 +-------------------------------------------------------+
                            |
                            v
 +-------------------------------------------------------+
-|                    rusb / libusb                      |
-|          (macOS IOKit / IOUSBHost backend)            |
+|                    hidapi (MIT)                       |
+|          Apple IOHIDManager (macOS System Framework)  |
+|            Usage Page 0xFF00 - NO SUDO NEEDED         |
 +-------------------------------------------------------+
                            |
                            v
 +-------------------------------------------------------+
 |             Anticater VK01 Knob Keyboard              |
-|        (CH57x Microcontroller: 0x1189:0x8840)         |
+|        (CH57x Microcontroller: 0x514C:0x8850)         |
 +-------------------------------------------------------+
 ```
 
 ---
 
-## Capabilities of `ch57x-keyboard-tool` for Anticater VK01
-
-1. **Knob Support**:
-   * Counter-Clockwise (`ccw`)
-   * Clockwise (`cw`)
-   * Press (`press`)
-2. **Layer Support**:
-   * Up to 16 layers (typically 3 layers configured in hardware).
-3. **Action Types**:
-   * Standard keys (`a`–`z`, `0`–`9`, `F1`–`F24`, symbols).
-   * Modifiers: `cmd` / `win`, `opt` / `alt`, `ctrl`, `shift`, right-hand modifiers.
-   * Media controls: `volumeup`, `volumedown`, `mute`, `play`, `next`, `prev`.
-   * Mouse events: `click`, `rclick`, `mclick`, `move(x, y)`, `drag`, `wheelup`, `wheeldown`.
-   * Sequences & Macros: Multi-key chords and timed delays (`<100ms>`).
-4. **LED Controls (`0x8840` / `0x8842`)**:
-   * Modes: `off`, `backlight <color>`, `shock <color>`, `shock2 <color>`, `press <color>`.
-   * Colors: `white` (backlight only), `red`, `orange`, `yellow`, `green`, `cyan`, `blue`, `purple`.
-
----
-
 ## Implementation Workstreams
 
-1. **Tool Compilation**:
-   * Build `ch57x-keyboard-tool` locally using the system's native `cargo` (`aarch64-apple-darwin`).
-2. **Hardware Mapping Profile**:
-   * Create `config.yaml` tailored to the physical button and knob count of the Anticater VK01.
-3. **Workflow Automation**:
-   * Provide a lightweight wrapper CLI (`antiknob`) for convenient validation, flashing, and LED adjustments.
+1. **Rust Crate Setup**:
+   * Create `Cargo.toml` with `hidapi`, `serde`, `serde_yaml`, `clap`, `anyhow`.
+   * Add `LICENSE-MIT` and `LICENSE-APACHE`.
+2. **Device & Protocol Layer**:
+   * `src/device.rs`: Device enumeration and handle management targeting `UsagePage == 0xFF00`.
+   * `src/protocol.rs`: CH57x packet serialization (Report ID 3, 0xFE commands, knob & layer mappings).
+3. **Configuration & CLI**:
+   * `src/config.rs`: YAML model definition.
+   * `src/main.rs`: CLI commands (`status`, `validate`, `upload`, `led`, `show-keys`).
+4. **Verification**:
+   * Live hardware probe with `antiknob status` confirming unprivileged access to the connected knob.

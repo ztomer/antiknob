@@ -1,0 +1,143 @@
+use antiknob::config::DeviceConfig;
+use antiknob::gui::profiles::{load_profile_file, save_profile_file};
+use antiknob::protocol::{build_led_packet, key_id_for_button, key_id_for_knob, Action, KnobEvent};
+use std::fs;
+use std::path::Path;
+
+#[test]
+fn test_e2e_config_roundtrip_profile() {
+    let temp_dir = std::env::temp_dir().join("antiknob_test_profiles");
+    let test_file = temp_dir.join("profile_test.yaml");
+
+    let original_yaml = r#"
+model: Anticater VK01
+orientation: normal
+rows: 1
+columns: 1
+knobs: 1
+layers:
+  - buttons:
+      - ["play"]
+    knobs:
+      - ccw: volumedown
+        press: mute
+        cw: volumeup
+    led: "mode1 white"
+  - buttons:
+      - ["cmd+b"]
+    knobs:
+      - ccw: left
+        press: space
+        cw: right
+    led: "mode2 red"
+"#;
+    let original: DeviceConfig = serde_yaml::from_str(original_yaml).unwrap();
+    save_profile_file(&original, &test_file).unwrap();
+
+    let loaded = load_profile_file(&test_file).unwrap();
+    assert_eq!(loaded.model, original.model);
+    assert_eq!(loaded.layers.len(), 2);
+    assert_eq!(loaded.layers[1].buttons[0][0], "cmd+b");
+
+    let _ = fs::remove_file(test_file);
+    let _ = fs::remove_dir(temp_dir);
+}
+
+#[test]
+fn test_e2e_packet_generation_pipeline() {
+    let yaml = r#"
+model: Anticater VK01
+orientation: normal
+rows: 1
+columns: 1
+knobs: 1
+layers:
+  - buttons:
+      - ["cmd+shift+z"]
+    knobs:
+      - ccw: volumedown
+        press: mute
+        cw: volumeup
+    led: "mode3 blue"
+"#;
+    let config: DeviceConfig = serde_yaml::from_str(yaml).unwrap();
+    let layer = &config.layers[0];
+
+    // Verify knob packets
+    let ccw_action = Action::parse(layer.knobs[0].ccw.as_ref().unwrap()).unwrap();
+    let ccw_id = key_id_for_knob(0, KnobEvent::RotateCCW);
+    let ccw_pkt = ccw_action.to_packet(ccw_id, 0);
+    assert_eq!(ccw_pkt[0], 0x03);
+    assert_eq!(ccw_pkt[1], 0xFE);
+    assert_eq!(ccw_pkt[2], ccw_id);
+    assert_eq!(ccw_pkt[3], 0x01); // Layer 0 + 1
+
+    // Verify button packet
+    let btn_action = Action::parse(&layer.buttons[0][0]).unwrap();
+    let btn_id = key_id_for_button(0);
+    let btn_pkt = btn_action.to_packet(btn_id, 0);
+    assert_eq!(btn_pkt[0], 0x03);
+    assert_eq!(btn_pkt[1], 0xFE);
+    assert_eq!(btn_pkt[2], btn_id);
+    assert_eq!(btn_pkt[3], 0x01); // Layer 0 + 1
+    assert_eq!(btn_pkt[4], 0x01); // Keyboard kind
+
+    // Verify LED packet
+    let led_pkt = build_led_packet(0, layer.led.as_ref().unwrap()).unwrap();
+    assert_eq!(led_pkt[0], 0x03);
+    assert_eq!(led_pkt[1], 0xFE);
+    assert_eq!(led_pkt[2], 0xB0);
+    assert_eq!(led_pkt[3], 0x00); // Layer 0
+    assert_eq!(led_pkt[4], 0x03); // Mode 3
+    assert_eq!(led_pkt[5], 0); // Blue R
+    assert_eq!(led_pkt[6], 0); // Blue G
+    assert_eq!(led_pkt[7], 255); // Blue B
+}
+
+#[test]
+fn test_e2e_invalid_action_syntax_rejected() {
+    assert!(Action::parse("invalid_unknown_key_xyz").is_err());
+    assert!(Action::parse("cmd+invalid_key").is_err());
+    assert!(Action::parse("").is_err());
+}
+
+#[test]
+fn test_e2e_invalid_led_syntax_rejected() {
+    assert!(build_led_packet(0, "unknown_mode").is_err());
+    assert!(build_led_packet(0, "mode5 red").is_err());
+    assert!(build_led_packet(0, "mode1 ultraviolet").is_err());
+}
+
+#[test]
+fn test_e2e_cli_validate_bundled_config() {
+    let config_path = Path::new("config.yaml");
+    assert!(config_path.exists(), "config.yaml must exist in root");
+
+    let content = fs::read_to_string(config_path).unwrap();
+    let config: DeviceConfig = serde_yaml::from_str(&content).unwrap();
+    assert_eq!(config.layers.len(), 3);
+
+    for (layer_idx, layer) in config.layers.iter().enumerate() {
+        for knob in &layer.knobs {
+            if let Some(ref s) = knob.ccw {
+                assert!(Action::parse(s).is_ok());
+            }
+            if let Some(ref s) = knob.press {
+                assert!(Action::parse(s).is_ok());
+            }
+            if let Some(ref s) = knob.cw {
+                assert!(Action::parse(s).is_ok());
+            }
+        }
+        for row in &layer.buttons {
+            for btn in row {
+                if btn != "none" && !btn.is_empty() {
+                    assert!(Action::parse(btn).is_ok());
+                }
+            }
+        }
+        if let Some(ref led) = layer.led {
+            assert!(build_led_packet(layer_idx as u8, led).is_ok());
+        }
+    }
+}

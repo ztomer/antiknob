@@ -1,14 +1,125 @@
+use crate::gui::presets::{apply_preset, ALL_PRESETS};
 use crate::gui::state::{ActiveTab, GuiState};
-use eframe::egui::{self, Ui};
+use eframe::egui::{self, Color32, Rounding, Stroke, Ui};
 
 pub fn render_palette(ui: &mut Ui, state: &mut GuiState) {
     ui.vertical(|ui| match state.active_tab {
+        ActiveTab::Presets => render_presets(ui, state),
+        ActiveTab::Recorder => render_recorder(ui, state),
         ActiveTab::BaseKeys => render_base_keys(ui, state),
         ActiveTab::Modifiers => render_modifiers(ui, state),
         ActiveTab::Media => render_media(ui, state),
         ActiveTab::Led => render_led_panel(ui, state),
         ActiveTab::Mouse => render_mouse(ui, state),
         ActiveTab::Procreate => render_procreate(ui, state),
+    });
+}
+
+fn render_presets(ui: &mut Ui, state: &mut GuiState) {
+    ui.heading("Curated 1-Click Workflow Presets");
+    ui.label("Select a workflow preset to instantly map the knob, button, and LED lighting.");
+    ui.separator();
+    ui.add_space(6.0);
+
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        for preset in ALL_PRESETS {
+            ui.group(|ui| {
+                ui.horizontal(|ui| {
+                    ui.strong(preset.name);
+                    ui.label("•");
+                    ui.colored_label(Color32::from_rgb(0, 180, 255), preset.category);
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let btn = egui::Button::new("Apply Preset")
+                            .fill(Color32::from_rgb(0, 120, 215))
+                            .stroke(Stroke::new(1.0_f32, Color32::from_rgb(0, 160, 255)));
+                        if ui.add_sized([110.0, 26.0], btn).clicked() {
+                            apply_preset(preset, state);
+                            state.active_preset_id = Some(preset.id.to_string());
+                        }
+                    });
+                });
+
+                ui.label(preset.description);
+                ui.horizontal(|ui| {
+                    ui.small(format!(
+                        "Knob: [<- {}]  [Press: {}]  [{} ->]  |  Key 1: [{}]  |  LED: {} {}",
+                        preset.ccw,
+                        preset.press,
+                        preset.cw,
+                        preset.button,
+                        preset.led_mode,
+                        preset.led_color
+                    ));
+                });
+            });
+            ui.add_space(4.0);
+        }
+    });
+}
+
+fn render_recorder(ui: &mut Ui, state: &mut GuiState) {
+    ui.heading("Direct Keyboard Shortcut Recorder");
+    ui.label("Press any key combination directly on your Mac keyboard to bind it instantly.");
+    ui.separator();
+    ui.add_space(10.0);
+
+    let target_label = match state.selected {
+        crate::gui::state::Selection::Knob { target, .. } => {
+            format!("Knob [{}]", target.label())
+        }
+        crate::gui::state::Selection::Button { .. } => "Key 1 (Push Button)".to_string(),
+    };
+
+    ui.horizontal(|ui| {
+        ui.label("Target to bind:");
+        ui.colored_label(Color32::from_rgb(0, 180, 255), &target_label);
+    });
+
+    let current_bind = state
+        .get_binding(state.selected)
+        .unwrap_or_else(|| "none".into());
+    ui.horizontal(|ui| {
+        ui.label("Current Assignment:");
+        ui.strong(format!("[{}]", current_bind));
+    });
+
+    ui.add_space(14.0);
+
+    let (rec_text, rec_color) = if state.is_recording {
+        (
+            "Listening... Press any key combination (or click to Cancel)",
+            Color32::from_rgb(220, 50, 50),
+        )
+    } else {
+        (
+            "Click to Record Keystroke / Shortcut",
+            Color32::from_rgb(0, 120, 215),
+        )
+    };
+
+    let btn = egui::Button::new(rec_text)
+        .fill(rec_color)
+        .rounding(Rounding::same(8.0));
+
+    if ui
+        .add_sized([ui.available_width() - 20.0, 48.0], btn)
+        .clicked()
+    {
+        state.is_recording = !state.is_recording;
+        if state.is_recording {
+            state.status_message = "Press any key combo on your keyboard...".to_string();
+        } else {
+            state.status_message = "Shortcut recording cancelled".to_string();
+        }
+    }
+
+    ui.add_space(14.0);
+    ui.group(|ui| {
+        ui.label("Tips:");
+        ui.label("• Supports combinations: Cmd, Option, Ctrl, Shift + any key.");
+        ui.label("• Function keys F1-F12, navigation keys, and space/enter are supported.");
+        ui.label("• To clear a binding, use the 'Clear Selected' button in the sidebar.");
     });
 }
 
@@ -100,18 +211,6 @@ fn render_base_keys(ui: &mut Ui, state: &mut GuiState) {
             ("/", "slash"),
             ("Space", "space"),
         ],
-        &[
-            ("Ins", "insert"),
-            ("Del", "delete"),
-            ("Home", "home"),
-            ("End", "end"),
-            ("PgUp", "pageup"),
-            ("PgDn", "pagedown"),
-            ("←", "left"),
-            ("↑", "up"),
-            ("↓", "down"),
-            ("→", "right"),
-        ],
     ];
 
     for row in rows {
@@ -124,68 +223,63 @@ fn render_base_keys(ui: &mut Ui, state: &mut GuiState) {
 }
 
 fn render_modifiers(ui: &mut Ui, state: &mut GuiState) {
-    ui.heading("Modifiers & Extended Function Keys");
+    ui.heading("Modifier Combinations");
     ui.separator();
 
     let combos: &[&[(&str, &str)]] = &[
         &[
-            ("Ctrl+", "ctrl"),
-            ("Shift+", "shift"),
-            ("Alt / Opt+", "alt"),
-            ("Cmd / Win+", "cmd"),
-            ("Right Ctrl+", "rctrl"),
-            ("Right Shift+", "rshift"),
-            ("Right Alt+", "ralt"),
-            ("Right Cmd+", "rcmd"),
+            ("Ctrl+C (Copy)", "ctrl+c"),
+            ("Ctrl+V (Paste)", "ctrl+v"),
+            ("Ctrl+X (Cut)", "ctrl+x"),
+            ("Ctrl+Z (Undo)", "ctrl+z"),
         ],
         &[
-            ("Ctrl+Shift+", "ctrl+shift"),
-            ("Ctrl+Alt+", "ctrl+alt"),
-            ("Ctrl+Cmd+", "ctrl+cmd"),
-            ("Alt+Shift+", "alt+shift"),
-            ("Cmd+Shift+", "cmd+shift"),
-            ("Ctrl+Alt+Shift+", "ctrl+alt+shift"),
+            ("Cmd+C (Mac Copy)", "cmd+c"),
+            ("Cmd+V (Mac Paste)", "cmd+v"),
+            ("Cmd+X (Mac Cut)", "cmd+x"),
+            ("Cmd+Z (Mac Undo)", "cmd+z"),
+            ("Cmd+Shift+Z", "cmd+shift+z"),
         ],
         &[
-            ("F13", "f13"),
-            ("F14", "f14"),
-            ("F15", "f15"),
-            ("F16", "f16"),
-            ("F17", "f17"),
-            ("F18", "f18"),
-            ("F19", "f19"),
-            ("F20", "f20"),
-            ("F21", "f21"),
-            ("F22", "f22"),
-            ("F23", "f23"),
-            ("F24", "f24"),
+            ("Ctrl+A (Select All)", "ctrl+a"),
+            ("Cmd+A (Mac Select)", "cmd+a"),
+            ("Cmd+S (Save)", "cmd+s"),
+            ("Cmd+W (Close Tab)", "cmd+w"),
+        ],
+        &[
+            ("Alt+Tab", "alt+tab"),
+            ("Cmd+Tab", "cmd+tab"),
+            ("Ctrl+Shift+Esc", "ctrl+shift+esc"),
         ],
     ];
 
     for row in combos {
         ui.horizontal(|ui| {
             for (label, action) in *row {
-                key_btn(ui, state, label, action);
+                let resp = ui.add_sized([135.0, 32.0], egui::Button::new(*label));
+                if resp.clicked() {
+                    state.set_binding(action);
+                }
             }
         });
     }
 }
 
 fn render_media(ui: &mut Ui, state: &mut GuiState) {
-    ui.heading("Multimedia & Volume Controls");
+    ui.heading("Multimedia Controls");
     ui.separator();
 
     let media: &[&[(&str, &str)]] = &[
         &[
-            ("Volume +", "volumeup"),
-            ("Volume -", "volumedown"),
             ("Mute", "mute"),
+            ("Vol Up", "volumeup"),
+            ("Vol Down", "volumedown"),
             ("Play / Pause", "play"),
-            ("Next Track", "next"),
-            ("Prev Track", "prev"),
-            ("Stop", "stop"),
         ],
         &[
+            ("Prev Track", "prev"),
+            ("Next Track", "next"),
+            ("Stop", "stop"),
             ("Brightness +", "brightnessup"),
             ("Brightness -", "brightnessdown"),
         ],
@@ -194,23 +288,38 @@ fn render_media(ui: &mut Ui, state: &mut GuiState) {
     for row in media {
         ui.horizontal(|ui| {
             for (label, action) in *row {
-                key_btn(ui, state, label, action);
+                let resp = ui.add_sized([115.0, 32.0], egui::Button::new(*label));
+                if resp.clicked() {
+                    state.set_binding(action);
+                }
             }
         });
     }
 }
 
 fn render_led_panel(ui: &mut Ui, state: &mut GuiState) {
-    ui.heading("RGB Lighting Modes");
+    ui.heading("RGB LED Lighting");
     ui.separator();
 
     ui.horizontal(|ui| {
-        ui.label("Lighting Mode:");
-        for mode in 0..=5 {
-            let label = format!("Mode {}", mode);
-            if ui.selectable_label(state.led_mode == mode, label).clicked() {
-                state.led_mode = mode;
-            }
+        ui.label("Mode:");
+        if ui
+            .selectable_label(state.led_mode == 1, "Mode 1 (Backlight)")
+            .clicked()
+        {
+            state.led_mode = 1;
+        }
+        if ui
+            .selectable_label(state.led_mode == 2, "Mode 2 (Breathing)")
+            .clicked()
+        {
+            state.led_mode = 2;
+        }
+        if ui
+            .selectable_label(state.led_mode == 3, "Mode 3 (Shock / Reactive)")
+            .clicked()
+        {
+            state.led_mode = 3;
         }
     });
 
@@ -248,7 +357,10 @@ fn render_mouse(ui: &mut Ui, state: &mut GuiState) {
     for row in mouse {
         ui.horizontal(|ui| {
             for (label, action) in *row {
-                key_btn(ui, state, label, action);
+                let resp = ui.add_sized([105.0, 32.0], egui::Button::new(*label));
+                if resp.clicked() {
+                    state.set_binding(action);
+                }
             }
         });
     }
@@ -258,27 +370,33 @@ fn render_procreate(ui: &mut Ui, state: &mut GuiState) {
     ui.heading("Procreate & Creative Shortcuts");
     ui.separator();
 
-    let shortcuts: &[&[(&str, &str)]] = &[
+    let creative: &[&[(&str, &str)]] = &[
         &[
-            ("Undo", "cmd+z"),
-            ("Redo", "cmd+shift+z"),
-            ("Copy", "cmd+c"),
-            ("Paste", "cmd+v"),
-            ("Cut", "cmd+x"),
+            ("Brush Tool (B)", "b"),
+            ("Eraser Tool (E)", "e"),
+            ("Eyedropper (I)", "i"),
+            ("Selection (S)", "s"),
         ],
         &[
-            ("Brush Tool", "b"),
-            ("Eraser Tool", "e"),
-            ("Brush Size +", "rightbracket"),
-            ("Brush Size -", "leftbracket"),
-            ("Color Picker", "alt"),
+            ("Brush Size - ([)", "leftbracket"),
+            ("Brush Size + (])", "rightbracket"),
+            ("Zoom In (Cmd+=)", "cmd+equal"),
+            ("Zoom Out (Cmd+-)", "cmd+minus"),
+        ],
+        &[
+            ("Undo (Cmd+Z)", "cmd+z"),
+            ("Redo (Cmd+Shift+Z)", "cmd+shift+z"),
+            ("Fit Screen (Cmd+0)", "cmd+0"),
         ],
     ];
 
-    for row in shortcuts {
+    for row in creative {
         ui.horizontal(|ui| {
             for (label, action) in *row {
-                key_btn(ui, state, label, action);
+                let resp = ui.add_sized([130.0, 32.0], egui::Button::new(*label));
+                if resp.clicked() {
+                    state.set_binding(action);
+                }
             }
         });
     }

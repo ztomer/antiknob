@@ -33,6 +33,8 @@ pub enum Selection {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActiveTab {
+    Presets,
+    Recorder,
     BaseKeys,
     Modifiers,
     Media,
@@ -56,6 +58,10 @@ pub struct GuiState {
     pub status_is_ok: bool,
     pub led_mode: u8,
     pub led_color: String,
+    pub is_recording: bool,
+    pub recorded_shortcut: Option<String>,
+    pub active_preset_id: Option<String>,
+    pub profile_path: String,
     tx: Sender<DeviceEvent>,
     rx: Receiver<DeviceEvent>,
 }
@@ -71,11 +77,15 @@ impl GuiState {
                 index: 0,
                 target: KnobTarget::Press,
             },
-            active_tab: ActiveTab::BaseKeys,
+            active_tab: ActiveTab::Presets,
             status_message: "Scanning for Anticater VK01 USB device...".to_string(),
             status_is_ok: true,
             led_mode: 1,
             led_color: "white".to_string(),
+            is_recording: false,
+            recorded_shortcut: None,
+            active_preset_id: Some("media_master".to_string()),
+            profile_path: "config.yaml".to_string(),
             tx,
             rx,
         };
@@ -235,6 +245,31 @@ impl GuiState {
             }
         }
         self.status_message = format!("Cleared all bindings on Layer {}", self.active_layer);
+    }
+
+    pub fn record_key(&mut self, key_str: &str) {
+        self.set_binding(key_str);
+        self.recorded_shortcut = Some(key_str.to_string());
+        self.is_recording = false;
+        self.status_message = format!("Assigned '{}' to selected target", key_str);
+        self.status_is_ok = true;
+    }
+
+    pub fn load_profile(&mut self, path_str: &str) -> Result<()> {
+        let cfg = crate::gui::profiles::load_profile_file(std::path::Path::new(path_str))?;
+        self.config = cfg;
+        self.profile_path = path_str.to_string();
+        self.status_message = format!("Loaded profile from {}", path_str);
+        self.status_is_ok = true;
+        Ok(())
+    }
+
+    pub fn save_profile(&mut self, path_str: &str) -> Result<()> {
+        crate::gui::profiles::save_profile_file(&self.config, std::path::Path::new(path_str))?;
+        self.profile_path = path_str.to_string();
+        self.status_message = format!("Saved profile to {}", path_str);
+        self.status_is_ok = true;
+        Ok(())
     }
 
     pub fn save_to_device(&mut self) -> Result<()> {

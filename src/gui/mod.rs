@@ -1,5 +1,8 @@
 pub mod canvas;
 pub mod palette;
+pub mod presets;
+pub mod profiles;
+pub mod recorder;
 pub mod state;
 pub mod tabs;
 
@@ -10,8 +13,8 @@ use state::GuiState;
 pub fn run() -> Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1180.0, 780.0])
-            .with_min_inner_size([960.0, 640.0])
+            .with_inner_size([1240.0, 820.0])
+            .with_min_inner_size([1020.0, 680.0])
             .with_title("Antiknob - Anticater VK01 Configurator"),
         ..Default::default()
     };
@@ -48,11 +51,35 @@ impl Default for AntiknobApp {
 impl eframe::App for AntiknobApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.state.poll_events();
-        ctx.request_repaint_after(std::time::Duration::from_millis(200));
+        ctx.request_repaint_after(std::time::Duration::from_millis(150));
+
+        // Intercept keystroke when recording shortcut
+        if self.state.is_recording {
+            let mut recorded = None;
+            ctx.input(|i| {
+                for event in &i.events {
+                    if let egui::Event::Key {
+                        key,
+                        pressed: true,
+                        modifiers,
+                        ..
+                    } = event
+                    {
+                        if let Some(formatted) = recorder::format_shortcut(modifiers, *key) {
+                            recorded = Some(formatted);
+                            break;
+                        }
+                    }
+                }
+            });
+            if let Some(key_str) = recorded {
+                self.state.record_key(&key_str);
+            }
+        }
 
         let mut visuals = egui::Visuals::dark();
-        visuals.window_fill = Color32::from_rgb(26, 26, 30);
-        visuals.panel_fill = Color32::from_rgb(24, 24, 28);
+        visuals.window_fill = Color32::from_rgb(24, 24, 28);
+        visuals.panel_fill = Color32::from_rgb(22, 22, 26);
         ctx.set_visuals(visuals);
 
         // 1. Top Panel: Title, Status, Layer Selector
@@ -93,7 +120,7 @@ impl eframe::App for AntiknobApp {
         egui::TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                ui.label("Selected Target:");
+                ui.label("Target:");
                 match self.state.selected {
                     state::Selection::Knob { target, .. } => {
                         ui.strong(format!("Knob [{}]", target.label()));
@@ -108,11 +135,11 @@ impl eframe::App for AntiknobApp {
                     .state
                     .get_binding(self.state.selected)
                     .unwrap_or_else(|| "none".into());
-                ui.label("Current Assignment:");
+                ui.label("Assigned:");
                 ui.colored_label(Color32::from_rgb(0, 180, 255), cur);
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label("Pure Rust • Unprivileged IOHIDManager • macOS arm64");
+                    ui.label("Pure Rust • Zero Sudo • macOS arm64");
                 });
             });
             ui.add_space(6.0);
@@ -120,7 +147,7 @@ impl eframe::App for AntiknobApp {
 
         // 3. Left Sidebar: Category Tabs
         egui::SidePanel::left("tabs_panel")
-            .exact_width(170.0)
+            .exact_width(185.0)
             .show(ctx, |ui| {
                 ui.add_space(10.0);
                 ui.heading("Categories");
@@ -129,7 +156,7 @@ impl eframe::App for AntiknobApp {
                 for (tab, name) in tabs::TABS {
                     let is_selected = self.state.active_tab == *tab;
                     let resp = ui.add_sized(
-                        [155.0, 36.0],
+                        [170.0, 36.0],
                         egui::SelectableLabel::new(is_selected, *name),
                     );
                     if resp.clicked() {
@@ -140,25 +167,50 @@ impl eframe::App for AntiknobApp {
 
         // 4. Right Sidebar: Action Buttons
         egui::SidePanel::right("actions_panel")
-            .exact_width(160.0)
+            .exact_width(170.0)
             .show(ctx, |ui| {
                 ui.add_space(10.0);
                 ui.heading("Actions");
                 ui.separator();
 
                 if ui
-                    .add_sized([140.0, 36.0], egui::Button::new("Clear Selected"))
+                    .add_sized([150.0, 34.0], egui::Button::new("Clear Selected"))
                     .clicked()
                 {
                     self.state.clear_current();
                 }
 
-                ui.add_space(6.0);
+                ui.add_space(4.0);
                 if ui
-                    .add_sized([140.0, 36.0], egui::Button::new("Clear All Keys"))
+                    .add_sized([150.0, 34.0], egui::Button::new("Clear All Keys"))
                     .clicked()
                 {
                     self.state.clear_all_on_layer();
+                }
+
+                ui.add_space(10.0);
+                ui.separator();
+                ui.add_space(10.0);
+
+                ui.label("Profile Sync:");
+                if ui
+                    .add_sized([150.0, 30.0], egui::Button::new("Export YAML"))
+                    .clicked()
+                {
+                    if let Err(e) = self.state.save_profile("config.yaml") {
+                        self.state.status_message = format!("Export error: {}", e);
+                        self.state.status_is_ok = false;
+                    }
+                }
+                ui.add_space(4.0);
+                if ui
+                    .add_sized([150.0, 30.0], egui::Button::new("Import YAML"))
+                    .clicked()
+                {
+                    if let Err(e) = self.state.load_profile("config.yaml") {
+                        self.state.status_message = format!("Import error: {}", e);
+                        self.state.status_is_ok = false;
+                    }
                 }
 
                 ui.add_space(14.0);
@@ -169,7 +221,7 @@ impl eframe::App for AntiknobApp {
                     .fill(Color32::from_rgb(0, 120, 215))
                     .stroke(Stroke::new(1.0_f32, Color32::from_rgb(0, 160, 255)));
 
-                if ui.add_sized([140.0, 48.0], save_btn).clicked() {
+                if ui.add_sized([150.0, 48.0], save_btn).clicked() {
                     if let Err(e) = self.state.save_to_device() {
                         self.state.status_message = format!("Flash failed: {}", e);
                         self.state.status_is_ok = false;
@@ -180,14 +232,14 @@ impl eframe::App for AntiknobApp {
         // 5. Central Panel: Hardware Canvas (Top) & Key Palette (Bottom)
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::Frame::none()
-                .fill(Color32::from_rgb(20, 20, 24))
-                .rounding(Rounding::same(8.0))
+                .fill(Color32::from_rgb(18, 18, 22))
+                .rounding(Rounding::same(10.0))
                 .inner_margin(Margin::same(12.0))
                 .show(ui, |ui| {
                     canvas::render_canvas(ui, &mut self.state);
                 });
 
-            ui.add_space(12.0);
+            ui.add_space(10.0);
 
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])

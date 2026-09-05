@@ -62,9 +62,9 @@ impl Action {
             return Ok(Action::Media(code));
         }
 
-        // 4. Keyboard keys with modifiers (e.g., "cmd-c", "ctrl-alt-del", "a", "f5")
+        // 4. Keyboard keys with modifiers (e.g., "cmd+c", "ctrl-alt-del", "a", "f5")
         let mut modifiers = 0u8;
-        let parts: Vec<&str> = s.split('-').collect();
+        let parts: Vec<&str> = s.split(['+', '-']).collect();
 
         for part in &parts[..parts.len() - 1] {
             match part.to_ascii_lowercase().as_str() {
@@ -155,7 +155,7 @@ pub fn build_led_packet(layer: u8, mode: &str) -> Result<Vec<u8>> {
         "off" => {
             packet[4] = 0;
         }
-        "backlight" | "steady" => {
+        "backlight" | "steady" | "mode1" => {
             let color = parts.get(1).copied().unwrap_or("white");
             let (r, g, b) = parse_color(color)?;
             packet[4] = 1;
@@ -163,7 +163,7 @@ pub fn build_led_packet(layer: u8, mode: &str) -> Result<Vec<u8>> {
             packet[6] = g;
             packet[7] = b;
         }
-        "shock" | "reactive" => {
+        "shock" | "reactive" | "mode2" => {
             let color = parts.get(1).copied().unwrap_or("red");
             let (r, g, b) = parse_color(color)?;
             packet[4] = 2;
@@ -171,7 +171,7 @@ pub fn build_led_packet(layer: u8, mode: &str) -> Result<Vec<u8>> {
             packet[6] = g;
             packet[7] = b;
         }
-        "shock2" | "ripple" => {
+        "shock2" | "ripple" | "mode3" => {
             let color = parts.get(1).copied().unwrap_or("blue");
             let (r, g, b) = parse_color(color)?;
             packet[4] = 3;
@@ -179,7 +179,7 @@ pub fn build_led_packet(layer: u8, mode: &str) -> Result<Vec<u8>> {
             packet[6] = g;
             packet[7] = b;
         }
-        "press" => {
+        "press" | "mode4" => {
             let color = parts.get(1).copied().unwrap_or("green");
             let (r, g, b) = parse_color(color)?;
             packet[4] = 4;
@@ -187,7 +187,7 @@ pub fn build_led_packet(layer: u8, mode: &str) -> Result<Vec<u8>> {
             packet[6] = g;
             packet[7] = b;
         }
-        other => return Err(anyhow!("Unknown LED mode '{}'. Available: off, backlight <color>, shock <color>, shock2 <color>, press <color>", other)),
+        other => return Err(anyhow!("Unknown LED mode '{}'. Available: off, backlight <color>, shock <color>, shock2 <color>, press <color>, mode1..mode4", other)),
     }
 
     Ok(packet)

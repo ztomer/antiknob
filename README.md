@@ -6,14 +6,13 @@ This document details the reverse-engineering and architecture analysis of `/App
 
 ## 1. Executive Summary
 
-* **Current Operational Status**: **Functional today on Apple Silicon via Rosetta 2.**  
-  No changes are strictly required to run `/Applications/ANTICATER.app` on Apple Silicon macOS right now. Although the application bundle is an `x86_64` thin binary, macOS transparently translates and runs it via Rosetta 2 ahead-of-time (AOT) and JIT translation. The binary is signed with an Apple Developer ID, uses Hardened Runtime, is notarized, and passes macOS Gatekeeper.
-* **Native ARM64 Status**: **Not natively supported by vendor.**  
-  The bundled binary and all its associated Qt 5.12 dynamic libraries and plugins are strictly `x86_64`.
-* **Porting Feasibility**:
-  * **Without Source Code**: You **cannot** convert the precompiled `x86_64` Mach-O binary and dynamic libraries into native `arm64` machine code. Binary translation at runtime is already what Rosetta 2 does.
-  * **With Source Code (Vendor Path)**: Porting requires upgrading Qt from 5.12 to 5.15 (with Apple Silicon backport) or Qt 6.2+, recompiling `libhidapi` for `arm64`, configuring a Universal 2 build target (`arm64 x86_64`), and repackaging via `macdeployqt`.
-  * **Alternative (Clean-room Native Tool)**: Because the app communicates over standard USB HID (`libhidapi`) using known Vendor/Product IDs (`0x1189` / `0x8840`), a lightweight native ARM64 tool (Python script using `hidapi` or a WebHID browser configurator) can be developed to configure key mappings, layers, RGB lighting, and knob parameters natively without Rosetta.
+* **Current Operational Status**: **Functional today on Apple Silicon via Rosetta 2, BUT deprecated this month.**  
+  While `/Applications/ANTICATER.app` currently launches on macOS via Rosetta 2, **Rosetta 2 is being removed in macOS 27 (September 2026)**. Because the vendor bundle is strictly an `x86_64` thin binary, it will permanently fail to execute once macOS 27 is installed. A native ARM64 solution is urgent and mandatory.
+* **Native Solution Identified ([`ch57x-keyboard-tool`](https://github.com/kriomant/ch57x-keyboard-tool))**:  
+  An open-source Rust implementation already exists and explicitly supports the CH57x USB protocol for model `1189:8840` / `1189:8842` (the exact VID/PID of the Anticater VK01 Knob). There is no need to write a protocol layer from scratch.
+* **No Qt Requirement**:  
+  Qt 5.12 was purely the vendor's GUI framework. Qt is not a binding requirement. We can utilize `ch57x-keyboard-tool` directly as a native `aarch64` CLI tool driven by declarative YAML configuration files.
+* **Full Plan**: See [PLAN.md](PLAN.md) and [`implementation_plan.md`](file:///Users/ztomer/.gemini/antigravity/brain/d29140a2-39b9-40cc-8217-bc0487535c5d/implementation_plan.md) for the native implementation steps.
 
 ---
 

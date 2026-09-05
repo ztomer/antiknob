@@ -1,0 +1,14 @@
+[package]
+name = "antiknob"
+version = "0.1.0"
+edition = "2021"
+authors = ["Tomer Zaidentein <ztomer@gmail.com>"]
+description = "Native macOS Apple Silicon configuration utility for the Anticater VK01 Knob"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+hidapi = "2.6"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+clap = { version = "4.5", features = ["derive"] }
+anyhow = "1.0"

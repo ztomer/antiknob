@@ -1,189 +1,133 @@
-# Antiknob / ANTICATER Porting & Architecture Findings
+# Antiknob
 
-This document details the reverse-engineering and architecture analysis of `/Applications/ANTICATER.app` (the configuration utility for the Anticater VK01 Knob mechanical keyboard) and outlines the feasibility and requirements for porting it natively to Apple Silicon (ARM64).
+A native macOS Apple Silicon (`arm64`) configurator for the **Anticater VK01 Knob** mechanical keyboard.
 
----
-
-## 1. Executive Summary
-
-* **Current Operational Status**: **Functional today on Apple Silicon via Rosetta 2, BUT deprecated this month.**  
-  While `/Applications/ANTICATER.app` currently launches on macOS via Rosetta 2, **Rosetta 2 is being removed in macOS 27 (September 2026)**. Because the vendor bundle is strictly an `x86_64` thin binary, it will permanently fail to execute once macOS 27 is installed. A native ARM64 solution is urgent and mandatory.
-* **Native Solution Identified ([`ch57x-keyboard-tool`](https://github.com/kriomant/ch57x-keyboard-tool))**:  
-  An open-source Rust implementation already exists and explicitly supports the CH57x USB protocol for model `1189:8840` / `1189:8842` (the exact VID/PID of the Anticater VK01 Knob). There is no need to write a protocol layer from scratch.
-* **No Qt Requirement**:  
-  Qt 5.12 was purely the vendor's GUI framework. Qt is not a binding requirement. We can utilize `ch57x-keyboard-tool` directly as a native `aarch64` CLI tool driven by declarative YAML configuration files.
-* **Full Plan**: See [PLAN.md](PLAN.md) and [`implementation_plan.md`](file:///Users/ztomer/.gemini/antigravity/brain/d29140a2-39b9-40cc-8217-bc0487535c5d/implementation_plan.md) for the native implementation steps.
+Antiknob is written in 100% pure Rust, permissively licensed (**MIT OR Apache-2.0**), fully commercializable with zero copyleft/dual-license traps, and operates completely unprivileged (**no `sudo` required**) via Apple's native `IOHIDManager`.
 
 ---
 
-## 2. Application Architecture & Inspection Details
+## Features
 
-### 2.1 Bundle & Execution Info
-* **App Path**: `/Applications/ANTICATER.app`
-* **Original Package**: `/Users/ztomer/drive/dotfiles/devices/anticater_vk01_knob_mac_en.zip` -> `mac.EN/Mac.pkg`
-* **Bundle Identifier**: `COM.LQKJ.KEYBOARD.ANTICATER`
-* **Executable**: `Contents/MacOS/ANTICATER` (Mach-O 64-bit executable `x86_64`)
-* **Code Signing**:
-  * Authority: `Developer ID Application: dehui li (4Z759TG5T3)`
-  * Team ID: `4Z759TG5T3`
-  * Hardened Runtime: Enabled (`Runtime Version=15.2.0`)
-  * Gatekeeper: Accepted (`spctl -a -vv` passes)
-
-### 2.2 Frameworks and Dependencies
-The application was built using **Qt 5.12.9** and **libhidapi 0.12.0**:
-* **Bundled Frameworks** (`Contents/Frameworks/`):
-  * `QtCore.framework` (5.12.9, `x86_64`)
-  * `QtGui.framework` (5.12.9, `x86_64`)
-  * `QtWidgets.framework` (5.12.9, `x86_64`)
-  * `QtNetwork.framework`, `QtSvg.framework`, `QtQml.framework`, `QtQuick.framework`, `QtVirtualKeyboard.framework`, `QtDBus.framework`, `QtPrintSupport.framework`
-  * `libhidapi.0.12.0.dylib` (symlinked as `libhidapi.0.dylib`)
-* **Bundled Plugins** (`Contents/PlugIns/`):
-  * `platforms/libqcocoa.dylib` (`x86_64`)
-  * Image formats, virtual keyboard, styles, etc.
-* **System Frameworks Linked**:
-  * `IOKit.framework`, `DiskArbitration.framework`, `OpenGL.framework`, `AGL.framework`, `libc++.1.dylib`, `libSystem.B.dylib`
-
-### 2.3 Hardware Identifiers Extracted from Binary
-Analysis of the `__DATA` segment and symbol table revealed the USB HID identifiers and memory structures used by the application:
-* **Vendor ID (`_VID`)**: `0x1189`
-* **Primary Product ID (`_PID`)**: `0x8840`
-* **Supported Product ID Group (`_PID_GRU`)**:
-  * `0x8842`
-  * `0x8840`
-  * `0x8830`
-  * `0x8831`
-  * `0x8832`
-  * `0x8833`
-  * `0x8850`
-  * `0x8851`
-* **Firmware/Protocol Version Info (`_KD_Ver_Infor`)**: `0x0002`
-
-### 2.4 Internal Symbols & State Structures
-Extracted global variables and methods in `ANTICATER`:
-* **Key Configuration**:
-  * `_Cur_KeyBoard_KeyNum`
-  * `_PHY_KEY_Value` / `_PHY2_KEY_Value`
-  * `_Select_PHY_Key` / `_Select_PHY_Key_Layer` / `_Select_PHY_Key_Mode`
-  * `_KeyVale_ModifyFlag`
-  * `Widget::InitBasicEn()`
-  * `Widget::SetBasicKey(int)`
-* **RGB LED Controls**:
-  * `_RGB_LED_Md`
-  * `_RgbLED_Change_Flag`
-  * `_KeyBoard_KeyLed`
-* **Knob Parameters**:
-  * `_KN1_Height`, `_KN2_Height`, `_KN3_Height`, `_KN4_Height`
-* **HID Communication Functions**:
-  * Calls standard HIDAPI primitives (`hid_init`, `hid_open`, `hid_read_timeout`, `hid_write`, `hid_close`).
+* **Apple Silicon Native (`arm64`)**: Fully prepared for macOS 27+ (with zero reliance on Rosetta 2).
+* **Unprivileged USB HID (`no sudo`)**: Targets the dedicated vendor usage page (`0xFF00`), avoiding macOS kernel driver collisions and running cleanly as a regular user.
+* **100% Permissive Open Source**: Dual-licensed under MIT OR Apache-2.0 with an audited dependency tree (0% copyleft/GPL/AGPL/LGPL).
+* **Declarative YAML Mapping**: Easily configure buttons, knobs, and multiple layers in simple YAML files.
+* **Multi-Action Knob Support**: Program clockwise rotation (`cw`), counter-clockwise rotation (`ccw`), and center press (`press`).
+* **RGB LED Management**: Control backlighting, reactive shock effects, keypress lighting, and colors.
 
 ---
 
-## 3. Requirements for Porting to ARM64
+## Hardware Support
 
-### Option A: Official / Source-Based Port (Vendor Path)
-To compile a native `arm64` or Universal 2 binary from source code:
-1. **Upgrade Qt**:
-   * Qt 5.12.9 does not have Apple Silicon support (Qt was first compiled for Apple Silicon in Qt 5.15 commercial patches and fully in Qt 6.2+).
-   * Upgrade the project configuration (`anticater.pro` / CMake) to build against Qt 5.15.x (arm64) or Qt 6.
-2. **Build Dependencies for ARM64**:
-   * Build `hidapi` (`libhidapi.dylib`) for `arm64` or create a universal binary via `lipo`:
-     ```bash
-     lipo -create -output libhidapi.dylib libhidapi_x86_64.dylib libhidapi_arm64.dylib
-     ```
-3. **Configure Multi-Arch Build**:
-   * In `qmake`:
-     ```qmake
-     QMAKE_APPLE_DEVICE_ARCHS = arm64 x86_64
-     ```
-   * Or in CMake:
-     ```cmake
-     set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
-     ```
-4. **Bundle & Sign**:
-   * Run the ARM-native `macdeployqt` to copy arm64 Qt frameworks and plugins into the `.app` bundle.
-   * Sign and notarize with Apple Developer ID.
-
-### Option B: Binary Conversion Without Source Code (Not Viable)
-* Static re-translation of a complex C++ GUI application linking against dynamic C++ frameworks, Objective-C cocoa runtime hooks, and plugins is technically intractable.
-* Rosetta 2 already serves as Apple's runtime binary translator. Until Apple removes Rosetta 2 from macOS, running the existing binary under Rosetta 2 is the intended way to run x86_64 software on Apple Silicon.
-
-### Option C: Clean-Room Native ARM64 Driver / Configurator
-If the goal is to have an open-source, native Apple Silicon solution that does not rely on Rosetta or vendor binaries:
-1. The hardware uses standard USB HID commands via `libhidapi` (VID: `0x1189`, PID: `0x8840`).
-2. A lightweight Python CLI / GUI tool (using `hidapi`) or a browser WebHID app can directly send and receive feature reports.
-3. USB packets can be captured and mapped using Wireshark (with USBPcap or macOS `xpcproxy`/PacketLogger) while interacting with the official ANTICATER app under Rosetta.
+Tested and verified with the following hardware:
+* **Vendor ID**: `0x514C` (LQKJ) / `0x1189` (CH57x)
+* **Product ID**: `0x8850`, `0x8840`, `0x8842`, `0x8851`, `0x8890`
+* **Report Interface**: Report ID `0x03`, 64-byte payload.
 
 ---
 
-## 4. USB HID Quick-Start / Device Enumeration Script
+## Installation & Build
 
-Below is a minimal, native Python 3 script using `hidapi` to detect the Anticater device natively on Apple Silicon without Rosetta:
-
-```python
-#!/usr/bin/env python3
-"""
-Anticater VK01 USB HID Device Enumeration Script
-"""
-import hid
-
-VENDOR_ID = 0x1189
-PRODUCT_IDS = [0x8840, 0x8842, 0x8830, 0x8831, 0x8832, 0x8833, 0x8850, 0x8851]
-
-def print_info(message):
-    print(f"[ ==> ] {message}")
-
-def print_wrn(message):
-    print(f"[ Wrn ] {message}")
-
-def print_err(message):
-    print(f"[ Err ] {message}")
-
-def print_ok(message):
-    print(f"[ Ok  ] {message}")
-
-def find_anticater():
-    print_info("Enumerating USB HID devices for Anticater hardware...")
-    devices = hid.enumerate(VENDOR_ID)
-    found = []
-    for d in devices:
-        if d['product_id'] in PRODUCT_IDS:
-            found.append(d)
-            print_ok(f"Found Anticater device: PID=0x{d['product_id']:04x}, Path={d['path']}, Product={d.get('product_string', '')}")
-    if not found:
-        print_wrn("No Anticater devices found. Ensure the device is connected.")
-    return found
-
-if __name__ == "__main__":
-    find_anticater()
-```
-
----
-
-## 5. Native ARM64 CLI Tool (`antiknob.sh`)
-
-The repository includes a pre-compiled native ARM64 tool (`bin/ch57x-keyboard-tool`) and an orchestration script [`antiknob.sh`](file:///Users/ztomer/Projects/antiknob/antiknob.sh) that manages your Anticater VK01 Knob without any Rosetta or Qt dependencies.
-
-### 5.1 Basic Commands
+Requires Rust toolchain (`cargo`):
 
 ```bash
-# Display binary architecture and system info
-./antiknob.sh info
+cd ~/Projects/antiknob
+cargo build --release
+cargo install --path . --root .
+```
 
-# Validate configuration file syntax
+The native binary is installed to `bin/antiknob`.
+
+---
+
+## Usage
+
+You can use either `./bin/antiknob` or the convenience wrapper `./antiknob.sh`:
+
+### 1. Check Connected Device Status (No Sudo)
+```bash
+./antiknob.sh status
+```
+
+Example Output:
+```text
+[ ==> ] Scanning for Anticater / CH57x USB devices...
+[ Ok  ] Found: Anticater / LQKJ VK01 (0x514c:0x8850) (VID: 0x514c, PID: 0x8850, UsagePage: 0xff00)
+        Serial Number: EB60121120051103
+[ Ok  ] Unprivileged access verified: Device can be configured WITHOUT sudo!
+```
+
+### 2. Validate Configuration File
+```bash
 ./antiknob.sh validate config.yaml
 ./antiknob.sh validate config_knob_only.yaml
+```
 
-# Flash configuration to keyboard over USB (requires cable connection)
-sudo ./antiknob.sh upload config.yaml
+### 3. Flash Keymap to Keyboard Over USB (No Sudo)
+```bash
+./antiknob.sh upload config.yaml
+```
 
-# Configure RGB LED mode (Layer 0, white backlight)
-sudo ./antiknob.sh led 0 backlight white
+### 4. Adjust RGB LED Lighting
+```bash
+# Set layer 0 to white steady backlight
+./antiknob.sh led 0 backlight white
 
-# List all available key names, media codes, and modifiers
+# Set layer 0 to blue reactive shock effect
+./antiknob.sh led 0 shock blue
+
+# Turn off LEDs
+./antiknob.sh led 0 off
+```
+
+### 5. View Supported Keycodes
+```bash
 ./antiknob.sh show-keys
 ```
 
-### 5.2 Provided Configuration Templates
-* [`config.yaml`](file:///Users/ztomer/Projects/antiknob/config.yaml): 1 knob + 3 buttons across 3 layers (Media, Productivity, Window/Zoom).
-* [`config_knob_only.yaml`](file:///Users/ztomer/Projects/antiknob/config_knob_only.yaml): Pure single-knob layout without extra buttons across 3 layers (Volume, Scroll, Zoom).
+---
 
+## Configuration Example (`config.yaml`)
+
+```yaml
+model: ch57x-1
+orientation: normal
+rows: 1
+columns: 3
+knobs: 1
+
+layers:
+  # Layer 0: Media & Audio Controls
+  - buttons:
+      - ["play", "prev", "next"]
+    knobs:
+      - ccw: "volumedown"
+        press: "mute"
+        cw: "volumeup"
+
+  # Layer 1: Navigation & Productivity Shortcuts
+  - buttons:
+      - ["cmd-c", "cmd-v", "cmd-z"]
+    knobs:
+      - ccw: "wheelup"
+        press: "click"
+        cw: "wheeldown"
+
+  # Layer 2: Workspace & Zoom Controls
+  - buttons:
+      - ["ctrl-left", "ctrl-up", "ctrl-right"]
+    knobs:
+      - ccw: "cmd-minus"
+        press: "cmd-0"
+        cw: "cmd-equal"
+```
+
+---
+
+## License & Commercialization
+
+Antiknob is dual-licensed under either:
+* **MIT License** ([LICENSE-MIT](LICENSE-MIT))
+* **Apache License, Version 2.0** ([LICENSE-APACHE](LICENSE-APACHE))
+
+at your option. All crate dependencies are exclusively permissive (MIT / Apache-2.0 / BSD) with zero copyleft licenses.

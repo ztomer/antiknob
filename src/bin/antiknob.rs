@@ -80,6 +80,13 @@ enum Commands {
 
     /// List installed apps (names + bundle IDs) for launch/quit actions
     ListApps,
+
+    /// Dump the device slot table (read-only diagnostic for reverse engineering)
+    ReadSlots {
+        /// Scan all groups 0x00-0x2F instead of just the vendor-observed ones
+        #[arg(long)]
+        wide: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -211,6 +218,7 @@ fn main() -> Result<()> {
                 }
             }
 
+            device::send_commit(&dev)?;
             println!("[ Ok  ] Configuration successfully written to Anticater VK01!");
         }
 
@@ -366,6 +374,45 @@ fn main() -> Result<()> {
                 "[ Ok  ] {} app(s). Use bundle IDs in launchApp/quitApp actions.",
                 found.len()
             );
+        }
+
+        Commands::ReadSlots { wide } => {
+            println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
+            let dev = device::open_device()?;
+            let groups: Vec<u8> = if wide {
+                (0x00u8..=0xFFu8).collect()
+            } else {
+                vec![0x0F, 0x19]
+            };
+            println!(
+                "[ ==> ] Reading slot table ({} groups, counters 1-3)...",
+                groups.len()
+            );
+            for group in groups {
+                for counter in 1u8..=3 {
+                    match device::read_slot(&dev, group, counter) {
+                        Ok(bytes) => {
+                            let hex: Vec<String> =
+                                bytes.iter().map(|b| format!("{:02x}", b)).collect();
+                            println!(
+                                "        group=0x{:02x} counter={} ({}B): {}",
+                                group,
+                                counter,
+                                bytes.len(),
+                                hex.join(" ")
+                            );
+                        }
+                        Err(e) => {
+                            println!(
+                                "        group=0x{:02x} counter={}: READ FAILED: {}",
+                                group, counter, e
+                            );
+                        }
+                    }
+                    sleep(Duration::from_millis(50));
+                }
+            }
+            println!("[ Ok  ] Slot dump complete (device state unchanged).");
         }
     }
 

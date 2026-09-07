@@ -55,8 +55,9 @@ pub fn binding_packets(layers: &[u8]) -> Result<Vec<Vec<u8>>> {
         .collect()
 }
 
-/// Flash the plan to the device with inter-packet pacing. Main thread only
-/// (same IOHIDManager thread-affinity contract as `crate::device`).
+/// Flash the plan to the device with inter-packet pacing, then commit.
+/// Main thread only (same IOHIDManager thread-affinity contract as
+/// `crate::device`).
 pub fn flash_slot_bindings(dev: &HidDevice, layers: &[u8]) -> Result<usize> {
     let mut sent = 0;
     for packet in binding_packets(layers)? {
@@ -64,6 +65,7 @@ pub fn flash_slot_bindings(dev: &HidDevice, layers: &[u8]) -> Result<usize> {
         sent += 1;
         std::thread::sleep(std::time::Duration::from_millis(15));
     }
+    crate::device::send_commit(dev)?;
     Ok(sent)
 }
 

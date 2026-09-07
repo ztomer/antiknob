@@ -105,3 +105,37 @@ pub fn send_report(dev: &HidDevice, payload: &[u8]) -> Result<()> {
         .context("Failed to write HID report to device")?;
     Ok(())
 }
+
+/// Slot-table read query, reverse-engineered from the vendor app's
+/// `Widget::read_Hidkey_Data`: write `[FA group 00 counter]` (report 0x03)
+/// and read back the 64-byte slot dump. Read-only; changes no device state.
+/// `group` selects the slot bank (`0x0F` / `0x19` observed), `counter`
+/// walks entries 1..=3 within the bank.
+pub fn read_slot(dev: &HidDevice, group: u8, counter: u8) -> Result<Vec<u8>> {
+    let mut payload = [0u8; 64];
+    payload[0] = 0xFA;
+    payload[1] = group;
+    payload[2] = 0x00;
+    payload[3] = counter;
+    send_report(dev, &payload)?;
+
+    let mut buf = [0u8; 64];
+    let n = dev
+        .read_timeout(&mut buf, 500)
+        .context("Timed out reading slot dump from device")?;
+    Ok(buf[..n].to_vec())
+}
+
+/// Commit staged key writes, mirroring the vendor app's `HID_write`
+/// tail (`[FD FE FF]` + sleep): without it the firmware may ignore
+/// flashed packets. Call once after a batch of key writes, never for
+/// LED-only updates (uncharted; LED path untouched).
+pub fn send_commit(dev: &HidDevice) -> Result<()> {
+    let mut payload = [0u8; 64];
+    payload[0] = 0xFD;
+    payload[1] = 0xFE;
+    payload[2] = 0xFF;
+    send_report(dev, &payload)?;
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    Ok(())
+}

@@ -296,6 +296,39 @@ layers: []
         assert_eq!(cfg.button_count(), 3);
     }
 
+    /// The layer LEDs are the user's way of telling layers apart at a
+    /// glance, so the starter has to actually carry them -- and carry the
+    /// colours asked for, not whatever survived an edit.
+    #[test]
+    fn the_starter_layout_gives_the_first_two_layers_their_colours() {
+        let cfg: DeviceConfig = serde_yaml::from_str(STARTER_CONFIG).expect("starter parses");
+        assert_eq!(cfg.layers[0].led.as_deref(), Some("backlight red"));
+        assert_eq!(cfg.layers[1].led.as_deref(), Some("backlight green"));
+
+        // And they render to the packets the device expects: mode 1, then
+        // the RGB triple.
+        let red = crate::protocol::build_led_packet(0, cfg.layers[0].led.as_ref().unwrap())
+            .expect("red packet");
+        assert_eq!(&red[2..8], &[0xB0, 0x00, 0x01, 255, 0, 0]);
+        let green = crate::protocol::build_led_packet(1, cfg.layers[1].led.as_ref().unwrap())
+            .expect("green packet");
+        assert_eq!(&green[2..8], &[0xB0, 0x01, 0x01, 0, 255, 0]);
+    }
+
+    /// The third layer is deliberately UNSET. The request was a
+    /// multicoloured breathe, and this firmware's mapped modes are
+    /// off/backlight/shock/shock2/press -- none of them a breathe. Writing
+    /// a steady colour here and calling it done would be the same defect as
+    /// a flash reporting success it never earned.
+    #[test]
+    fn the_third_layer_has_no_led_until_a_breathing_mode_is_identified() {
+        let cfg: DeviceConfig = serde_yaml::from_str(STARTER_CONFIG).expect("starter parses");
+        assert_eq!(
+            cfg.layers[2].led, None,
+            "layer 3's LED must stay unset until `led-probe` finds a breathe"
+        );
+    }
+
     #[test]
     fn the_button_count_comes_from_the_declared_grid() {
         // VK01: one row of three keys.

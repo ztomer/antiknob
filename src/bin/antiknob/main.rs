@@ -129,6 +129,20 @@ enum Commands {
         wide: bool,
     },
 
+    /// Walk every LED mode on one layer so an unmapped one can be identified
+    /// by eye (which mode, if any, is a breathe)
+    LedProbe {
+        /// Device layer to cycle. Its LED is restored afterwards.
+        #[arg(default_value = "0")]
+        layer: u8,
+        /// Seconds to hold each mode
+        #[arg(long, default_value = "3")]
+        dwell_secs: u64,
+        /// Colour to use for the modes that take one
+        #[arg(long, default_value = "red")]
+        color: String,
+    },
+
     /// Send a raw payload (hex bytes, report 0x03 prepended) for RE work
     Raw {
         /// Hex bytes, e.g. FC FC 02 00
@@ -174,6 +188,11 @@ fn main() -> Result<()> {
         Commands::ReadSlots { config, wide } => {
             diag::run_read_slots(cmds::layout_slots_per_layer(config)?, wide)?
         }
+        Commands::LedProbe {
+            layer,
+            dwell_secs,
+            color,
+        } => diag::run_led_probe(layer, dwell_secs, &color)?,
         Commands::Raw { bytes } => diag::run_raw(bytes)?,
         Commands::Mcp { config } => {
             let config_path = match config {

@@ -7,7 +7,7 @@
 
 use antiknob::device;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -146,6 +146,72 @@ pub fn run_raw(bytes: Vec<String>) -> Result<()> {
     println!("[ Ok  ] Raw {}-byte payload sent.", sent);
     Ok(())
 }
+
+/// Walk every LED mode on one layer, holding each long enough to see it.
+///
+/// The request was a breathing colour per layer, and nothing in the mapped
+/// mode table is known to breathe -- `led_mode_name` even reports a mode 5
+/// ("custom") that no name here produces. Rather than pick a mode and hope,
+/// this shows each one in turn and says what the device reads back, so the
+/// answer comes from looking at the knob.
+///
+/// The layer's original mode is restored at the end, including when a mode
+/// fails to apply: a diagnostic that leaves the hardware changed is a
+/// diagnostic nobody runs twice.
+pub fn run_led_probe(layer: u8, dwell_secs: u64, color: &str) -> Result<()> {
+    use antiknob::protocol::LED_MODE_NAMES;
+
+    let before = device::with_device(move |dev| device::read_led_mode(dev, layer))
+        .context("cannot read the layer's current LED mode; refusing to change it")?;
+    println!(
+        "[ ==> ] Layer {} is on mode {} now; it will be restored at the end.",
+        layer, before
+    );
+    println!("        Watch the knob. Report which mode, if any, BREATHES.");
+
+    for (idx, name) in LED_MODE_NAMES.iter().enumerate() {
+        let spec = if *name == "off" {
+            (*name).to_string()
+        } else {
+            format!("{name} {color}")
+        };
+        let packet = match antiknob::protocol::build_led_packet(layer, &spec) {
+            Ok(p) => p,
+            Err(e) => {
+                println!("        mode {idx} ({name}): cannot build packet: {e}");
+                continue;
+            }
+        };
+        let readback = device::with_device(move |dev| {
+            device::send_report(dev, &packet)?;
+            device::send_commit(dev)?;
+            sleep(Duration::from_millis(150));
+            device::read_led_mode(dev, layer)
+        });
+        match readback {
+            Ok(got) => println!("        mode {idx} ({name}) -> device reads back {got}"),
+            Err(e) => println!("        mode {idx} ({name}) -> FAILED: {e}"),
+        }
+        sleep(Duration::from_secs(dwell_secs));
+    }
+
+    let restore = format!("mode{before}");
+    let restored = antiknob::protocol::build_led_packet(layer, &restore).and_then(|p| {
+        device::with_device(move |dev| {
+            device::send_report(dev, &p)?;
+            device::send_commit(dev)
+        })
+    });
+    match restored {
+        Ok(()) => println!("[ Ok  ] Restored layer {layer} to mode {before}."),
+        Err(e) => println!(
+            "[ Wrn ] Could not restore layer {layer} to mode {before}: {e}\n\
+                     Set it by hand with: antiknob led {layer} mode{before}"
+        ),
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

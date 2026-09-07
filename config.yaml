@@ -19,7 +19,13 @@ layers:
   # ----------------------------------------------------------------------------
   # Layer 0: Default Media & Audio Controls
   # ----------------------------------------------------------------------------
-  - buttons:
+  # LED identity per layer, so the active layer is legible without looking
+  # at the menu bar. NOT the requested "breathing": this firmware's mapped
+  # modes are off / backlight / shock / shock2 / press, none of which is a
+  # breathe. `backlight` is steady. `antiknob led-probe` walks the modes so
+  # the real one can be identified -- see PLAN.md item 3.
+  - led: "backlight red"
+    buttons:
       - ["play", "prev", "next"]
     knobs:
       - ccw: "volumedown"
@@ -29,7 +35,8 @@ layers:
   # ----------------------------------------------------------------------------
   # Layer 1: Navigation & Productivity Shortcuts
   # ----------------------------------------------------------------------------
-  - buttons:
+  - led: "backlight green"
+    buttons:
       - ["cmd-c", "cmd-v", "cmd-z"]
     knobs:
       - ccw: "wheelup"

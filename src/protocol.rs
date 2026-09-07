@@ -130,6 +130,15 @@ impl Action {
     }
 }
 
+/// Every LED mode name this build can send, in mode order.
+///
+/// The request was a *breathing* colour per layer and none of these is
+/// known to be one -- the vendor mode table is only partly mapped and
+/// `led_mode_name` reports a mode 5 ("custom") nothing here can produce.
+/// `antiknob led-probe` walks this list against the hardware so the
+/// question can be answered by looking rather than by guessing.
+pub const LED_MODE_NAMES: [&str; 5] = ["off", "backlight", "shock", "shock2", "press"];
+
 pub fn key_id_for_button(button_index: usize) -> u8 {
     (button_index + 1) as u8
 }

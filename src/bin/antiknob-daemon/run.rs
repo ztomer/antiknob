@@ -199,6 +199,28 @@ fn apply_tray_action(
     }
 }
 
+/// Verbose tap diagnostics: every non-movement event, so gestures that
+/// emit wheel, button, or media actions are visible too — not just
+/// keyboard chords. MouseMove is skipped (flood).
+pub(crate) fn log_raw_event(ev: &Event) {
+    match &ev.event_type {
+        EventType::KeyPress(key) => match cg_code(key) {
+            Some(code) => println!("[raw] key down code={}", code),
+            None => println!("[raw] key down {:?}", key),
+        },
+        EventType::KeyRelease(key) => match cg_code(key) {
+            Some(code) => println!("[raw] key up code={}", code),
+            None => println!("[raw] key up {:?}", key),
+        },
+        EventType::ButtonPress(button) => println!("[raw] button press {:?}", button),
+        EventType::ButtonRelease(button) => println!("[raw] button release {:?}", button),
+        EventType::Wheel { delta_x, delta_y } => {
+            println!("[raw] wheel x={} y={}", delta_x, delta_y)
+        }
+        EventType::MouseMove { .. } => {}
+    }
+}
+
 pub(crate) fn run_observe(
     cfg: HostConfig,
     timeout_secs: u64,
@@ -241,6 +263,9 @@ pub(crate) fn run_observe(
         let now_ms = start.elapsed().as_millis() as u64;
         match rx.recv_timeout(tick) {
             Ok(DaemonMsg::Input(ev)) => {
+                if verbose {
+                    log_raw_event(&ev);
+                }
                 let code = match ev.event_type {
                     EventType::KeyPress(key) => cg_code(&key).map(|c| (c, true)),
                     EventType::KeyRelease(key) => cg_code(&key).map(|c| (c, false)),

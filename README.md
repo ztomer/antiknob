@@ -11,7 +11,7 @@ Antiknob is written in 100% pure Rust and native SwiftUI, permissively licensed 
 * **Native macOS SwiftUI Configurator (`Antiknob.app`)**:
   * **System Settings Aesthetic**: Native `.formStyle(.grouped)` layout with Liquid Glass materials and SF Symbols.
   * **System-Managed Tab Bar**: A native `TabView` renders the tab strip into the window titlebar, alongside the traffic lights. One tab per layer, plus Switching, Lighting, Hardware, Inspector and Services.
-  * **Interactive Knob Centerpiece**: Rendered knob header with clickable gesture zones. Hold+Twist is shown but marked unreachable — the firmware has only three knob gestures (CCW, press, CW).
+  * **Interactive Knob Centerpiece**: Rendered knob header with clickable gesture zones (Twist Left/Right, Hold + Twist Left/Right, Press) that highlight and select the corresponding gesture row.
   * **Layer Management**: Each layer's pane carries its name, its position (`Move Left` / `Move Right`, with a `n of m` readout) and a confirmed `Delete Layer`; `+` in the toolbar adds one.
   * **Column Layout**: Property rows, status rows and record lists are laid out on shared column edges (`PropertyGrid` / `StatusRow` / `PropertyRow`), so labels, values, state lights and controls each read down one straight edge instead of ragging against the trailing margin. HID endpoints are a four-column table; state lights sit in their own column right of the text.
   * **System Settings Capsule Chord Recorder**: One-click shortcut capture displaying macOS native glyphs (`⌃`, `⌥`, `⇧`, `⌘`).

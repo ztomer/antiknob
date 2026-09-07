@@ -156,20 +156,9 @@ struct LayerDetail: View {
     /// packed left, so the three read down three straight edges.
     private func gestureRow(_ g: Gesture) -> some View {
         GridRow {
-            // A gesture the firmware cannot produce is dimmed and carries
-            // the reason on hover, rather than sitting alongside the working
-            // ones looking configurable.
-            HStack(spacing: 4) {
-                Text(gestureTitles[g] ?? g.rawValue)
-                if let why = g.unavailableReason {
-                    Image(systemName: "exclamationmark.triangle")
-                        .foregroundStyle(.secondary)
-                        .help(why)
-                }
-            }
-            .foregroundStyle(g.isBindable ? .primary : .secondary)
-            .fixedSize(horizontal: true, vertical: false)
-            .gridColumnAlignment(.leading)
+            Text(gestureTitles[g] ?? g.rawValue)
+                .fixedSize(horizontal: true, vertical: false)
+                .gridColumnAlignment(.leading)
             params(g)
                 .gridColumnAlignment(.leading)
             actionMenu(g)

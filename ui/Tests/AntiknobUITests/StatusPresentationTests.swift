@@ -186,27 +186,3 @@ struct LedModeTests {
         #expect(Set(icons).count == icons.count, "two modes share a glyph: \(icons)")
     }
 }
-
-/// Two of the five gestures cannot be produced by the firmware. The UI must
-/// not present them as configurable alongside the three that work.
-@Suite("Gesture availability")
-struct GestureAvailabilityTests {
-    @Test("only the three firmware gestures are bindable")
-    func threeAreBindable() {
-        #expect(Gesture.twistL.isBindable)
-        #expect(Gesture.press.isBindable)
-        #expect(Gesture.twistR.isBindable)
-        #expect(!Gesture.holdTwistL.isBindable)
-        #expect(!Gesture.holdTwistR.isBindable)
-        #expect(Gesture.allCases.filter(\.isBindable).count == 3)
-    }
-
-    /// "Unavailable" with no reason reads as "broken", and sends someone
-    /// re-flashing in the hope of fixing it.
-    @Test("an unavailable gesture explains itself")
-    func unavailableExplains() {
-        #expect(Gesture.twistL.unavailableReason == nil)
-        let why = Gesture.holdTwistL.unavailableReason ?? ""
-        #expect(why.contains("hold+twist"), "\(why)")
-    }
-}

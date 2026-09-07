@@ -17,12 +17,12 @@ contents/<path>` rather than cloning.
 
 What it settled:
 
-* **The knob has exactly three gestures.** `src/keyboard/mod.rs` defines
-  `KnobAction { RotateCCW, Press, RotateCW }` and nothing else, on any model.
-  Hold+twist does not exist in the firmware -- confirmed independently by
-  probing slots 7/8 on real hardware and seeing neither fire, and by a
-  capture where a hold-and-turn emitted the press binding followed by the
-  rotate binding.
+* **`KnobAction { RotateCCW, Press, RotateCW }` is THIS TOOL's model of the
+  knob, not the firmware's capability.** Reading it as the latter produced
+  the worst wrong claim of this session -- that hold+twist does not exist.
+  It does: the vendor binds all five gestures, at key IDs 2..6 in the `0xFD`
+  command space this project's `k884x` driver does not use. A probe finding
+  nothing in the `0xFE` space was treated as proof of absence.
 * **Our device is in its table**: `(Ch57x_3, 0x514c, 0x8850, 0x04)`.
 * **Key ids are per-model constants there**, e.g. `MAX_NUMBER_OF_BUTTONS + 1
   + 3 * knob + action`, with the constant 12, 15 or 16 depending on model.

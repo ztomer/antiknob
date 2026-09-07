@@ -11,8 +11,6 @@ pub mod engine;
 #[cfg(test)]
 mod engine_virtual_tests;
 pub mod frontmost;
-#[cfg(test)]
-mod gesture_availability_tests;
 pub mod gesture_probe;
 pub mod grants;
 pub mod login_item;
@@ -33,20 +31,16 @@ pub fn default_config_path() -> Result<PathBuf, std::env::VarError> {
     )
 }
 
-/// The knob gestures this daemon can translate.
+/// The five knob gestures, one per bound firmware slot.
 ///
-/// Three of them exist in the firmware. The hold+twist pair does NOT, on any
-/// CH57x device: the protocol's knob vocabulary is exactly RotateCCW, Press
-/// and RotateCW (kriomant/ch57x-keyboard-tool, `KnobAction`), and this
-/// hardware reports a hold-and-turn as a press followed by a rotation -- two
-/// ordinary gestures, not a third kind. Captured from the device: holding
-/// and twisting emits `0x00E2` (the press binding) then `0x00E9` (the
-/// rotate binding), with nothing of its own.
-///
-/// They stay in the enum because host layers written before this was known
-/// carry bindings for them and must keep loading. `Gesture::is_bindable`
-/// says which ones can actually fire, and the UI must not offer the others
-/// as though they could.
+/// All five are real. An earlier version of this file claimed hold+twist did
+/// not exist, from the reference tool's `KnobAction` enum having three
+/// variants and a probe of slots 7/8 firing nothing. Neither was evidence:
+/// the enum is that tool's model of the device, and the probe only ruled out
+/// the slots it tested. Captured from the vendor app driving this hardware,
+/// the five gestures are key IDs 2..6 in the `0xFD` command space -- a
+/// different table from the `0xFE` writes this build uses, which is why
+/// hold+twist was invisible to a probe that never addressed it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Gesture {
     TwistL,
@@ -57,7 +51,7 @@ pub enum Gesture {
 }
 
 impl Gesture {
-    /// Every gesture, including the ones no firmware produces.
+    /// Every gesture, in slot order.
     pub const ALL: [Gesture; 5] = [
         Gesture::TwistL,
         Gesture::Press,
@@ -65,26 +59,6 @@ impl Gesture {
         Gesture::HoldTwistL,
         Gesture::HoldTwistR,
     ];
-
-    /// True when the firmware can actually produce this gesture.
-    ///
-    /// A binding on a gesture that is not bindable is not "not set up yet" --
-    /// it is unreachable, and saying so is the difference between a feature
-    /// and a lie.
-    pub fn is_bindable(self) -> bool {
-        !matches!(self, Gesture::HoldTwistL | Gesture::HoldTwistR)
-    }
-
-    /// Why a gesture cannot fire, for anything that shows it to a user.
-    pub fn unavailable_reason(self) -> Option<&'static str> {
-        if self.is_bindable() {
-            return None;
-        }
-        Some(
-            "the knob's firmware has no hold+twist gesture -- it reports a \
-             hold-and-turn as a press followed by a rotation",
-        )
-    }
 }
 
 /// A recorded keyboard chord: CG keycode plus lowercase modifier names

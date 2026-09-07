@@ -96,17 +96,37 @@ Record shape, request and reply alike (`FE` = write, `FA` = read):
 Groups `0x01..=0x24` x counters 1-3 return the whole table
 (`device::slot_table_addresses`); everything else is silent.
 
-**Hold+twist does not exist.** Settled two ways. The reference project's
-whole knob vocabulary is `KnobAction { RotateCCW, Press, RotateCW }` -- three
-actions, on every model. And `antiknob probe-gestures` wrote distinct markers
-to slots 7 and 8 on real hardware, confirmed both landed, and neither fired
-for any hold-and-turn; what the capture showed instead was the press binding
-followed by the rotate binding. The firmware has no third kind of gesture to
-bind.
+**Hold+twist is real, and this repo said otherwise.** Corrected 2026-09-07
+after capturing the vendor app binding it on this hardware.
 
-`Gesture::HoldTwistL/R` remain in the enum so host configs that carry
-bindings for them keep loading, but `Gesture::is_bindable` reports them
-unreachable and anything showing a gesture to a user must say so.
+The false claim came from two pieces of evidence that looked consistent and
+proved nothing: the reference tool's `KnobAction` enum has three variants
+(that is ITS model of the device, not the firmware's capability), and
+`probe-gestures` wrote markers to slots 7/8 and saw neither fire (which rules
+out those two slots, nothing more). A vendor screenshot showing five gesture
+zones around the knob was on screen at the time and went unread. The claim
+reached code, tests, the GUI, README, REFERENCES and the v0.9.0 tag before
+the user corrected it.
+
+The reason it was invisible: **the vendor uses a different command.** Writes
+go out as `0xFD`, not the `0xFE` this build uses, and the two address
+different tables. Captured with `tools/hidsnoop/` while binding all five knob
+gestures to distinct media codes:
+
+    03 fd <key> <layer> <kind> <n_mods> <n_groups> <3-byte groups...>
+
+    key 2  CCW              key 5  hold+twist left
+    key 3  press            key 6  hold+twist right
+    key 4  CW
+
+Each group is 3 bytes carrying its value in the THIRD byte, and `n_groups`
+says how many -- so **one gesture can run a SEQUENCE of actions**, which the
+`0xFE` path cannot express. The commit is `03 FD FE FF`, which this build
+already sends.
+
+Still to do: implement the `0xFD` writer, bind hold+twist through it, and
+decide whether `0xFE` stays for compatibility. See
+kriomant/ch57x-keyboard-tool#191 and #174, which describe the same variant.
 
 ### 3. Three layers, the third one virtual and daemon-driven
 

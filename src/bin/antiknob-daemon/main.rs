@@ -65,14 +65,6 @@ struct Cli {
     #[arg(long)]
     no_socket: bool,
 
-    /// Exit 0 if the keyboard tap can be created, 2 if it cannot.
-    ///
-    /// TCC keys the Accessibility grant to the binary's PATH, so a fresh
-    /// install needs granting again even though the previous one worked.
-    /// install.sh asks this rather than telling everyone to check.
-    #[arg(long)]
-    check_tap: bool,
-
     /// Install the per-user LaunchAgent (start at login) and load it now
     #[arg(long)]
     install_login_item: bool,
@@ -156,21 +148,6 @@ fn main() -> Result<()> {
             std::sync::Arc::new(std::sync::Mutex::new(antiknob::api::TapHealth::default()));
         let ctx = antiknob::api::ApiContext::with_health(config_path, None, tap_health);
         return antiknob::api::run_mcp_server(ctx);
-    }
-
-    // Before load_or_default: this asks one question about the machine and
-    // must not create a config file as a side effect of being asked.
-    if cli.check_tap {
-        return match keytap::probe() {
-            Ok(()) => {
-                println!("[ Ok  ] Keyboard tap available.");
-                Ok(())
-            }
-            Err(reason) => {
-                println!("[ Wrn ] {}", reason);
-                std::process::exit(2);
-            }
-        };
     }
 
     if cli.uninstall_login_item {

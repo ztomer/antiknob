@@ -105,15 +105,32 @@ echo "        Daemon App: ${DAEMON_BUNDLE} (menu bar, no dock icon)"
 echo "        CLI tool: ${DEST_DIR}/bin/antiknob"
 echo "        Start at login with: ${DEST_DIR}/bin/antiknob-daemon --install-login-item"
 
-# The daemon's keyboard tap needs an Accessibility grant, and TCC keys that to
-# the binary PATH -- so a fresh install, or an install to a new location, needs
-# granting again even though the last one worked. Say so here rather than let
-# it be discovered as "the knob stopped working": flashing and LED still work
-# without it, which makes the failure look partial and confusing.
-if ! "${DEST_DIR}/bin/antiknob-daemon" --check-tap >/dev/null 2>&1; then
-    echo
-    echo "[ --- ] The daemon needs Accessibility to translate knob gestures."
-    echo "        System Settings > Privacy & Security > Accessibility,"
-    echo "        then add: ${DEST_DIR}/bin/antiknob-daemon"
-    echo "        (Hardware flashing and LED control work without it.)"
+# The binary was just replaced under a daemon that is still running the old
+# one, so restart it. Without this the user keeps the previous build until
+# they log out, which makes a fix look like it did not take.
+LOGIN_ITEM="com.antiknob.daemon"
+if launchctl print "gui/$(id -u)/${LOGIN_ITEM}" >/dev/null 2>&1; then
+    echo "[ ==> ] Restarting the login-item daemon on the new binary..."
+    launchctl kickstart -k "gui/$(id -u)/${LOGIN_ITEM}" >/dev/null 2>&1 || true
+    sleep 2
 fi
+
+# Then ASK THE DAEMON whether its keyboard tap came up, rather than testing
+# from this shell. Those are different questions: TCC grants an event tap by
+# the launching context, so a check run from a granted Terminal reports
+# success while the launchd-launched daemon still cannot tap -- silent in
+# exactly the case the warning exists for. The daemon's own status is the
+# only answer that is about the daemon.
+TAP_STATE="$(printf '{"jsonrpc":"2.0","id":1,"method":"get_status","params":{}}\n' \
+    | nc -U /tmp/antiknob.sock 2>/dev/null | head -1 || true)"
+case "${TAP_STATE}" in
+    *'"tap_active":true'*) ;;   # tapping fine, say nothing
+    *)
+        echo
+        echo "[ --- ] The daemon cannot translate knob gestures yet: its keyboard"
+        echo "        tap needs Accessibility. System Settings > Privacy & Security"
+        echo "        > Accessibility, then add:"
+        echo "          ${DEST_DIR}/bin/antiknob-daemon"
+        echo "        (Hardware flashing and LED control work without it.)"
+        ;;
+esac

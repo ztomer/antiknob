@@ -118,6 +118,24 @@ pub fn all_tools() -> Vec<ToolDef> {
             }),
         },
         ToolDef {
+            name: "get_virtual_layer",
+            description: "Report the active layer's variants, which variant's bindings are currently live, and why -- pinned by an override, matched from the frontmost application, or the layer's own bindings because nothing applied.",
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
+        ToolDef {
+            name: "set_virtual_variant",
+            description: "Pin one of the active layer's variants by name, so the knob uses its bindings regardless of which application is in front. Pass null to clear the pin and return to matching on the frontmost application. A name that matches no variant is rejected rather than silently ignored.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "variant": {
+                        "type": ["string", "null"],
+                        "description": "Variant name to pin, or null to clear the pin."
+                    }
+                }
+            }),
+        },
+        ToolDef {
             name: "get_knob_mode",
             description: "Read the knob's firmware slot table and report whether its gestures send host slot chords (host-translate, so host layers run) or ordinary actions (standalone, so host layers cannot fire). Returns 'unknown' when the table says nothing about the knob rather than guessing.",
             input_schema: json!({
@@ -283,6 +301,17 @@ pub enum Command {
         /// default: a wrong count writes bindings nothing reads.
         #[serde(default)]
         buttons: Option<usize>,
+    },
+
+    /// Report the active layer's variants, which one is live, and why.
+    #[serde(rename = "get_virtual_layer")]
+    GetVirtualLayer {},
+
+    /// Pin a variant by name, or clear the pin with `null`.
+    #[serde(rename = "set_virtual_variant")]
+    SetVirtualVariant {
+        #[serde(default)]
+        variant: Option<String>,
     },
 
     /// Read the firmware's slot table and say whether the knob's gestures

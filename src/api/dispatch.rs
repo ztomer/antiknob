@@ -159,6 +159,74 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
             }
         },
 
+        Command::GetVirtualLayer {} => match &ctx.tap_engine {
+            Some(engine) => {
+                let lock = engine.lock().unwrap();
+                let idx = lock.layer_idx();
+                let layer = lock
+                    .config()
+                    .layers
+                    .get(idx)
+                    .ok_or_else(|| anyhow::anyhow!("no layer at index {idx}"))?;
+                let resolution = lock.resolution();
+                Ok(json!({
+                    "layer": layer.name,
+                    "layer_index": idx,
+                    "is_virtual": layer.is_virtual(),
+                    "variants": layer.variants.iter().map(|v| json!({
+                        "name": v.name,
+                        "apps": v.apps,
+                    })).collect::<Vec<_>>(),
+                    "active_variant": resolution.variant_name(),
+                    // The reason matters as much as the answer: "which
+                    // variant" alone leaves the caller guessing whether
+                    // their pin took or an app rule happened to agree.
+                    "resolution": resolution,
+                    "override": lock.variant_override(),
+                }))
+            }
+            None => anyhow::bail!("Daemon tap engine not running; cannot read the virtual layer"),
+        },
+
+        Command::SetVirtualVariant { variant } => match &ctx.tap_engine {
+            Some(engine) => {
+                let mut lock = engine.lock().unwrap();
+                let idx = lock.layer_idx();
+                // A name that matches nothing is refused, not stored. The
+                // resolver would fall back to the layer's own bindings and
+                // the caller would be told "ok" for a pin that never took.
+                if let Some(name) = &variant {
+                    let known: Vec<String> = lock
+                        .config()
+                        .layers
+                        .get(idx)
+                        .map(|l| l.variants.iter().map(|v| v.name.clone()).collect())
+                        .unwrap_or_default();
+                    if !known.iter().any(|k| k == name) {
+                        anyhow::bail!(
+                            "layer {} has no variant named {:?} (has: {})",
+                            idx,
+                            name,
+                            if known.is_empty() {
+                                "none".to_string()
+                            } else {
+                                known.join(", ")
+                            }
+                        );
+                    }
+                }
+                lock.set_variant_override(variant.clone());
+                let resolution = lock.resolution();
+                Ok(json!({
+                    "ok": true,
+                    "override": variant,
+                    "active_variant": resolution.variant_name(),
+                    "resolution": resolution,
+                }))
+            }
+            None => anyhow::bail!("Daemon tap engine not running; cannot pin a variant"),
+        },
+
         Command::SetLed { layer, mode, color } => {
             if mode.len() > 64 {
                 anyhow::bail!("LED mode string exceeds 64 characters");

@@ -52,6 +52,15 @@ pub struct TapEngine {
 }
 
 impl TapEngine {
+    pub fn with_frontmost(
+        cfg: HostConfig,
+        frontmost: std::sync::Arc<dyn crate::host::frontmost::FrontmostApp>,
+    ) -> Self {
+        let mut me = Self::new(cfg.clone());
+        me.engine = Engine::with_frontmost(cfg, frontmost);
+        me
+    }
+
     pub fn new(cfg: HostConfig) -> Self {
         Self {
             engine: Engine::new(cfg),
@@ -77,6 +86,20 @@ impl TapEngine {
     /// Currently held modifiers, sorted. Powers verbose tap logging.
     pub fn held_mods(&self) -> Vec<String> {
         self.mods.iter().cloned().collect()
+    }
+
+    /// Which variant is live on the current layer, and why.
+    pub fn resolution(&self) -> crate::host::virtual_layer::Resolution {
+        self.engine.resolution()
+    }
+
+    /// Pin a variant, or clear the pin and return to app-driven choice.
+    pub fn set_variant_override(&mut self, name: Option<String>) {
+        self.engine.set_variant_override(name);
+    }
+
+    pub fn variant_override(&self) -> Option<&str> {
+        self.engine.variant_override()
     }
 
     pub fn layer_names(&self) -> Vec<String> {

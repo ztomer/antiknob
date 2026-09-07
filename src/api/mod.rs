@@ -4,6 +4,8 @@ pub mod dispatch;
 pub mod mcp;
 pub mod socket;
 pub mod types;
+#[cfg(test)]
+mod virtual_layer_tests;
 
 pub use dispatch::{execute_command, ApiContext, TapHealth};
 pub use mcp::{handle_mcp_request, run_mcp_server};

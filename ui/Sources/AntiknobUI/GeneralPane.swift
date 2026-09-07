@@ -101,48 +101,53 @@ struct GeneralPane: View {
 
     private var systemStatusSection: some View {
         Section("Status & Diagnostics") {
-            LabeledContent("Daemon Socket") {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(store.daemonConnected ? Color.green : Color.orange)
-                        .frame(width: 8, height: 8)
-                    Text(store.daemonConnected ? "Connected (/tmp/antiknob.sock)" : "Offline (Local fallback)")
-                        .foregroundStyle(.secondary)
+            PropertyGrid {
+                PropertyRow(label: "Daemon Socket") {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(store.daemonConnected ? Color.green : Color.orange)
+                            .frame(width: 8, height: 8)
+                        Text(store.daemonConnected
+                             ? "Connected (/tmp/antiknob.sock)"
+                             : "Offline (Local fallback)")
+                    }
                 }
-            }
 
-            LabeledContent("Knob Hardware") {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(store.hardwareConnected ? Color.green : Color.secondary)
-                        .frame(width: 8, height: 8)
-                    Text(store.hardwareProduct)
-                        .foregroundStyle(.secondary)
+                PropertyRow(label: "Knob Hardware") {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(store.hardwareConnected ? Color.green : Color.secondary)
+                            .frame(width: 8, height: 8)
+                        Text(store.hardwareProduct)
+                    }
                 }
-            }
 
-            LabeledContent("Connection Mode") {
-                HStack(spacing: 6) {
-                    Image(systemName: store.transportIcon)
-                        .foregroundStyle(store.hardwareConnected ? store.transportColor : Color.secondary)
-                    Text(store.hardwareConnected ? store.transportDisplay : "Not connected")
-                        .foregroundStyle(.secondary)
+                PropertyRow(label: "Connection Mode") {
+                    HStack(spacing: 6) {
+                        Image(systemName: store.transportIcon)
+                            .foregroundStyle(store.hardwareConnected
+                                             ? store.transportColor : Color.secondary)
+                        Text(store.hardwareConnected
+                             ? store.transportDisplay : "Not connected")
+                    }
                 }
-            }
 
-            LabeledContent("Power & Battery") {
-                HStack(spacing: 6) {
-                    Image(systemName: store.hardwareConnected ? "bolt.fill" : "battery.0")
-                        .foregroundStyle(store.hardwareConnected ? Color.accentColor : Color.secondary)
-                    Text(store.hardwareConnected ? store.powerDescription : "Disconnected")
-                        .foregroundStyle(.secondary)
+                PropertyRow(label: "Power & Battery") {
+                    HStack(spacing: 6) {
+                        // `store.powerIcon`, not a local bolt/battery guess:
+                        // this was the third copy of that mapping in the app.
+                        Image(systemName: store.powerIcon)
+                            .foregroundStyle(store.hardwareConnected
+                                             ? Color.accentColor : Color.secondary)
+                        Text(store.hardwareConnected
+                             ? store.powerDescription : "Disconnected")
+                    }
                 }
-            }
 
-            if let msg = store.statusMessage {
-                LabeledContent("Last Operation") {
-                    Text(msg)
-                        .foregroundStyle(.secondary)
+                if let msg = store.statusMessage {
+                    PropertyRow(label: "Last Operation") {
+                        Text(msg)
+                    }
                 }
             }
 

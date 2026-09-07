@@ -88,6 +88,7 @@ struct HardwarePane: View {
     var body: some View {
         Form {
             deviceInfoSection
+            endpointSection
             slotBindingSection
             standaloneKeymapSection
             auxiliaryButtonsSection
@@ -97,58 +98,71 @@ struct HardwarePane: View {
 
     private var deviceInfoSection: some View {
         Section("Hardware & Transport Details") {
-            LabeledContent("Device Model") {
-                Text(store.hardwareProduct)
-                    .foregroundStyle(.primary)
-            }
-
-            LabeledContent("Active Transport") {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(store.hardwareConnected ? store.transportColor : Color.secondary)
-                        .frame(width: 8, height: 8)
-                    Image(systemName: store.transportIcon)
-                        .foregroundStyle(store.hardwareConnected ? store.transportColor : Color.secondary)
-                    Text(store.hardwareConnected ? store.transportDisplay : "Not detected")
-                        .foregroundStyle(store.hardwareConnected ? .primary : .secondary)
+            PropertyGrid {
+                PropertyRow(label: "Device Model") {
+                    Text(store.hardwareProduct)
                 }
-            }
-
-            LabeledContent("Power Supply") {
-                HStack(spacing: 6) {
-                    Image(systemName: store.powerIcon)
-                        .foregroundStyle(store.hardwareConnected ? Color.accentColor : Color.secondary)
-                    Text(store.hardwareConnected ? store.powerDescription : "Disconnected")
-                        .foregroundStyle(.primary)
-                }
-            }
-
-            if !store.devices.isEmpty {
-                ForEach(Array(store.devices.enumerated()), id: \.offset) { idx, dev in
-                    LabeledContent("Endpoint \(idx + 1)") {
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(dev["name"] as? String ?? "Unknown Device")
-                                .font(.caption.weight(.medium))
-                            HStack(spacing: 4) {
-                                if let tr = dev["transport"] as? String {
-                                    Text(tr.uppercased())
-                                        .font(.system(size: 9, weight: .bold))
-                                        .padding(.horizontal, 4)
-                                        .padding(.vertical, 1)
-                                        .background(Capsule().fill(Color.secondary.opacity(0.15)))
-                                }
-                                Text(dev["path"] as? String ?? "")
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                PropertyRow(label: "Active Transport") {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(store.hardwareConnected
+                                  ? store.transportColor : Color.secondary)
+                            .frame(width: 8, height: 8)
+                        Image(systemName: store.transportIcon)
+                            .foregroundStyle(store.hardwareConnected
+                                             ? store.transportColor : Color.secondary)
+                        Text(store.hardwareConnected
+                             ? store.transportDisplay : "Not detected")
+                            .foregroundStyle(store.hardwareConnected ? .primary : .secondary)
                     }
                 }
+                PropertyRow(label: "Power Supply") {
+                    HStack(spacing: 6) {
+                        Image(systemName: store.powerIcon)
+                            .foregroundStyle(store.hardwareConnected
+                                             ? Color.accentColor : Color.secondary)
+                        Text(store.hardwareConnected
+                             ? store.powerDescription : "Disconnected")
+                    }
+                }
+            }
+        }
+    }
+
+    /// Endpoints as a four-column table: index, transport tag, device name,
+    /// device path. Each is a different kind of thing, so each gets its own
+    /// column and reads down its own straight edge.
+    private var endpointSection: some View {
+        Section("HID Endpoints") {
+            if store.devices.isEmpty {
+                Text("No active HID endpoints")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             } else {
-                LabeledContent("Endpoints") {
-                    Text("No active HID endpoints")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                PropertyGrid(horizontalSpacing: 14, verticalSpacing: 6) {
+                    GridRow {
+                        Text("#").gridColumnAlignment(.leading)
+                        Text("Transport").gridColumnAlignment(.leading)
+                        Text("Device").gridColumnAlignment(.leading)
+                        Text("Path").gridColumnAlignment(.leading)
+                    }
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+
+                    ForEach(Array(store.devices.enumerated()), id: \.offset) { idx, dev in
+                        GridRow {
+                            Text("\(idx + 1)")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                            TagPill(text: dev["transport"] as? String ?? "")
+                            Text(dev["name"] as? String ?? "Unknown Device")
+                                .font(.caption.weight(.medium))
+                            Text(dev["path"] as? String ?? "")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
         }

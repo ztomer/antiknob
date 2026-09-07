@@ -10,6 +10,20 @@ struct LedMode: Identifiable, Hashable {
     let name: String
     let desc: String
     let icon: String
+
+    /// The selectable modes, in display order.
+    static let all: [LedMode] = [
+            LedMode(id: "backlight", name: "Backlight",
+                    desc: "Steady solid illumination", icon: "lightbulb.fill"),
+            LedMode(id: "shock", name: "Shock (Breathe)",
+                    desc: "Gentle pulsing breath", icon: "waveform.path"),
+            LedMode(id: "shock2", name: "Shock 2 (Rapid)",
+                    desc: "Faster pulse cycle", icon: "waveform.path.ecg"),
+            LedMode(id: "press", name: "Press (Reactive)",
+                    desc: "Lights up on knob press", icon: "hand.tap.fill"),
+            LedMode(id: "off", name: "Off",
+                    desc: "Disable LEDs to conserve power", icon: "power")
+        ]
 }
 
 /// One swatch in the colour row. `hex` is the wire name sent to `set_led`.
@@ -17,6 +31,18 @@ struct LedColorPreset: Hashable {
     let name: String
     let hex: String
     let color: Color
+
+    /// The swatch row, in display order.
+    static let all: [LedColorPreset] = [
+            LedColorPreset(name: "White", hex: "white", color: .white),
+            LedColorPreset(name: "Red", hex: "red", color: .red),
+            LedColorPreset(name: "Orange", hex: "orange", color: .orange),
+            LedColorPreset(name: "Yellow", hex: "yellow", color: .yellow),
+            LedColorPreset(name: "Green", hex: "green", color: .green),
+            LedColorPreset(name: "Cyan", hex: "cyan", color: Color(red: 0, green: 0.9, blue: 0.9)),
+            LedColorPreset(name: "Blue", hex: "blue", color: .blue),
+            LedColorPreset(name: "Purple", hex: "purple", color: .purple)
+        ]
 }
 
 struct LedSection: View {
@@ -27,30 +53,6 @@ struct LedSection: View {
     @State private var selectedColorHex: String = "white"
     @State private var customColor: Color = .white
     @State private var liveApply: Bool = true
-
-    let modes: [LedMode] = [
-        LedMode(id: "backlight", name: "Backlight",
-                desc: "Steady solid illumination", icon: "lightbulb.fill"),
-        LedMode(id: "shock", name: "Shock (Breathe)",
-                desc: "Gentle pulsing breath", icon: "waveform.path"),
-        LedMode(id: "shock2", name: "Shock 2 (Rapid)",
-                desc: "Faster pulse cycle", icon: "waveform.path.ecg"),
-        LedMode(id: "press", name: "Press (Reactive)",
-                desc: "Lights up on knob press", icon: "hand.tap.fill"),
-        LedMode(id: "off", name: "Off",
-                desc: "Disable LEDs to conserve power", icon: "power")
-    ]
-
-    let colorPresets: [LedColorPreset] = [
-        LedColorPreset(name: "White", hex: "white", color: .white),
-        LedColorPreset(name: "Red", hex: "red", color: .red),
-        LedColorPreset(name: "Orange", hex: "orange", color: .orange),
-        LedColorPreset(name: "Yellow", hex: "yellow", color: .yellow),
-        LedColorPreset(name: "Green", hex: "green", color: .green),
-        LedColorPreset(name: "Cyan", hex: "cyan", color: Color(red: 0, green: 0.9, blue: 0.9)),
-        LedColorPreset(name: "Blue", hex: "blue", color: .blue),
-        LedColorPreset(name: "Purple", hex: "purple", color: .purple)
-    ]
 
     @State private var beadColors: [Color] = Array(repeating: .white, count: 16)
     @State private var hardwareReadMode: String?
@@ -92,10 +94,12 @@ struct LedSection: View {
             }
 
             if let readMode = hardwareReadMode {
-                LabeledContent("Firmware Reported Mode") {
-                    Text(readMode)
-                        .font(.caption)
-                        .foregroundStyle(Color.accentColor)
+                PropertyGrid {
+                    PropertyRow(label: "Firmware Reported Mode") {
+                        Text(readMode)
+                            .font(.caption)
+                            .foregroundStyle(Color.accentColor)
+                    }
                 }
             }
         }
@@ -165,36 +169,60 @@ struct LedSection: View {
         }
     }
 
+    /// Icon column width. SF Symbols differ in width (`power` is narrow,
+    /// `waveform.path.ecg` wide), so without a fixed frame each row's text
+    /// would start at a different x.
+    private static let iconColumn: CGFloat = 20
+
     private var modeSelectionSection: some View {
         Section("Lighting Mode") {
-            ForEach(modes, id: \.id) { m in
-                HStack {
-                    Label(m.name, systemImage: m.icon)
-                        .foregroundStyle(selectedMode == m.id ? Color.accentColor : Color.primary)
-                    Spacer()
-                    Text(m.desc)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if selectedMode == m.id {
-                        Image(systemName: "checkmark")
-                            .foregroundStyle(Color.accentColor)
-                            .fontWeight(.semibold)
+            ForEach(LedMode.all, id: \.id) { m in
+                modeRow(m)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        selectedMode = m.id
+                        if liveApply { sendLedUpdate() }
                     }
-                }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    selectedMode = m.id
-                    if liveApply { sendLedUpdate() }
-                }
-                .padding(.vertical, 2)
+                    .padding(.vertical, 2)
             }
+        }
+    }
+
+    /// Name over description in one left-aligned column.
+    ///
+    /// The description used to be pushed to the trailing edge by a `Spacer`,
+    /// which left five lines of prose with five different left edges and no
+    /// column for the eye to follow. The checkmark keeps its space when the
+    /// row is unselected so selecting one does not shift the text.
+    private func modeRow(_ m: LedMode) -> some View {
+        let isSelected = selectedMode == m.id
+        return HStack(spacing: 10) {
+            Image(systemName: m.icon)
+                .frame(width: Self.iconColumn)
+                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(m.name)
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+                Text(m.desc)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 8)
+
+            Image(systemName: "checkmark")
+                .foregroundStyle(Color.accentColor)
+                .fontWeight(.semibold)
+                .opacity(isSelected ? 1 : 0)
+                .accessibilityHidden(!isSelected)
         }
     }
 
     private var colorSelectionSection: some View {
         Section("Color Swatches") {
             HStack(spacing: 12) {
-                ForEach(colorPresets, id: \.hex) { preset in
+                ForEach(LedColorPreset.all, id: \.hex) { preset in
                     Button {
                         selectedColorHex = preset.hex
                         updateBeadsColor(preset.color)
@@ -264,7 +292,7 @@ struct LedSection: View {
     }
 
     private func applySolidToRing() {
-        if let preset = colorPresets.first(where: { $0.hex == selectedColorHex }) {
+        if let preset = LedColorPreset.all.first(where: { $0.hex == selectedColorHex }) {
             updateBeadsColor(preset.color)
         } else {
             updateBeadsColor(.white)

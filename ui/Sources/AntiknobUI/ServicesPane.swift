@@ -100,25 +100,25 @@ struct ServicesPane: View {
 
     private var daemonSection: some View {
         Section {
-            LabeledContent("Daemon Socket") {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(store.daemonConnected ? Color.green : Color.orange)
-                        .frame(width: 8, height: 8)
-                    Text(store.daemonConnected ? "Connected" : "Offline")
-                        .foregroundStyle(store.daemonConnected ? .primary : .secondary)
+            PropertyGrid {
+                PropertyRow(label: "Daemon Socket") {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(store.daemonConnected ? Color.green : Color.orange)
+                            .frame(width: 8, height: 8)
+                        Text(store.daemonConnected ? "Connected" : "Offline")
+                            .foregroundStyle(store.daemonConnected ? .primary : .secondary)
+                    }
                 }
-            }
 
-            LabeledContent("Socket Path") {
-                Text("/tmp/antiknob.sock")
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
+                PropertyRow(label: "Socket Path") {
+                    Text("/tmp/antiknob.sock")
+                        .font(.system(.body, design: .monospaced))
+                }
 
-            LabeledContent("Protocol") {
-                Text("JSON-RPC 2.0 over AF_UNIX stream")
-                    .foregroundStyle(.secondary)
+                PropertyRow(label: "Protocol") {
+                    Text("JSON-RPC 2.0 over AF_UNIX stream")
+                }
             }
 
             HStack {
@@ -147,13 +147,17 @@ struct ServicesPane: View {
 
     private var eventTapSection: some View {
         Section {
-            LabeledContent("Event Tap Status") {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(store.tapActive ? Color.green : Color.orange)
-                        .frame(width: 8, height: 8)
-                    Text(store.tapActive ? "Active (Swallowing & Synthesizing)" : "Degraded (Permission Needed)")
-                        .foregroundStyle(store.tapActive ? .primary : .secondary)
+            PropertyGrid {
+                PropertyRow(label: "Event Tap Status") {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(store.tapActive ? Color.green : Color.orange)
+                            .frame(width: 8, height: 8)
+                        Text(store.tapActive
+                             ? "Active (Swallowing & Synthesizing)"
+                             : "Degraded (Permission Needed)")
+                            .foregroundStyle(store.tapActive ? .primary : .secondary)
+                    }
                 }
             }
 
@@ -188,15 +192,15 @@ struct ServicesPane: View {
 
     private var mcpSection: some View {
         Section {
-            LabeledContent("Transport") {
-                Text("stdio (Standard Input / Output)")
-                    .foregroundStyle(.secondary)
-            }
+            PropertyGrid {
+                PropertyRow(label: "Transport") {
+                    Text("stdio (Standard Input / Output)")
+                }
 
-            LabeledContent("Launch Command") {
-                Text("antiknob-daemon --mcp")
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                PropertyRow(label: "Launch Command") {
+                    Text("antiknob-daemon --mcp")
+                        .font(.system(.body, design: .monospaced))
+                }
             }
 
             HStack(spacing: 12) {

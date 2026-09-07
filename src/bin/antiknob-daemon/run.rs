@@ -3,6 +3,7 @@
 //! Split from main.rs to respect the file-length gate. Entry points
 //! `run_observe` and `run_active` both diverge.
 
+use antiknob::api::TapHealth;
 use antiknob::host::engine::{EngineEvent, FiredAction};
 use antiknob::host::output::plan;
 use antiknob::host::tap::TapEngine;
@@ -105,11 +106,10 @@ fn handle_events(out: Vec<EngineEvent>, active: bool) {
     }
 }
 
-fn tap_failure(reason: &str) -> ! {
-    eprintln!("[ Err ] Event tap failed: {}", reason);
-    eprintln!("        Grant Accessibility (and Input Monitoring) to this binary,");
-    eprintln!("        then relaunch it. GUI and CLI need no such grants.");
-    std::process::exit(2);
+fn log_tap_warning(reason: &str) {
+    eprintln!("[ Wrn ] Event tap unavailable: {}", reason);
+    eprintln!("        Grant Accessibility (and Input Monitoring) in macOS System Settings.");
+    eprintln!("        Daemon socket server and USB HID management remain active.");
 }
 
 /// Watches the host config file for external edits (hand edits, GUI
@@ -223,20 +223,33 @@ pub(crate) fn log_raw_event(ev: &Event) {
 
 pub(crate) fn run_observe(
     tap: Arc<Mutex<TapEngine>>,
+    tap_health: Arc<Mutex<TapHealth>>,
     timeout_secs: u64,
     config_path: &Path,
     with_tray: bool,
     verbose: bool,
 ) -> ! {
     let (tx, rx) = channel();
-    std::thread::spawn(move || {
+    let thread_health = Arc::clone(&tap_health);
+    std::thread::spawn(move || loop {
+        if let Ok(mut h) = thread_health.lock() {
+            h.active = true;
+            h.error = None;
+        }
         let tx_clone = tx.clone();
         let res = rdev::listen(move |ev| {
             let _ = tx_clone.send(DaemonMsg::Input(ev));
         });
-        if let Err(e) = res {
-            let _ = tx.send(DaemonMsg::TapDead(format!("{:?}", e)));
+        let reason = match res {
+            Err(e) => format!("{:?}", e),
+            Ok(()) => "listener ended".to_string(),
+        };
+        if let Ok(mut h) = thread_health.lock() {
+            h.active = false;
+            h.error = Some(reason.clone());
         }
+        let _ = tx.send(DaemonMsg::TapDead(reason));
+        std::thread::sleep(Duration::from_secs(3));
     });
 
     let mut watch = ConfigWatch::new(config_path);
@@ -290,9 +303,13 @@ pub(crate) fn run_observe(
                     }
                 }
             }
-            Ok(DaemonMsg::TapDead(reason)) => tap_failure(&reason),
+            Ok(DaemonMsg::TapDead(reason)) => {
+                log_tap_warning(&reason);
+            }
             Err(RecvTimeoutError::Timeout) => {}
-            Err(RecvTimeoutError::Disconnected) => tap_failure("listener thread ended"),
+            Err(RecvTimeoutError::Disconnected) => {
+                log_tap_warning("listener thread disconnected");
+            }
         }
         if let Ok(mut t) = tap.lock() {
             maybe_reload(&mut t, &mut watch);
@@ -313,6 +330,7 @@ pub(crate) fn run_observe(
 
 pub(crate) fn run_active(
     tap: Arc<Mutex<TapEngine>>,
+    tap_health: Arc<Mutex<TapHealth>>,
     timeout_secs: u64,
     config_path: &Path,
     with_tray: bool,
@@ -346,8 +364,14 @@ pub(crate) fn run_active(
     // The grab tap runs on a worker thread (proven safe by probe); the
     // menu bar must live on the main thread, which runs the loop below.
     let grab_tap = Arc::clone(&tap);
-    std::thread::spawn(move || {
+    let grab_health = Arc::clone(&tap_health);
+    std::thread::spawn(move || loop {
+        if let Ok(mut h) = grab_health.lock() {
+            h.active = true;
+            h.error = None;
+        }
         let start = Instant::now();
+        let thread_tap = Arc::clone(&grab_tap);
         let res = rdev::grab(move |ev: Event| -> Option<Event> {
             let code = match ev.event_type {
                 EventType::KeyPress(key) => cg_code(&key).map(|c| (c, true)),
@@ -358,7 +382,7 @@ pub(crate) fn run_active(
                 return Some(ev);
             };
             let now_ms = start.elapsed().as_millis() as u64;
-            let Ok(mut t) = grab_tap.lock() else {
+            let Ok(mut t) = thread_tap.lock() else {
                 return Some(ev);
             };
             if pressed {
@@ -375,10 +399,16 @@ pub(crate) fn run_active(
                 Some(ev)
             }
         });
-        if let Err(e) = res {
-            tap_failure(&format!("{:?}", e));
+        let reason = match res {
+            Err(e) => format!("{:?}", e),
+            Ok(()) => "event tap ended".to_string(),
+        };
+        if let Ok(mut h) = grab_health.lock() {
+            h.active = false;
+            h.error = Some(reason.clone());
         }
-        tap_failure("event tap ended");
+        log_tap_warning(&reason);
+        std::thread::sleep(Duration::from_secs(3));
     });
 
     let mut tray = if with_tray {

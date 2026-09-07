@@ -104,9 +104,20 @@ fn run_cli(exe: &Path, args: &[&str]) -> Result<String, String> {
     }
 }
 
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum StatusPayload {
+    List(Vec<DeviceMatch>),
+    Object { devices: Vec<DeviceMatch> },
+}
+
 /// Parse `status --json` output. Pure for testability.
 pub fn parse_status_json(text: &str) -> Result<Vec<DeviceMatch>, String> {
-    serde_json::from_str(text).map_err(|e| format!("bad status JSON: {}", e))
+    match serde_json::from_str::<StatusPayload>(text) {
+        Ok(StatusPayload::List(devs)) => Ok(devs),
+        Ok(StatusPayload::Object { devices }) => Ok(devices),
+        Err(e) => Err(format!("bad status JSON: {}", e)),
+    }
 }
 
 pub struct CliHid {

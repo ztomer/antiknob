@@ -10,6 +10,7 @@ struct GeneralPane: View {
         Form {
             switchingSection
             slotBindingSection
+            startupSection
             systemStatusSection
         }
         .formStyle(.grouped)
@@ -83,6 +84,18 @@ struct GeneralPane: View {
         }
     }
 
+    private var startupSection: some View {
+        Section("System Startup") {
+            Toggle("Start at Login", isOn: Binding(
+                get: { store.startOnLogin },
+                set: { store.toggleStartOnLogin(enabled: $0) }
+            ))
+            Text("Automatically launches the Antiknob daemon at user login to maintain knob gestures, layer switching, and lighting control.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     private var systemStatusSection: some View {
         Section("Status & Diagnostics") {
             LabeledContent("Daemon Socket") {
@@ -101,6 +114,24 @@ struct GeneralPane: View {
                         .fill(store.hardwareConnected ? Color.green : Color.secondary)
                         .frame(width: 8, height: 8)
                     Text(store.hardwareProduct)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            LabeledContent("Connection Mode") {
+                HStack(spacing: 6) {
+                    Image(systemName: store.transportIcon)
+                        .foregroundStyle(store.hardwareConnected ? store.transportColor : Color.secondary)
+                    Text(store.hardwareConnected ? store.transportDisplay : "Not connected")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            LabeledContent("Power & Battery") {
+                HStack(spacing: 6) {
+                    Image(systemName: store.hardwareConnected ? "bolt.fill" : "battery.0")
+                        .foregroundStyle(store.hardwareConnected ? Color.accentColor : Color.secondary)
+                    Text(store.hardwareConnected ? store.powerDescription : "Disconnected")
                         .foregroundStyle(.secondary)
                 }
             }

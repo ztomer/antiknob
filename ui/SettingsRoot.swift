@@ -10,6 +10,31 @@ enum TabSelection: Hashable {
     case switching
     case layer(Int)
     case lighting
+    case hardware
+    case inspector
+    case services
+}
+
+// MARK: - Window Accessor
+
+struct WindowAccessor: NSViewRepresentable {
+    let configure: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            if let window = view.window {
+                configure(window)
+            }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        if let window = nsView.window {
+            configure(window)
+        }
+    }
 }
 
 struct SettingsRoot: View {
@@ -18,7 +43,7 @@ struct SettingsRoot: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            TabStrip(store: store, sel: $sel)
+            Appbar(store: store, sel: $sel)
             Divider()
             Group {
                 switch sel {
@@ -26,13 +51,31 @@ struct SettingsRoot: View {
                     LayerDetail(store: store, idx: i).id(i)
                 case .lighting:
                     LedSection(store: store)
+                case .hardware:
+                    HardwarePane(store: store)
+                case .inspector:
+                    InspectorPane(store: store)
+                case .services:
+                    ServicesPane(store: store)
                 default:
                     GeneralPane(store: store)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(minWidth: 660, minHeight: 580)
+        .ignoresSafeArea(.all, edges: .top)
+        .background(WindowAccessor { window in
+            window.title = "Antiknob Settings"
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            window.styleMask.insert(.fullSizeContentView)
+            window.isMovableByWindowBackground = true
+            if let zoom = window.standardWindowButton(.zoomButton) {
+                zoom.isHidden = true
+                zoom.isEnabled = false
+            }
+        })
+        .frame(minWidth: 760, minHeight: 600)
         .onChange(of: store.cfg.layers.count) { _, newCount in
             if case .layer(let i) = sel, i >= newCount {
                 sel = newCount > 0 ? .layer(newCount - 1) : .switching
@@ -41,16 +84,18 @@ struct SettingsRoot: View {
     }
 }
 
-// MARK: - Tab Strip
+// MARK: - SOTA Unified Appbar Titlebar
 
-struct TabStrip: View {
+struct Appbar: View {
     @ObservedObject var store: ConfigStore
     @Binding var sel: TabSelection
     @State private var dragging: Int?
 
     var body: some View {
-        HStack(spacing: 4) {
-            Spacer(minLength: 0)
+        HStack(spacing: 5) {
+            // Traffic lights safe clearance inset (Close + Minimize; Zoom is hidden)
+            Color.clear
+                .frame(width: 58, height: 1)
 
             chip(.switching) {
                 Label("Switching", systemImage: "arrow.triangle.2.circlepath")
@@ -87,6 +132,7 @@ struct TabStrip: View {
 
             Button(action: addLayer) {
                 Image(systemName: "plus")
+                    .font(.caption.weight(.semibold))
             }
             .buttonStyle(.borderless)
             .help("Add a layer")
@@ -99,15 +145,59 @@ struct TabStrip: View {
                 Label("Lighting", systemImage: "lightbulb.fill")
             }
 
-            Spacer(minLength: 0)
+            chip(.hardware) {
+                Label("Hardware", systemImage: "cpu")
+            }
+
+            chip(.inspector) {
+                Label("Inspector", systemImage: "waveform.path.ecg")
+            }
+
+            chip(.services) {
+                Label("Services", systemImage: "network")
+            }
+
+            Spacer(minLength: 12)
+
+            // Trailing status and actions cluster
+            HStack(spacing: 8) {
+                // Hardware Connection & Transport Pill
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(store.hardwareConnected ? store.transportColor : Color.secondary.opacity(0.4))
+                        .frame(width: 6, height: 6)
+                    Image(systemName: store.transportIcon)
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(store.hardwareConnected ? store.transportColor : Color.secondary)
+                    Text(store.hardwareConnected ? store.transportBadgeLabel : "Offline")
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .foregroundStyle(store.hardwareConnected ? .primary : .secondary)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(Color(nsColor: .controlBackgroundColor).opacity(0.85))
+                )
+
+                // Autosave transient badge
+                SavedBadge(store: store)
+
+                // Refresh diagnostics button
+                Button {
+                    store.refreshStatus()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .help("Refresh Diagnostics")
+            }
+            .padding(.trailing, 12)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .frame(height: 34)
         .background(.bar)
-        .overlay(alignment: .trailing) {
-            SavedBadge(store: store)
-                .padding(.trailing, 14)
-        }
     }
 
     private func chip(_ tag: TabSelection, @ViewBuilder label: () -> some View) -> some View {
@@ -115,8 +205,9 @@ struct TabStrip: View {
             sel = tag
         } label: {
             label()
-                .padding(.horizontal, 11)
-                .padding(.vertical, 5)
+                .font(.system(size: 11.5, weight: .medium))
+                .padding(.horizontal, 9)
+                .padding(.vertical, 3.5)
                 .background(Capsule().fill(.quaternary).opacity(sel == tag ? 1 : 0))
                 .contentShape(Capsule())
         }
@@ -200,7 +291,7 @@ struct LayerDropDelegate: DropDelegate {
 struct SavedBadge: View {
     @ObservedObject var store: ConfigStore
     @State private var visible = false
-    @State private var hideItem: DispatchWorkItem?
+    @State private var hideTask: Task<Void, Never>?
 
     var body: some View {
         Label("Saved", systemImage: "checkmark.circle.fill")
@@ -211,12 +302,12 @@ struct SavedBadge: View {
             .onChange(of: store.lastSaved) { _, saved in
                 guard saved != nil else { return }
                 withAnimation(.easeIn(duration: 0.12)) { visible = true }
-                hideItem?.cancel()
-                let task = DispatchWorkItem {
+                hideTask?.cancel()
+                hideTask = Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(1.3))
+                    guard !Task.isCancelled else { return }
                     withAnimation(.easeOut(duration: 0.5)) { visible = false }
                 }
-                hideItem = task
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.3, execute: task)
             }
     }
 }

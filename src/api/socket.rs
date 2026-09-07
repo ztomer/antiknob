@@ -1,17 +1,36 @@
 //! Unix domain socket RPC server & client for antiknob-daemon.
 //!
 //! Serves newline-delimited JSON-RPC requests over a local Unix domain socket.
+//! Hardened for DoS-resistance, panic isolation, bounded memory, and secure permissions.
 
 use super::dispatch::{execute_command, ApiContext};
 use super::types::Command;
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
+
+/// Maximum payload size per JSON-RPC request line (64 KB).
+pub const MAX_REQUEST_SIZE: usize = 65_536;
+
+/// Maximum concurrent active socket client connections.
+pub const MAX_CONCURRENT_CLIENTS: usize = 16;
+
+/// Active concurrent clients tracking counter.
+static ACTIVE_CLIENTS: AtomicUsize = AtomicUsize::new(0);
+
+struct ConnectionGuard;
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        ACTIVE_CLIENTS.fetch_sub(1, Ordering::Relaxed);
+    }
+}
 
 /// Standard Unix socket path in the user's Application Support directory.
 pub fn default_socket_path() -> Result<PathBuf> {
@@ -21,6 +40,8 @@ pub fn default_socket_path() -> Result<PathBuf> {
         .join("Application Support")
         .join("antiknob");
     std::fs::create_dir_all(&dir)?;
+    // Enforce 0700 permissions on the daemon state directory
+    let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
     Ok(dir.join("antiknob.sock"))
 }
 
@@ -43,6 +64,9 @@ impl SocketServer {
         let listener = UnixListener::bind(&socket_path)
             .with_context(|| format!("Failed to bind Unix socket at {}", socket_path.display()))?;
 
+        // Enforce 0600 permissions on the socket file (user-only read/write)
+        let _ = std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600));
+
         // Create /tmp symlink for easy client discovery
         #[cfg(unix)]
         let _ = std::os::unix::fs::symlink(&socket_path, TMP_SOCKET_PATH);
@@ -52,17 +76,38 @@ impl SocketServer {
         let path_clone = socket_path.clone();
 
         let handle = thread::spawn(move || {
-            // Set listener non-blocking with small sleep so we can check running flag
             let _ = listener.set_nonblocking(true);
 
             while running_clone.load(Ordering::Relaxed) {
                 match listener.accept() {
                     Ok((stream, _)) => {
                         let _ = stream.set_nonblocking(false);
+                        let cur = ACTIVE_CLIENTS.load(Ordering::Relaxed);
+                        if cur >= MAX_CONCURRENT_CLIENTS {
+                            // Explicit capacity refusal without stalling accept loop
+                            let refusal = json!({
+                                "jsonrpc": "2.0",
+                                "id": Value::Null,
+                                "error": {
+                                    "code": -32000,
+                                    "message": "Server busy: connection capacity reached",
+                                    "data": { "retry_after_ms": 50 }
+                                }
+                            });
+                            let mut msg = serde_json::to_string(&refusal).unwrap_or_default();
+                            msg.push('\n');
+                            let mut s = stream;
+                            let _ = s.write_all(msg.as_bytes());
+                            let _ = s.flush();
+                            continue;
+                        }
+
+                        ACTIVE_CLIENTS.fetch_add(1, Ordering::Relaxed);
+                        let _guard = ConnectionGuard;
                         handle_client(stream, &mut ctx);
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(std::time::Duration::from_millis(50));
+                        thread::sleep(Duration::from_millis(50));
                     }
                     Err(_) => {
                         break;
@@ -96,29 +141,74 @@ impl Drop for SocketServer {
     }
 }
 
-fn handle_client(mut stream: UnixStream, ctx: &mut ApiContext) {
-    let reader = BufReader::new(stream.try_clone().unwrap());
-    for line in reader.lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => break,
-        };
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
+/// Reads a line bounded by max_bytes to prevent unbounded memory allocation DoS.
+pub fn read_bounded_line<R: BufRead>(
+    reader: &mut R,
+    max_bytes: usize,
+) -> std::io::Result<Option<String>> {
+    let mut buf = Vec::new();
+    let mut take_reader = reader.take(max_bytes as u64 + 1);
+    let n = take_reader.read_until(b'\n', &mut buf)?;
+    if n == 0 {
+        return Ok(None);
+    }
+    if buf.len() > max_bytes {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("Request line exceeds {} bytes limit", max_bytes),
+        ));
+    }
+    while buf.ends_with(b"\n") || buf.ends_with(b"\r") {
+        buf.pop();
+    }
+    let s = String::from_utf8(buf)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    Ok(Some(s))
+}
 
-        let resp = process_json_rpc(ctx, trimmed);
-        let mut out = serde_json::to_string(&resp).unwrap_or_else(|_| "{}".to_string());
-        out.push('\n');
-        if stream.write_all(out.as_bytes()).is_err() {
-            break;
+fn handle_client(mut stream: UnixStream, ctx: &mut ApiContext) {
+    let timeout = Some(Duration::from_secs(5));
+    let _ = stream.set_read_timeout(timeout);
+    let _ = stream.set_write_timeout(timeout);
+
+    let Ok(clone_stream) = stream.try_clone() else {
+        return;
+    };
+    let mut reader = BufReader::new(clone_stream);
+
+    loop {
+        match read_bounded_line(&mut reader, MAX_REQUEST_SIZE) {
+            Ok(Some(line)) => {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let resp = process_json_rpc(ctx, trimmed);
+                let mut out = serde_json::to_string(&resp).unwrap_or_else(|_| "{}".to_string());
+                out.push('\n');
+                if stream.write_all(out.as_bytes()).is_err() {
+                    break;
+                }
+                let _ = stream.flush();
+            }
+            Ok(None) => break,
+            Err(e) => {
+                let resp = json!({
+                    "jsonrpc": "2.0",
+                    "id": Value::Null,
+                    "error": { "code": -32600, "message": format!("Invalid Request: {}", e) }
+                });
+                let mut out = serde_json::to_string(&resp).unwrap_or_default();
+                out.push('\n');
+                let _ = stream.write_all(out.as_bytes());
+                let _ = stream.flush();
+                break;
+            }
         }
-        let _ = stream.flush();
     }
 }
 
-/// Process a single JSON-RPC line and generate a response.
+/// Process a single JSON-RPC line with panic isolation and generate a response.
 pub fn process_json_rpc(ctx: &mut ApiContext, input: &str) -> Value {
     let req: Value = match serde_json::from_str(input) {
         Ok(v) => v,
@@ -152,17 +242,35 @@ pub fn process_json_rpc(ctx: &mut ApiContext, input: &str) -> Value {
         }
     };
 
-    match execute_command(ctx, cmd) {
-        Ok(val) => json!({
+    // Panic isolation: a failure in hardware or command execution must never crash the server
+    let result =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| execute_command(ctx, cmd)));
+
+    match result {
+        Ok(Ok(val)) => json!({
             "jsonrpc": "2.0",
             "id": id,
             "result": val
         }),
-        Err(e) => json!({
+        Ok(Err(e)) => json!({
             "jsonrpc": "2.0",
             "id": id,
             "error": { "code": -32000, "message": e.to_string() }
         }),
+        Err(panic_err) => {
+            let msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = panic_err.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "Unknown panic in dispatcher".to_string()
+            };
+            json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": { "code": -32603, "message": format!("Internal error: {}", msg) }
+            })
+        }
     }
 }
 
@@ -170,6 +278,10 @@ pub fn process_json_rpc(ctx: &mut ApiContext, input: &str) -> Value {
 pub fn call_daemon_socket(socket_path: &Path, cmd: &Command) -> Result<Value> {
     let mut stream = UnixStream::connect(socket_path)
         .with_context(|| format!("Could not connect to socket at {}", socket_path.display()))?;
+
+    let timeout = Some(Duration::from_secs(5));
+    let _ = stream.set_read_timeout(timeout);
+    let _ = stream.set_write_timeout(timeout);
 
     let cmd_val = serde_json::to_value(cmd)?;
     let method = cmd_val.get("method").and_then(Value::as_str).unwrap_or("");
@@ -188,8 +300,10 @@ pub fn call_daemon_socket(socket_path: &Path, cmd: &Command) -> Result<Value> {
     stream.flush()?;
 
     let mut reader = BufReader::new(stream);
-    let mut response_line = String::new();
-    reader.read_line(&mut response_line)?;
+    let response_line = match read_bounded_line(&mut reader, MAX_REQUEST_SIZE)? {
+        Some(l) => l,
+        None => anyhow::bail!("Daemon closed connection unexpectedly without response"),
+    };
 
     let resp: Value = serde_json::from_str(&response_line)?;
     if let Some(err) = resp.get("error") {

@@ -2,7 +2,7 @@
 //!
 //! Executes `Command` requests against the device, host config, and tap engine.
 
-use super::types::{led_mode_name, Command};
+use super::types::{led_mode_name, Command, PowerStatus};
 use crate::apps;
 use crate::config::DeviceConfig;
 use crate::device;
@@ -11,16 +11,25 @@ use crate::host::tap::TapEngine;
 use crate::host::HostConfig;
 use crate::protocol::{self, Action};
 use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
 
+/// Tap health status for diagnostics.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TapHealth {
+    pub active: bool,
+    pub error: Option<String>,
+}
+
 /// Execution context for API commands.
 pub struct ApiContext {
     pub config_path: PathBuf,
     pub tap_engine: Option<Arc<Mutex<TapEngine>>>,
+    pub tap_health: Arc<Mutex<TapHealth>>,
 }
 
 impl ApiContext {
@@ -28,6 +37,19 @@ impl ApiContext {
         Self {
             config_path,
             tap_engine,
+            tap_health: Arc::new(Mutex::new(TapHealth::default())),
+        }
+    }
+
+    pub fn with_health(
+        config_path: PathBuf,
+        tap_engine: Option<Arc<Mutex<TapEngine>>>,
+        tap_health: Arc<Mutex<TapHealth>>,
+    ) -> Self {
+        Self {
+            config_path,
+            tap_engine,
+            tap_health,
         }
     }
 }
@@ -38,6 +60,8 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
         Command::GetStatus {} => {
             let devices = device::list_devices().unwrap_or_default();
             let connected = !devices.is_empty();
+            let primary = device::primary_transport(&devices);
+            let transport_str = primary.map(|t| t.as_str()).unwrap_or("disconnected");
             let mut led_mode = None;
             let mut led_mode_str = None;
             if connected {
@@ -60,16 +84,25 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                 }
             };
 
+            let health = ctx.tap_health.lock().unwrap().clone();
+            let power = PowerStatus::current(&devices);
+
             Ok(json!({
                 "connected": connected,
+                "transport": transport_str,
                 "device_count": devices.len(),
                 "devices": devices,
+                "power": power,
                 "active_layer": active_layer,
                 "layers_count": layers_count,
                 "led_mode": led_mode,
                 "led_mode_name": led_mode_str,
+                "tap_active": health.active,
+                "tap_error": health.error,
             }))
         }
+
+        Command::Ping {} => Ok(json!({})),
 
         Command::GetConfig {} => {
             let cfg = match &ctx.tap_engine {
@@ -121,6 +154,12 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
         },
 
         Command::SetLed { layer, mode, color } => {
+            if mode.len() > 64 {
+                anyhow::bail!("LED mode string exceeds 64 characters");
+            }
+            if layer >= 16 {
+                anyhow::bail!("Layer index {} exceeds maximum of 15", layer);
+            }
             let spec = match color {
                 Some(c) if !c.is_empty() => format!("{} {}", mode, c),
                 _ => mode,
@@ -158,6 +197,9 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
         }
 
         Command::UploadKeymap { yaml, layer } => {
+            if yaml.len() > 65_536 {
+                anyhow::bail!("Keymap YAML exceeds 64KB size limit");
+            }
             let cfg: DeviceConfig =
                 serde_yaml::from_str(&yaml).context("Invalid keymap YAML configuration")?;
             cfg.validate()?;
@@ -232,6 +274,71 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
             Ok(json!({
                 "count": found.len(),
                 "apps": found
+            }))
+        }
+
+        Command::ReadSlots { group, counters } => {
+            let ctrs = counters.unwrap_or_else(|| vec![1, 2, 3]);
+            if ctrs.len() > 16 {
+                anyhow::bail!("Slot counters query exceeds limit of 16 entries");
+            }
+            let dev = device::open_device().context("Cannot open Anticater USB device")?;
+            let grp = group.unwrap_or(0x0F);
+            let mut results = Vec::new();
+
+            for c in ctrs {
+                match device::read_slot(&dev, grp, c) {
+                    Ok(bytes) => {
+                        let hex: Vec<String> = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+                        results.push(json!({
+                            "group": grp,
+                            "counter": c,
+                            "length": bytes.len(),
+                            "hex": hex.join(" "),
+                            "ok": true
+                        }));
+                    }
+                    Err(e) => {
+                        results.push(json!({
+                            "group": grp,
+                            "counter": c,
+                            "error": e.to_string(),
+                            "ok": false
+                        }));
+                    }
+                }
+                sleep(Duration::from_millis(30));
+            }
+
+            Ok(json!({
+                "group": grp,
+                "slots": results
+            }))
+        }
+
+        Command::SendRaw { bytes } => {
+            if bytes.len() > 64 {
+                anyhow::bail!(
+                    "Raw payload exceeds 64-byte limit (received {} elements)",
+                    bytes.len()
+                );
+            }
+            let payload: Result<Vec<u8>, _> = bytes
+                .iter()
+                .map(|s| {
+                    let s = s
+                        .strip_prefix("0x")
+                        .or_else(|| s.strip_prefix("0X"))
+                        .unwrap_or(s);
+                    u8::from_str_radix(s, 16).map_err(|_| anyhow::anyhow!("Bad hex byte '{}'", s))
+                })
+                .collect();
+            let payload = payload?;
+            let dev = device::open_device().context("Cannot open Anticater USB device")?;
+            device::send_report(&dev, &payload)?;
+            Ok(json!({
+                "ok": true,
+                "bytes_sent": payload.len()
             }))
         }
     }

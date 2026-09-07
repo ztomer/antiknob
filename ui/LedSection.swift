@@ -31,9 +31,14 @@ struct LedSection: View {
         ("Purple", "purple", .purple),
     ]
 
+    @State private var beadColors: [Color] = Array(repeating: .white, count: 16)
+    @State private var hardwareReadMode: String? = nil
+    @State private var isReadingMode: Bool = false
+
     var body: some View {
         Form {
             layerPickerSection
+            ringVisualizerSection
             modeSelectionSection
             if selectedMode != "off" {
                 colorSelectionSection
@@ -45,12 +50,97 @@ struct LedSection: View {
 
     private var layerPickerSection: some View {
         Section("Hardware Device Layer") {
-            Picker("Apply to Layer", selection: $selectedLayer) {
-                ForEach(0..<3) { i in
-                    Text("Device Layer \(i + 1)").tag(i)
+            HStack {
+                Picker("Apply to Layer", selection: $selectedLayer) {
+                    ForEach(0..<3) { i in
+                        Text("Device Layer \(i + 1)").tag(i)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Button {
+                    queryDeviceState()
+                } label: {
+                    if isReadingMode {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Query Firmware", systemImage: "arrow.clockwise")
+                    }
+                }
+                .disabled(isReadingMode || !store.hardwareConnected)
+            }
+
+            if let readMode = hardwareReadMode {
+                LabeledContent("Firmware Reported Mode") {
+                    Text(readMode)
+                        .font(.caption)
+                        .foregroundStyle(Color.accentColor)
                 }
             }
-            .pickerStyle(.segmented)
+        }
+    }
+
+    private var ringVisualizerSection: some View {
+        Section("16-LED RGB Ring Visualizer") {
+            VStack(spacing: 12) {
+                ZStack {
+                    // Center knob icon
+                    Circle()
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                        .frame(width: 56, height: 56)
+                        .overlay(Circle().strokeBorder(Color.secondary.opacity(0.4), lineWidth: 1))
+                        .shadow(radius: 2)
+
+                    Image(systemName: "dial.low.fill")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+
+                    // 16 Circular LED beads
+                    ForEach(0..<16, id: \.self) { i in
+                        let angle = Double(i) * (2.0 * .pi / 16.0) - (.pi / 2.0)
+                        let radius: Double = 48.0
+                        let x = cos(angle) * radius
+                        let y = sin(angle) * radius
+                        let col = selectedMode == "off" ? Color.secondary.opacity(0.3) : beadColors[i]
+
+                        Circle()
+                            .fill(col)
+                            .frame(width: 12, height: 12)
+                            .overlay(Circle().strokeBorder(Color.black.opacity(0.2), lineWidth: 0.5))
+                            .shadow(color: col.opacity(selectedMode == "off" ? 0 : 0.8), radius: 3)
+                            .offset(x: x, y: y)
+                    }
+                }
+                .frame(width: 130, height: 130)
+                .padding(.vertical, 4)
+
+                HStack(spacing: 12) {
+                    Button("Solid Fill") {
+                        applySolidToRing()
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+
+                    Divider().frame(height: 12)
+
+                    Button("Spectrum Gradient") {
+                        applySpectrumToRing()
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+
+                    Divider().frame(height: 12)
+
+                    Button("Clear (Off)") {
+                        selectedMode = "off"
+                        if liveApply { sendLedUpdate() }
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
         }
     }
 
@@ -86,6 +176,7 @@ struct LedSection: View {
                 ForEach(colorPresets, id: \.hex) { preset in
                     Button {
                         selectedColorHex = preset.hex
+                        updateBeadsColor(preset.color)
                         if liveApply { sendLedUpdate() }
                     } label: {
                         ZStack {
@@ -142,5 +233,38 @@ struct LedSection: View {
             mode: selectedMode,
             color: selectedMode == "off" ? nil : selectedColorHex
         )
+    }
+
+    private func updateBeadsColor(_ col: Color) {
+        beadColors = Array(repeating: col, count: 16)
+    }
+
+    private func applySolidToRing() {
+        if let preset = colorPresets.first(where: { $0.hex == selectedColorHex }) {
+            updateBeadsColor(preset.color)
+        } else {
+            updateBeadsColor(.white)
+        }
+        if liveApply { sendLedUpdate() }
+    }
+
+    private func applySpectrumToRing() {
+        for i in 0..<16 {
+            let hue = Double(i) / 16.0
+            beadColors[i] = Color(hue: hue, saturation: 1.0, brightness: 1.0)
+        }
+    }
+
+    private func queryDeviceState() {
+        isReadingMode = true
+        store.getHardwareLedMode(layer: selectedLayer) { mode in
+            isReadingMode = false
+            if let m = mode {
+                let name = (m == 0 ? "Off" : (m == 1 ? "Backlight" : (m == 2 ? "Shock (Breathe)" : (m == 3 ? "Shock2" : "Press"))))
+                hardwareReadMode = "Mode \(m): \(name)"
+            } else {
+                hardwareReadMode = "Could not read mode"
+            }
+        }
     }
 }

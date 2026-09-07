@@ -1,6 +1,6 @@
 //! `antiknob` command handlers (split from main.rs for the file gate).
 
-use antiknob::{apps, config, device, host, protocol};
+use antiknob::{api, apps, config, device, host, protocol};
 
 use anyhow::Result;
 use std::path::PathBuf;
@@ -87,28 +87,41 @@ fn parse_hex_bytes(parts: &[String]) -> Result<Vec<u8>> {
 
 pub fn run_status(json: bool) -> Result<()> {
     let devices = device::list_devices()?;
+    let connected = !devices.is_empty();
+    let primary = device::primary_transport(&devices);
+    let power = api::types::PowerStatus::current(&devices);
     if json {
-        println!("{}", serde_json::to_string_pretty(&devices)?);
+        let out = serde_json::json!({
+            "connected": connected,
+            "transport": primary.map(|t| t.as_str()).unwrap_or("disconnected"),
+            "power": power,
+            "devices": devices,
+        });
+        println!("{}", serde_json::to_string_pretty(&out)?);
         return Ok(());
     }
-    println!("[ ==> ] Scanning for Anticater / CH57x USB devices...");
+    println!("[ ==> ] Scanning for Anticater / CH57x devices...");
 
     if devices.is_empty() {
-        println!("[ Wrn ] No supported devices detected on USB.");
-        println!("        Please check your USB cable connection.");
+        println!("[ Wrn ] No supported devices detected (USB / 2.4G / Bluetooth).");
+        println!("        Please check your connection.");
         return Ok(());
     }
 
     for d in &devices {
         println!(
-                    "[ Ok  ] Found: {} (VID: 0x{:04x}, PID: 0x{:04x}, UsagePage: 0x{:04x}, Usage: 0x{:04x}, Iface: {})",
-                    d.name, d.vendor_id, d.product_id, d.usage_page, d.usage, d.interface_number
-                );
+            "[ Ok  ] Found: {} [{}] (VID: 0x{:04x}, PID: 0x{:04x}, UsagePage: 0x{:04x}, Usage: 0x{:04x}, Iface: {})",
+            d.name, d.transport.display_name(), d.vendor_id, d.product_id, d.usage_page, d.usage, d.interface_number
+        );
         println!("        Path: {}", d.path);
         if let Some(ref sn) = d.serial_number {
             println!("        Serial Number: {}", sn);
         }
     }
+    if let Some(t) = primary {
+        println!("[ Ok  ] Transport: {}", t.display_name());
+    }
+    println!("[ Ok  ] Power: {}", power.description);
 
     // Test unprivileged access to the vendor configuration interface
     match device::open_device() {

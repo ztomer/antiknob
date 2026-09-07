@@ -6,7 +6,7 @@ import Foundation
 
 // MARK: - Enums & Gestures
 
-enum Gesture: String, CaseIterable, Identifiable, Hashable {
+enum Gesture: String, CaseIterable, Identifiable, Hashable, Sendable {
     case twistL = "twistL"
     case twistR = "twistR"
     case holdTwistL = "holdTwistL"
@@ -24,7 +24,7 @@ let gestureTitles: [Gesture: String] = [
     .press: "Press",
 ]
 
-enum AuxKey: String, Codable, CaseIterable, Hashable {
+enum AuxKey: String, Codable, CaseIterable, Hashable, Sendable {
     case volumeUp = "volumeUp"
     case volumeDown = "volumeDown"
     case mute = "mute"
@@ -56,7 +56,7 @@ let auxTitles: [AuxKey: String] = [
     .brightnessDown: "Brightness Down",
 ]
 
-enum MouseButton: String, Codable, CaseIterable, Hashable {
+enum MouseButton: String, Codable, CaseIterable, Hashable, Sendable {
     case left = "left"
     case right = "right"
     case middle = "middle"
@@ -64,7 +64,7 @@ enum MouseButton: String, Codable, CaseIterable, Hashable {
 
 // MARK: - Key Chords & Sequences
 
-struct KeyChordSpec: Codable, Equatable, Hashable {
+struct KeyChordSpec: Codable, Equatable, Hashable, Sendable {
     var key: UInt16
     var mods: [String]
     var label: String?
@@ -80,7 +80,7 @@ struct KeyChordSpec: Codable, Equatable, Hashable {
     }
 }
 
-struct SeqStep: Codable, Equatable, Hashable {
+struct SeqStep: Codable, Equatable, Hashable, Sendable {
     var key: UInt16?
     var mods: [String]?
     var label: String?
@@ -122,7 +122,7 @@ struct SeqStep: Codable, Equatable, Hashable {
 
 // MARK: - Actions
 
-enum Action: Codable, Equatable, Hashable {
+enum Action: Codable, Equatable, Hashable, Sendable {
     case none
     case scroll(lines: Int32?)
     case keyChord(key: UInt16, mods: [String], label: String?)
@@ -230,7 +230,7 @@ enum Action: Codable, Equatable, Hashable {
 
 // MARK: - Layer and Config
 
-struct LayerConfig: Codable, Equatable, Hashable {
+struct LayerConfig: Codable, Equatable, Hashable, Sendable {
     var name: String
     var twistL: Action?
     var twistR: Action?
@@ -303,7 +303,7 @@ struct LayerConfig: Codable, Equatable, Hashable {
     }
 }
 
-struct Config: Codable, Equatable {
+struct Config: Codable, Equatable, Sendable {
     var layers: [LayerConfig]
     var doubleTapSwitch: Bool
     var doubleTapWindow: Double

@@ -139,7 +139,91 @@ pub fn all_tools() -> Vec<ToolDef> {
                 "properties": {}
             }),
         },
+        ToolDef {
+            name: "read_slots",
+            description: "Read slot table memory dump from the Anticater VK01 device.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "group": {
+                        "type": "integer",
+                        "description": "Optional slot table group (default 0x0F = 15; alternate 0x19 = 25)"
+                    },
+                    "counters": {
+                        "type": "array",
+                        "items": { "type": "integer" },
+                        "description": "Optional list of slot counters to read (defaults to [1, 2, 3])"
+                    }
+                }
+            }),
+        },
+        ToolDef {
+            name: "send_raw",
+            description: "Send a raw 64-byte HID report payload to the Anticater VK01 device.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "bytes": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Hex byte strings (e.g. ['0xFD', '0xFE', '0xFF'])"
+                    }
+                },
+                "required": ["bytes"]
+            }),
+        },
+        ToolDef {
+            name: "ping",
+            description: "Application-level liveness probe confirming the daemon is responsive.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {}
+            }),
+        },
     ]
+}
+
+/// Device power and battery status telemetry.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PowerStatus {
+    pub source: String,
+    pub transport: String,
+    pub battery_percent: Option<u8>,
+    pub description: String,
+}
+
+impl PowerStatus {
+    pub fn current(devices: &[crate::device::DeviceMatch]) -> Self {
+        if let Some(transport) = crate::device::primary_transport(devices) {
+            match transport {
+                crate::device::TransportType::Usb => Self {
+                    source: "usb_bus".to_string(),
+                    transport: "usb".to_string(),
+                    battery_percent: None,
+                    description: "Wired (USB Bus Powered)".to_string(),
+                },
+                crate::device::TransportType::Wireless24G => Self {
+                    source: "battery".to_string(),
+                    transport: "wireless_2_4g".to_string(),
+                    battery_percent: None,
+                    description: "2.4GHz Wireless (Battery Powered)".to_string(),
+                },
+                crate::device::TransportType::Bluetooth => Self {
+                    source: "battery".to_string(),
+                    transport: "bluetooth".to_string(),
+                    battery_percent: None,
+                    description: "Bluetooth Wireless (Battery Powered)".to_string(),
+                },
+            }
+        } else {
+            Self {
+                source: "disconnected".to_string(),
+                transport: "disconnected".to_string(),
+                battery_percent: None,
+                description: "Disconnected".to_string(),
+            }
+        }
+    }
 }
 
 /// Strongly-typed command parameters.
@@ -148,6 +232,9 @@ pub fn all_tools() -> Vec<ToolDef> {
 pub enum Command {
     #[serde(rename = "get_status")]
     GetStatus {},
+
+    #[serde(rename = "ping")]
+    Ping {},
 
     #[serde(rename = "get_config")]
     GetConfig {},
@@ -180,6 +267,15 @@ pub enum Command {
 
     #[serde(rename = "list_apps")]
     ListApps {},
+
+    #[serde(rename = "read_slots")]
+    ReadSlots {
+        group: Option<u8>,
+        counters: Option<Vec<u8>>,
+    },
+
+    #[serde(rename = "send_raw")]
+    SendRaw { bytes: Vec<String> },
 }
 
 /// Format human-readable LED mode string.

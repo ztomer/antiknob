@@ -1,14 +1,145 @@
 use anyhow::{anyhow, Context, Result};
 use hidapi::{HidApi, HidDevice};
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
 
-pub const SUPPORTED_DEVICES: &[(u16, u16, &str)] = &[
-    (0x514C, 0x8850, "Anticater / LQKJ VK01 (0x514c:0x8850)"),
-    (0x514C, 0x8851, "Anticater / LQKJ (0x514c:0x8851)"),
-    (0x1189, 0x8840, "Anticater / CH57x (0x1189:0x8840)"),
-    (0x1189, 0x8842, "Anticater / CH57x (0x1189:0x8842)"),
-    (0x1189, 0x8850, "Anticater / CH57x (0x1189:0x8850)"),
-    (0x1189, 0x8890, "Anticater / CH57x (0x1189:0x8890)"),
+static HID_LOCK: Mutex<()> = Mutex::new(());
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TransportType {
+    #[serde(rename = "usb")]
+    Usb,
+    #[serde(rename = "wireless_2_4g")]
+    Wireless24G,
+    #[serde(rename = "bluetooth")]
+    Bluetooth,
+}
+
+impl TransportType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Usb => "usb",
+            Self::Wireless24G => "wireless_2_4g",
+            Self::Bluetooth => "bluetooth",
+        }
+    }
+
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::Usb => "USB (Wired)",
+            Self::Wireless24G => "2.4GHz Wireless",
+            Self::Bluetooth => "Bluetooth Wireless",
+        }
+    }
+}
+
+fn default_transport() -> TransportType {
+    TransportType::Usb
+}
+
+pub const SUPPORTED_DEVICES: &[(u16, u16, &str, TransportType)] = &[
+    (
+        0x514C,
+        0x8850,
+        "Anticater / LQKJ VK01 (0x514c:0x8850)",
+        TransportType::Usb,
+    ),
+    (
+        0x514C,
+        0x8851,
+        "Anticater / LQKJ 2.4G (0x514c:0x8851)",
+        TransportType::Wireless24G,
+    ),
+    (
+        0x514C,
+        0x4155,
+        "Anticater / LiQi (0x514c:0x4155)",
+        TransportType::Usb,
+    ),
+    (
+        0x1189,
+        0x8840,
+        "Anticater / CH57x (0x1189:0x8840)",
+        TransportType::Usb,
+    ),
+    (
+        0x1189,
+        0x8842,
+        "Anticater / CH57x (0x1189:0x8842)",
+        TransportType::Usb,
+    ),
+    (
+        0x1189,
+        0x8850,
+        "Anticater / CH57x (0x1189:0x8850)",
+        TransportType::Usb,
+    ),
+    (
+        0x1189,
+        0x8851,
+        "Anticater / CH57x 2.4G (0x1189:0x8851)",
+        TransportType::Wireless24G,
+    ),
+    (
+        0x1189,
+        0x8890,
+        "Anticater / CH57x (0x1189:0x8890)",
+        TransportType::Usb,
+    ),
+    (
+        0x1189,
+        0x8830,
+        "Anticater / CH57x 2.4G (0x1189:0x8830)",
+        TransportType::Wireless24G,
+    ),
+    (
+        0x1189,
+        0x8831,
+        "Anticater / CH57x 2.4G (0x1189:0x8831)",
+        TransportType::Wireless24G,
+    ),
+    (
+        0x1189,
+        0x8832,
+        "Anticater / CH57x 2.4G (0x1189:0x8832)",
+        TransportType::Wireless24G,
+    ),
+    (
+        0x1189,
+        0x8833,
+        "Anticater / CH57x 2.4G (0x1189:0x8833)",
+        TransportType::Wireless24G,
+    ),
+    (
+        0x514C,
+        0x8830,
+        "Anticater / LQKJ 2.4G (0x514c:0x8830)",
+        TransportType::Wireless24G,
+    ),
+    (
+        0x514C,
+        0x8831,
+        "Anticater / LQKJ 2.4G (0x514c:0x8831)",
+        TransportType::Wireless24G,
+    ),
+    (
+        0x514C,
+        0x8832,
+        "Anticater / LQKJ 2.4G (0x514c:0x8832)",
+        TransportType::Wireless24G,
+    ),
+    (
+        0x514C,
+        0x8833,
+        "Anticater / LQKJ 2.4G (0x514c:0x8833)",
+        TransportType::Wireless24G,
+    ),
+    (
+        0x25A7,
+        0xFA11,
+        "Anticater 2.4G Receiver (0x25a7:0xfa11)",
+        TransportType::Wireless24G,
+    ),
 ];
 
 pub const VENDOR_USAGE_PAGE: u16 = 0xFF00;
@@ -39,33 +170,85 @@ pub struct DeviceMatch {
     /// Defaults for forward compatibility with older status JSON.
     #[serde(default = "default_iface_no")]
     pub interface_number: i32,
+    #[serde(default = "default_transport")]
+    pub transport: TransportType,
 }
 
 fn default_iface_no() -> i32 {
     -1
 }
 
+pub fn primary_transport(matches: &[DeviceMatch]) -> Option<TransportType> {
+    if matches.is_empty() {
+        return None;
+    }
+    if matches.iter().any(|m| m.transport == TransportType::Usb) {
+        Some(TransportType::Usb)
+    } else if matches
+        .iter()
+        .any(|m| m.transport == TransportType::Wireless24G)
+    {
+        Some(TransportType::Wireless24G)
+    } else if matches
+        .iter()
+        .any(|m| m.transport == TransportType::Bluetooth)
+    {
+        Some(TransportType::Bluetooth)
+    } else {
+        Some(TransportType::Usb)
+    }
+}
+
 pub fn list_devices() -> Result<Vec<DeviceMatch>> {
+    let _guard = HID_LOCK.lock().unwrap();
     let api = HidApi::new().context("Failed to initialize HIDAPI")?;
     let mut matches = Vec::new();
 
     for dev in api.device_list() {
         let vid = dev.vendor_id();
         let pid = dev.product_id();
+        let bus = dev.bus_type();
+        let prod = dev.product_string().unwrap_or("").to_lowercase();
 
-        if let Some((_, _, name)) = SUPPORTED_DEVICES
+        let known = SUPPORTED_DEVICES
             .iter()
-            .find(|(v, p, _)| *v == vid && *p == pid)
+            .find(|(v, p, _, _)| *v == vid && *p == pid);
+        let is_bt = matches!(bus, hidapi::BusType::Bluetooth)
+            || prod.contains("anticater")
+            || prod.contains("vk01")
+            || prod.contains("vk-01");
+
+        let match_info = if let Some((_, _, name, transport)) = known {
+            let actual = if matches!(bus, hidapi::BusType::Bluetooth) {
+                TransportType::Bluetooth
+            } else {
+                *transport
+            };
+            Some((name.to_string(), actual))
+        } else if is_bt
+            && (prod.contains("anticater") || prod.contains("vk01") || prod.contains("vk-01"))
         {
+            let name = if let Some(ps) = dev.product_string() {
+                format!("Anticater ({})", ps)
+            } else {
+                "Anticater (Bluetooth)".to_string()
+            };
+            Some((name, TransportType::Bluetooth))
+        } else {
+            None
+        };
+
+        if let Some((name, transport)) = match_info {
             matches.push(DeviceMatch {
                 vendor_id: vid,
                 product_id: pid,
-                name: name.to_string(),
+                name,
                 serial_number: dev.serial_number().map(|s| s.to_string()),
                 path: dev.path().to_string_lossy().to_string(),
                 usage_page: dev.usage_page(),
                 usage: dev.usage(),
                 interface_number: dev.interface_number(),
+                transport,
             });
         }
     }
@@ -74,6 +257,7 @@ pub fn list_devices() -> Result<Vec<DeviceMatch>> {
 }
 
 pub fn open_device() -> Result<HidDevice> {
+    let _guard = HID_LOCK.lock().unwrap();
     let api = HidApi::new().context("Failed to initialize HIDAPI")?;
 
     // On macOS, the vendor configuration endpoint has UsagePage 0xFF00
@@ -83,7 +267,7 @@ pub fn open_device() -> Result<HidDevice> {
         .find(|d| {
             let vid = d.vendor_id();
             let pid = d.product_id();
-            let is_supported = SUPPORTED_DEVICES.iter().any(|(v, p, _)| *v == vid && *p == pid);
+            let is_supported = SUPPORTED_DEVICES.iter().any(|(v, p, _, _)| *v == vid && *p == pid);
             is_supported && d.usage_page() == VENDOR_USAGE_PAGE
         })
         .or_else(|| {
@@ -91,10 +275,10 @@ pub fn open_device() -> Result<HidDevice> {
             api.device_list().find(|d| {
                 let vid = d.vendor_id();
                 let pid = d.product_id();
-                SUPPORTED_DEVICES.iter().any(|(v, p, _)| *v == vid && *p == pid)
+                SUPPORTED_DEVICES.iter().any(|(v, p, _, _)| *v == vid && *p == pid)
             })
         })
-        .ok_or_else(|| anyhow!("No supported Anticater/CH57x keyboard found on USB. Please ensure device is plugged in."))?;
+        .ok_or_else(|| anyhow!("No supported Anticater/CH57x device found. Please ensure device or receiver is connected."))?;
 
     let dev = target.open_device(&api).context(
         "Failed to open device interface. If permission is denied, ensure you have access to USB HID devices."
@@ -133,6 +317,7 @@ pub struct SnoopIface {
 }
 
 pub fn open_all_interfaces() -> Result<Vec<SnoopIface>> {
+    let _guard = HID_LOCK.lock().unwrap();
     let api = HidApi::new().context("Failed to initialize HIDAPI")?;
     #[cfg(target_os = "macos")]
     api.set_open_exclusive(false);
@@ -142,7 +327,7 @@ pub fn open_all_interfaces() -> Result<Vec<SnoopIface>> {
         let pid = dev.product_id();
         if !SUPPORTED_DEVICES
             .iter()
-            .any(|(v, p, _)| *v == vid && *p == pid)
+            .any(|(v, p, _, _)| *v == vid && *p == pid)
         {
             continue;
         }

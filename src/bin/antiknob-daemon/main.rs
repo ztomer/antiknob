@@ -97,9 +97,10 @@ fn install_login_item(config_path: &Path) -> Result<()> {
     let plist_path = login_item::install(&home, &exe, config_path)?;
     println!("[ ==> ] Wrote {}.", plist_path.display());
     let domain = user_domain()?;
+    let target = format!("{}/{}", domain, login_item::AGENT_LABEL);
     // Loading an already-loaded agent fails; unload first for idempotence.
     let _ = std::process::Command::new("launchctl")
-        .args(["bootout", &domain, login_item::AGENT_LABEL])
+        .args(["bootout", &target])
         .output();
     let load = std::process::Command::new("launchctl")
         .args(["bootstrap", &domain])
@@ -122,8 +123,9 @@ fn uninstall_login_item() -> Result<()> {
     use antiknob::host::login_item;
     let home = home_dir()?;
     let domain = user_domain()?;
+    let target = format!("{}/{}", domain, login_item::AGENT_LABEL);
     let _ = std::process::Command::new("launchctl")
-        .args(["bootout", &domain, login_item::AGENT_LABEL])
+        .args(["bootout", &target])
         .output();
     if login_item::uninstall(&home)? {
         println!("[ Ok  ] Login item removed.");
@@ -141,7 +143,9 @@ fn main() -> Result<()> {
     };
 
     if cli.mcp {
-        let ctx = antiknob::api::ApiContext::new(config_path, None);
+        let tap_health =
+            std::sync::Arc::new(std::sync::Mutex::new(antiknob::api::TapHealth::default()));
+        let ctx = antiknob::api::ApiContext::with_health(config_path, None, tap_health);
         return antiknob::api::run_mcp_server(ctx);
     }
 
@@ -163,13 +167,19 @@ fn main() -> Result<()> {
     let tap = std::sync::Arc::new(std::sync::Mutex::new(antiknob::host::tap::TapEngine::new(
         cfg,
     )));
+    let tap_health =
+        std::sync::Arc::new(std::sync::Mutex::new(antiknob::api::TapHealth::default()));
 
     let _socket_server = if !cli.no_socket {
         let sock_path = match cli.socket_path {
             Some(p) => p,
             None => antiknob::api::default_socket_path()?,
         };
-        let api_ctx = antiknob::api::ApiContext::new(config_path.clone(), Some(tap.clone()));
+        let api_ctx = antiknob::api::ApiContext::with_health(
+            config_path.clone(),
+            Some(tap.clone()),
+            tap_health.clone(),
+        );
         match antiknob::api::SocketServer::start(sock_path.clone(), api_ctx) {
             Ok(server) => {
                 println!(
@@ -193,11 +203,18 @@ fn main() -> Result<()> {
 
     if cli.active {
         println!("[ ==> ] ACTIVE mode: slot chords are swallowed and synthesized.");
-        run_active(tap, cli.timeout_secs, &config_path, !cli.no_tray);
+        run_active(
+            tap,
+            tap_health,
+            cli.timeout_secs,
+            &config_path,
+            !cli.no_tray,
+        );
     } else {
         println!("[ ==> ] OBSERVE mode: chords pass through, actions are only logged.");
         run_observe(
             tap,
+            tap_health,
             cli.timeout_secs,
             &config_path,
             !cli.no_tray,

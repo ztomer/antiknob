@@ -35,6 +35,11 @@ fn test_e2e_socket_server_and_client_roundtrip() {
     // 1. get_status
     let status_res = call_daemon_socket(&sock_path, &Command::GetStatus {}).unwrap();
     assert!(status_res.get("devices").is_some());
+    assert!(status_res.get("transport").is_some());
+    assert!(status_res["power"].get("transport").is_some());
+    assert!(status_res.get("tap_active").is_some());
+    assert_eq!(status_res["tap_active"].as_bool(), Some(false));
+    assert!(status_res.get("tap_error").is_some());
 
     // 2. get_config
     let cfg_res = call_daemon_socket(&sock_path, &Command::GetConfig {}).unwrap();
@@ -144,6 +149,129 @@ fn test_e2e_mcp_server_protocol_flow() {
     assert_eq!(call2_resp["id"], 5);
     let content2 = call2_resp["result"]["content"][0]["text"].as_str().unwrap();
     assert!(content2.contains("\"apps\":"));
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn test_socket_permissions_and_ping() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = temp_api_dir("sock_perm");
+    let sock_path = dir.join("test.sock");
+    let config_path = dir.join("host.json");
+
+    let initial_config = HostConfig::default_config();
+    fs::write(&config_path, initial_config.to_json_pretty()).unwrap();
+
+    let ctx = ApiContext::new(config_path, None);
+    let _server =
+        SocketServer::start(sock_path.clone(), ctx).expect("failed to start socket server");
+    std::thread::sleep(Duration::from_millis(100));
+
+    // Verify 0600 socket permissions
+    let meta = fs::metadata(&sock_path).unwrap();
+    let mode = meta.permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "Socket must have 0600 permissions");
+
+    // Verify ping command
+    let ping_res = call_daemon_socket(&sock_path, &Command::Ping {}).unwrap();
+    assert!(ping_res.is_object());
+
+    // Verify power status in GetStatus
+    let status_res = call_daemon_socket(&sock_path, &Command::GetStatus {}).unwrap();
+    assert!(status_res.get("power").is_some());
+    let desc = status_res["power"]["description"].as_str().unwrap();
+    assert!(desc.contains("Powered") || desc.contains("Disconnected"));
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn test_socket_dos_bounded_read_protection() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::UnixStream;
+
+    let dir = temp_api_dir("sock_dos");
+    let sock_path = dir.join("test.sock");
+    let config_path = dir.join("host.json");
+
+    let initial_config = HostConfig::default_config();
+    fs::write(&config_path, initial_config.to_json_pretty()).unwrap();
+
+    let ctx = ApiContext::new(config_path, None);
+    let _server =
+        SocketServer::start(sock_path.clone(), ctx).expect("failed to start socket server");
+    std::thread::sleep(Duration::from_millis(100));
+
+    // 1. Send >64KB of characters without newline
+    let mut stream = UnixStream::connect(&sock_path).unwrap();
+    let oversized = vec![b'x'; 70_000];
+    let _ = stream.write_all(&oversized);
+    let _ = stream.write_all(b"\n");
+    let _ = stream.flush();
+
+    let mut reader = BufReader::new(stream);
+    let mut resp = String::new();
+    let _ = reader.read_line(&mut resp);
+
+    // Bounded line reader must reject payload with -32600 error
+    assert!(resp.contains("-32600") || resp.is_empty());
+
+    // 2. Server must remain healthy and accept subsequent valid requests
+    let ping_res = call_daemon_socket(&sock_path, &Command::Ping {}).unwrap();
+    assert!(ping_res.is_object());
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn test_json_rpc_error_handling() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::UnixStream;
+
+    let dir = temp_api_dir("sock_err");
+    let sock_path = dir.join("test.sock");
+    let config_path = dir.join("host.json");
+
+    let initial_config = HostConfig::default_config();
+    fs::write(&config_path, initial_config.to_json_pretty()).unwrap();
+
+    let ctx = ApiContext::new(config_path, None);
+    let _server =
+        SocketServer::start(sock_path.clone(), ctx).expect("failed to start socket server");
+    std::thread::sleep(Duration::from_millis(100));
+
+    // 1. Malformed JSON returns -32700
+    let mut stream = UnixStream::connect(&sock_path).unwrap();
+    stream.write_all(b"not a valid json request\n").unwrap();
+    stream.flush().unwrap();
+
+    let mut reader = BufReader::new(&stream);
+    let mut resp = String::new();
+    reader.read_line(&mut resp).unwrap();
+    assert!(resp.contains("-32700"));
+    drop(stream);
+
+    // 2. Unknown method returns -32601
+    let mut stream2 = UnixStream::connect(&sock_path).unwrap();
+    stream2
+        .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":99,\"method\":\"nonexistent_tool\"}\n")
+        .unwrap();
+    stream2.flush().unwrap();
+
+    let mut reader2 = BufReader::new(&stream2);
+    let mut resp2 = String::new();
+    reader2.read_line(&mut resp2).unwrap();
+    assert!(resp2.contains("-32601"));
+    drop(stream2);
+
+    // 3. Oversized SendRaw is rejected by input validation
+    let oversized_raw = Command::SendRaw {
+        bytes: (0..70).map(|i| format!("{:02x}", i)).collect(),
+    };
+    let err = call_daemon_socket(&sock_path, &oversized_raw).unwrap_err();
+    assert!(err.to_string().contains("exceeds 64-byte limit"));
 
     let _ = fs::remove_dir_all(dir);
 }

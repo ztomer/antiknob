@@ -4,32 +4,47 @@
 //! and dispatches tool calls to `execute_command`.
 
 use super::dispatch::{execute_command, ApiContext};
+use super::socket::{read_bounded_line, MAX_REQUEST_SIZE};
 use super::types::{all_tools, Command};
 use anyhow::Result;
 use serde_json::{json, Value};
-use std::io::{self, BufRead, Write};
+use std::io::{self, Write};
 
 /// Run the MCP server on stdio until EOF.
 pub fn run_mcp_server(mut ctx: ApiContext) -> Result<()> {
     let stdin = io::stdin();
+    let mut reader = io::BufReader::new(stdin.lock());
     let mut stdout = io::stdout();
 
-    for line in stdin.lock().lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => break,
-        };
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
+    loop {
+        match read_bounded_line(&mut reader, MAX_REQUEST_SIZE) {
+            Ok(Some(line)) => {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
 
-        let resp = handle_mcp_request(&mut ctx, trimmed);
-        if let Some(resp_val) = resp {
-            let mut out = serde_json::to_string(&resp_val)?;
-            out.push('\n');
-            stdout.write_all(out.as_bytes())?;
-            stdout.flush()?;
+                let resp = handle_mcp_request(&mut ctx, trimmed);
+                if let Some(resp_val) = resp {
+                    let mut out = serde_json::to_string(&resp_val)?;
+                    out.push('\n');
+                    stdout.write_all(out.as_bytes())?;
+                    stdout.flush()?;
+                }
+            }
+            Ok(None) => break,
+            Err(e) => {
+                let err_resp = json!({
+                    "jsonrpc": "2.0",
+                    "id": Value::Null,
+                    "error": { "code": -32700, "message": format!("Input error: {}", e) }
+                });
+                let mut out = serde_json::to_string(&err_resp)?;
+                out.push('\n');
+                let _ = stdout.write_all(out.as_bytes());
+                let _ = stdout.flush();
+                break;
+            }
         }
     }
 
@@ -100,24 +115,45 @@ pub fn handle_mcp_request(ctx: &mut ApiContext, input: &str) -> Option<Value> {
             });
 
             match serde_json::from_value::<Command>(cmd_value) {
-                Ok(cmd) => match execute_command(ctx, cmd) {
-                    Ok(val) => {
-                        let text = serde_json::to_string_pretty(&val).unwrap_or_default();
-                        json!({
+                Ok(cmd) => {
+                    let run_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        execute_command(ctx, cmd)
+                    }));
+                    match run_res {
+                        Ok(Ok(val)) => {
+                            let text = serde_json::to_string_pretty(&val).unwrap_or_default();
+                            json!({
+                                "content": [{
+                                    "type": "text",
+                                    "text": text
+                                }]
+                            })
+                        }
+                        Ok(Err(e)) => json!({
+                            "isError": true,
                             "content": [{
                                 "type": "text",
-                                "text": text
+                                "text": format!("Error: {}", e)
                             }]
-                        })
+                        }),
+                        Err(panic_err) => {
+                            let msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
+                                s.to_string()
+                            } else if let Some(s) = panic_err.downcast_ref::<String>() {
+                                s.clone()
+                            } else {
+                                "Internal panic during tool execution".to_string()
+                            };
+                            json!({
+                                "isError": true,
+                                "content": [{
+                                    "type": "text",
+                                    "text": format!("Internal error: {}", msg)
+                                }]
+                            })
+                        }
                     }
-                    Err(e) => json!({
-                        "isError": true,
-                        "content": [{
-                            "type": "text",
-                            "text": format!("Error: {}", e)
-                        }]
-                    }),
-                },
+                }
                 Err(e) => json!({
                     "isError": true,
                     "content": [{

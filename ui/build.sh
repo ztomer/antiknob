@@ -30,7 +30,7 @@ cat > "${APP_DIR}/Contents/Info.plist" <<'EOF'
     <key>CFBundleIconFile</key>
     <string>Antiknob.icns</string>
     <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
+    <string>26.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
 </dict>
@@ -39,6 +39,11 @@ EOF
 
 if [[ -f "${ROOT_DIR}/assets/Antiknob.icns" ]]; then
     cp "${ROOT_DIR}/assets/Antiknob.icns" "${RESOURCES_DIR}/Antiknob.icns"
+fi
+if [[ -f "${ROOT_DIR}/assets/ak12-1024.png" ]]; then
+    cp "${ROOT_DIR}/assets/ak12-1024.png" "${RESOURCES_DIR}/ak12-1024.png"
+    sips -z 18 18 "${ROOT_DIR}/assets/ak12-1024.png" --out "${RESOURCES_DIR}/ak12-tray.png" >/dev/null 2>&1 || true
+    sips -z 36 36 "${ROOT_DIR}/assets/ak12-1024.png" --out "${RESOURCES_DIR}/ak12-tray@2x.png" >/dev/null 2>&1 || true
 fi
 
 echo "[ ==> ] Compiling Swift sources into Antiknob.app..."
@@ -52,11 +57,20 @@ SWIFT_FILES=(
     "${SCRIPT_DIR}/LayerDetail.swift"
     "${SCRIPT_DIR}/GeneralPane.swift"
     "${SCRIPT_DIR}/LedSection.swift"
+    "${SCRIPT_DIR}/HardwarePane.swift"
+    "${SCRIPT_DIR}/InspectorPane.swift"
+    "${SCRIPT_DIR}/ServicesPane.swift"
     "${SCRIPT_DIR}/SettingsRoot.swift"
     "${SCRIPT_DIR}/App.swift"
 )
 
-swiftc -O -parse-as-library "${SWIFT_FILES[@]}" -o "${MACOS_DIR}/Antiknob"
+swiftc -O -parse-as-library \
+    -swift-version 6 \
+    -strict-concurrency=complete \
+    -target arm64-apple-macosx26.0 \
+    -warnings-as-errors \
+    "${SWIFT_FILES[@]}" \
+    -o "${MACOS_DIR}/Antiknob"
 
 echo "[ ==> ] Codesigning Antiknob.app..."
 IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple Development/ && !/CSSMERR/ {print $2; exit}' || true)

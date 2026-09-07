@@ -18,6 +18,7 @@ mkdir -p "${DEST_DIR}/bin"
 cp "${TARGET_DIR}/release/antiknob" "${DEST_DIR}/bin/antiknob"
 cp "${TARGET_DIR}/release/antiknob-gui" "${DEST_DIR}/bin/antiknob-gui"
 cp "${TARGET_DIR}/release/antiknob-daemon" "${DEST_DIR}/bin/antiknob-daemon"
+codesign -s - --force "${DEST_DIR}/bin/antiknob" "${DEST_DIR}/bin/antiknob-gui" "${DEST_DIR}/bin/antiknob-daemon"
 # Never overwrite a live config: install the starter only when missing.
 if [[ ! -f "${DEST_DIR}/config.yaml" ]]; then
     cp config.yaml "${DEST_DIR}/config.yaml"
@@ -45,6 +46,9 @@ chmod +x "${DAEMON_BUNDLE}/Contents/MacOS/AntiknobDaemon"
 if [[ -f "assets/Antiknob.icns" ]]; then
     cp "assets/Antiknob.icns" "${DAEMON_BUNDLE}/Contents/Resources/Antiknob.icns"
 fi
+if [[ -f "assets/ak12-1024.png" ]]; then
+    cp "assets/ak12-1024.png" "${DAEMON_BUNDLE}/Contents/Resources/ak12-1024.png"
+fi
 
 cat << PLIST > "${DAEMON_BUNDLE}/Contents/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
@@ -66,7 +70,7 @@ cat << PLIST > "${DAEMON_BUNDLE}/Contents/Info.plist"
 	<key>CFBundleVersion</key>
 	<string>${PKG_BUILD}</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>12.0</string>
+	<string>26.0</string>
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSHighResolutionCapable</key>

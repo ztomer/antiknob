@@ -71,3 +71,42 @@
   - Added `tests/api_e2e.rs` testing socket server round-trip and MCP protocol flows.
   - 100% test pass rate (85 tests) and strict `./tools/gate.sh --full` compliance.
 
+## Shipped in 0.3.1
+
+* Power & Battery Telemetry:
+  - Reverse-engineered Anticater VK01 USB HID protocol; confirmed device operates bus-powered (VBUS 5V) without vendor battery query commands.
+  - Exposed `PowerStatus` across CLI (`antiknob status`), Unix socket, MCP server, and native UI badges (`Wired (USB Bus Powered)`).
+* Daemon Protocol Hardening:
+  - Applied `daemon-liveness-design` and security patterns.
+  - Enforced `0600` permissions on socket and `0700` on Application Support.
+  - Bounded request line reader (64KB cap) preventing memory exhaustion DoS.
+  - 5-second socket read/write timeouts and 16-client concurrency budget with typed `-32000` refusal.
+  - Panic isolation via `catch_unwind` returning `-32603 Internal Error`.
+  - Application-level `ping` method for non-destructive liveness probes.
+  - Input validation bounds across raw bytes, keymaps, and slot queries.
+  - 100% test pass rate (88 tests passing).
+
+## Shipped in 0.4.0
+
+* SOTA Unified Appbar Titlebar (`Antiknob.app`):
+  - Replaced traditional macOS window titlebar with a unified Appbar.
+  - Configured `.fullSizeContentView`, `.titlebarAppearsTransparent`, and `.titleVisibility = .hidden`.
+  - Moved the layer tab strip, switching tab, and `+` layer button directly into the titlebar/appbar area with 76pt traffic-light clearance.
+  - Placed trailing status cluster (Power/battery pill, transient autosave confirmation, and quick refresh) on the right side of the appbar.
+  - Maximized vertical canvas space for knob centerpiece and gesture configuration forms.
+
+## Shipped in 0.4.1
+
+* Seamless Multi-Transport Detection (USB, 2.4GHz Wireless, Bluetooth):
+  - Added `TransportType` model (`Usb`, `Wireless24G`, `Bluetooth`) and per-device transport tags to `DeviceMatch`.
+  - Extended hardware discovery to detect 2.4GHz wireless dongles (`0x8851`, `0x8830..=0x8833`, `0x25a7:0xfa11`, `0x514c:0x4155`) and Bluetooth Anticater devices (`dev.bus_type() == Bluetooth` or `ANTICATER_MINI` per manual).
+  - Implemented dynamic power & transport telemetry (`Wired (USB Bus Powered)`, `2.4GHz Wireless (Battery Powered)`, `Bluetooth Wireless (Battery Powered)`).
+  - Updated native UI Appbar trailing pill with reactive SF Symbols and colors:
+    - USB: Green dot, `bolt.fill`, "USB"
+    - 2.4GHz: Cyan dot, `antenna.radiowaves.left.and.right`, "2.4G"
+    - Bluetooth: Blue dot, `wave.3.right`, "BT"
+    - Offline: Gray dot, `circle.slash`, "Offline"
+  - Added automatic background polling (every 2.0s) and immediate focus refresh (`NSApplication.didBecomeActiveNotification`) — zero daemon or UI restarts required.
+  - 100% test pass rate (88 tests passing) and passed `./tools/gate.sh --full`.
+
+

@@ -24,7 +24,7 @@ enum SocketError: LocalizedError {
     }
 }
 
-final class SocketClient {
+final class SocketClient: @unchecked Sendable {
     static let shared = SocketClient()
 
     private let primaryPath = "/tmp/antiknob.sock"
@@ -210,6 +210,26 @@ final class SocketClient {
         if let l = layer { params["layer"] = l }
         let res = try rpcCall(method: "bind_slots", params: params)
         return (res as? [String: Any])?["status"] as? String ?? "OK"
+    }
+
+    func uploadKeymap(yaml: String, layer: Int? = nil) throws -> String {
+        var params: [String: Any] = ["yaml": yaml]
+        if let l = layer { params["layer"] = l }
+        let res = try rpcCall(method: "upload_keymap", params: params)
+        return (res as? [String: Any])?["message"] as? String ?? "Keymap flashed"
+    }
+
+    func readSlots(group: UInt8? = nil, counters: [UInt8]? = nil) throws -> [String: Any] {
+        var params: [String: Any] = [:]
+        if let g = group { params["group"] = g }
+        if let c = counters { params["counters"] = c }
+        let res = try rpcCall(method: "read_slots", params: params)
+        return (res as? [String: Any]) ?? [:]
+    }
+
+    func sendRaw(bytes: [String]) throws -> [String: Any] {
+        let res = try rpcCall(method: "send_raw", params: ["bytes": bytes])
+        return (res as? [String: Any]) ?? [:]
     }
 
     // MARK: - Direct Disk Fallback (when daemon is not running)

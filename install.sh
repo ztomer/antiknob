@@ -104,3 +104,16 @@ echo "        GUI App: ${APP_BUNDLE}"
 echo "        Daemon App: ${DAEMON_BUNDLE} (menu bar, no dock icon)"
 echo "        CLI tool: ${DEST_DIR}/bin/antiknob"
 echo "        Start at login with: ${DEST_DIR}/bin/antiknob-daemon --install-login-item"
+
+# The daemon's keyboard tap needs an Accessibility grant, and TCC keys that to
+# the binary PATH -- so a fresh install, or an install to a new location, needs
+# granting again even though the last one worked. Say so here rather than let
+# it be discovered as "the knob stopped working": flashing and LED still work
+# without it, which makes the failure look partial and confusing.
+if ! "${DEST_DIR}/bin/antiknob-daemon" --check-tap >/dev/null 2>&1; then
+    echo
+    echo "[ --- ] The daemon needs Accessibility to translate knob gestures."
+    echo "        System Settings > Privacy & Security > Accessibility,"
+    echo "        then add: ${DEST_DIR}/bin/antiknob-daemon"
+    echo "        (Hardware flashing and LED control work without it.)"
+fi

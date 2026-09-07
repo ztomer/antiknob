@@ -104,6 +104,23 @@ pub fn decode(event_type: CGEventType, code: u16, flags: u64) -> Option<KeyEvent
     }
 }
 
+/// Can a tap be created at all? Creates one, tears it down, reports.
+///
+/// Separate from `listen` because the answer is wanted WITHOUT pumping a run
+/// loop: `install.sh` asks it once and prints guidance, and a caller that had
+/// to run the loop to find out would never return.
+pub fn probe() -> Result<(), String> {
+    CGEventTap::new(
+        CGEventTapLocation::HID,
+        CGEventTapPlacement::HeadInsertEventTap,
+        CGEventTapOptions::ListenOnly,
+        vec![CGEventType::KeyDown],
+        |_proxy, _type, _event| CallbackResult::Keep,
+    )
+    .map(|_tap| ())
+    .map_err(|()| accessibility_hint())
+}
+
 /// Watch the keyboard without ever consuming anything.
 pub fn listen(mut on_key: impl FnMut(KeyEvent) + Send + 'static) -> Result<(), String> {
     run_tap(CGEventTapOptions::ListenOnly, move |ev| {
@@ -169,15 +186,15 @@ fn run_tap(
         CFRunLoop::run_current,
     );
 
-    match result {
-        Ok(()) => Ok(()),
-        // The only realistic cause, and the one the user can act on.
-        Err(()) => Err(
-            "could not create the event tap -- grant Accessibility (and Input Monitoring) \
-             to this binary in System Settings > Privacy & Security"
-                .to_string(),
-        ),
-    }
+    result.map_err(|()| accessibility_hint())
+}
+
+/// The only realistic reason a tap fails to create, and the one the user can
+/// act on. One definition: both `probe` and `run_tap` report it.
+fn accessibility_hint() -> String {
+    "could not create the event tap -- grant Accessibility (and Input Monitoring) \
+     to this binary in System Settings > Privacy & Security"
+        .to_string()
 }
 
 #[cfg(test)]

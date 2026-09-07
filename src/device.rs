@@ -106,6 +106,57 @@ pub fn send_report(dev: &HidDevice, payload: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// Open every interface of every supported device (keyboard, mouse,
+/// consumer, vendor) for passive snooping. Opens NON-exclusively so the
+/// OS keeps receiving input while we watch; never steals the keyboard.
+pub struct SnoopIface {
+    pub label: String,
+    pub usage_page: u16,
+    pub usage: u16,
+    pub device: HidDevice,
+}
+
+pub fn open_all_interfaces() -> Result<Vec<SnoopIface>> {
+    let api = HidApi::new().context("Failed to initialize HIDAPI")?;
+    #[cfg(target_os = "macos")]
+    api.set_open_exclusive(false);
+    let mut out = Vec::new();
+    for dev in api.device_list() {
+        let vid = dev.vendor_id();
+        let pid = dev.product_id();
+        if !SUPPORTED_DEVICES
+            .iter()
+            .any(|(v, p, _)| *v == vid && *p == pid)
+        {
+            continue;
+        }
+        let usage_page = dev.usage_page();
+        let usage = dev.usage();
+        let label = format!(
+            "{:04x}:{:04x} up={:#06x} use={:#04x}",
+            vid, pid, usage_page, usage
+        );
+        match dev.open_device(&api) {
+            Ok(handle) => {
+                if let Err(e) = handle.set_blocking_mode(false) {
+                    eprintln!("note: nonblocking failed for {}: {}", label, e);
+                    continue;
+                }
+                out.push(SnoopIface {
+                    label,
+                    usage_page,
+                    usage,
+                    device: handle,
+                });
+            }
+            Err(e) => {
+                eprintln!("note: cannot snoop {}: {}", label, e);
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// Slot-table read query, reverse-engineered from the vendor app's
 /// `Widget::read_Hidkey_Data`: write `[FA group 00 counter]` (report 0x03)
 /// and read back the 64-byte slot dump. Read-only; changes no device state.

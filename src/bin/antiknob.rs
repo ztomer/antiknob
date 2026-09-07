@@ -89,9 +89,72 @@ enum Commands {
     },
 }
 
+/// Best-effort decode of one input report for the snoop log. Keyboard
+/// boot reports show modifiers + keycodes, mouse shows buttons/wheel,
+/// everything else prints raw. Never fails: unknown layouts fall back
+/// to an empty note next to the hex dump.
+fn decode_input(iface: &device::SnoopIface, buf: &[u8]) -> String {
+    // Keyboard boot report: [mods, 00, k1..k6], optionally prefixed
+    // with a zero report ID.
+    let body: &[u8] = if buf.len() == 9 && buf[0] == 0 {
+        &buf[1..]
+    } else {
+        buf
+    };
+    if iface.usage_page == 0x01 && iface.usage == 0x06 && body.len() == 8 && body[1] == 0 {
+        let mods = body[0];
+        let keys: Vec<String> = body[2..8]
+            .iter()
+            .filter(|&&k| k != 0)
+            .map(|k| format!("{:02x}", k))
+            .collect();
+        let mut mod_names = Vec::new();
+        if mods & 0x01 != 0 {
+            mod_names.push("ctrl");
+        }
+        if mods & 0x02 != 0 {
+            mod_names.push("shift");
+        }
+        if mods & 0x04 != 0 {
+            mod_names.push("alt");
+        }
+        if mods & 0x08 != 0 {
+            mod_names.push("cmd");
+        }
+        return format!(
+            "<-- keyboard mods=[{}] keys=[{}]",
+            mod_names.join("+"),
+            keys.join(" ")
+        );
+    }
+    if iface.usage_page == 0x01 && iface.usage == 0x02 && buf.len() >= 3 {
+        let buttons = buf[0];
+        let mut notes = Vec::new();
+        if buttons & 0x01 != 0 {
+            notes.push("left".to_string());
+        }
+        if buttons & 0x02 != 0 {
+            notes.push("right".to_string());
+        }
+        if buttons & 0x04 != 0 {
+            notes.push("middle".to_string());
+        }
+        return format!(
+            "<-- mouse buttons=[{}] x={} wheel={}",
+            notes.join("+"),
+            buf[1] as i8,
+            buf[2] as i8
+        );
+    }
+    if iface.usage_page == 0xFF00 && buf.len() > 2 && buf[0] == 0x03 && (16..=27).contains(&buf[2])
+    {
+        return format!("<-- vendor slot key_id={}", buf[2]);
+    }
+    String::new()
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
-
     match cli.command {
         Commands::Status { json } => {
             let devices = device::list_devices()?;
@@ -288,34 +351,39 @@ fn main() -> Result<()> {
 
         Commands::Listen { timeout_secs } => {
             use std::time::Instant;
-            println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
-            let dev = device::open_device()?;
-            dev.set_blocking_mode(false)?;
+            println!(
+                "[ ==> ] Opening all knob interfaces for snooping (non-exclusive, no sudo)..."
+            );
+            let ifaces = device::open_all_interfaces()?;
+            if ifaces.is_empty() {
+                println!("[ Wrn ] No supported devices detected on USB.");
+                return Ok(());
+            }
+            for iface in &ifaces {
+                println!("        watching {}", iface.label);
+            }
             let deadline = Instant::now() + Duration::from_secs(timeout_secs);
             println!(
-                "[ ==> ] Listening for input reports for {}s (twist / press the knob)...",
+                "[ ==> ] Snooping for {}s: twist / press / hold the knob (mouse stays usable)...",
                 timeout_secs
             );
             let mut buf = [0u8; 64];
             while Instant::now() < deadline {
-                match dev.read_timeout(&mut buf, 200) {
-                    Ok(0) => {}
-                    Ok(n) => {
-                        if buf[..n].iter().any(|&b| b != 0) {
-                            let hex: Vec<String> =
-                                buf[..n].iter().map(|b| format!("{:02x}", b)).collect();
-                            print!("        +{}B: {}", n, hex.join(" "));
-                            // Best-effort hint only: the input layout mirrors
-                            // the output layout on this firmware family.
-                            if n > 2 && buf[0] == 0x03 && (16..=18).contains(&buf[2]) {
-                                print!("   <-- possible slot key_id={}", buf[2]);
+                for iface in &ifaces {
+                    match iface.device.read_timeout(&mut buf, 20) {
+                        Ok(0) => {}
+                        Ok(n) => {
+                            if buf[..n].iter().any(|&b| b != 0) {
+                                let hex: Vec<String> =
+                                    buf[..n].iter().map(|b| format!("{:02x}", b)).collect();
+                                print!("        [{}] +{}B: {}", iface.label, n, hex.join(" "));
+                                print!("   {}", decode_input(iface, &buf[..n]));
+                                println!();
                             }
-                            println!();
                         }
-                    }
-                    Err(e) => {
-                        println!("[ Wrn ] Read error: {}", e);
-                        break;
+                        Err(e) => {
+                            println!("[ Wrn ] Read error on {}: {}", iface.label, e);
+                        }
                     }
                 }
             }

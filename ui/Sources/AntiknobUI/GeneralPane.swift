@@ -102,52 +102,43 @@ struct GeneralPane: View {
     private var systemStatusSection: some View {
         Section("Status & Diagnostics") {
             PropertyGrid {
-                PropertyRow(label: "Daemon Socket") {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(store.daemonConnected ? Color.green : Color.orange)
-                            .frame(width: 8, height: 8)
-                        Text(store.daemonConnected
-                             ? "Connected (/tmp/antiknob.sock)"
-                             : "Offline (Local fallback)")
-                    }
+                StatusRow(
+                    label: "Daemon Socket",
+                    value: store.daemonConnected
+                        ? "Connected (/tmp/antiknob.sock)"
+                        : "Offline (Local fallback)"
+                ) {
+                    StatusDot(color: store.daemonConnected ? .green : .orange)
                 }
 
-                PropertyRow(label: "Knob Hardware") {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(store.hardwareConnected ? Color.green : Color.secondary)
-                            .frame(width: 8, height: 8)
-                        Text(store.hardwareProduct)
-                    }
+                StatusRow(label: "Knob Hardware", value: store.hardwareProduct) {
+                    StatusDot(color: store.hardwareConnected ? .green : .secondary)
                 }
 
-                PropertyRow(label: "Connection Mode") {
-                    HStack(spacing: 6) {
-                        Image(systemName: store.transportIcon)
-                            .foregroundStyle(store.hardwareConnected
-                                             ? store.transportColor : Color.secondary)
-                        Text(store.hardwareConnected
-                             ? store.transportDisplay : "Not connected")
-                    }
+                StatusRow(
+                    label: "Connection Mode",
+                    value: store.hardwareConnected ? store.transportDisplay : "Not connected"
+                ) {
+                    Image(systemName: store.transportIcon)
+                        .foregroundStyle(store.hardwareConnected
+                                         ? store.transportColor : Color.secondary)
+                        .frame(width: 16)
                 }
 
-                PropertyRow(label: "Power & Battery") {
-                    HStack(spacing: 6) {
-                        // `store.powerIcon`, not a local bolt/battery guess:
-                        // this was the third copy of that mapping in the app.
-                        Image(systemName: store.powerIcon)
-                            .foregroundStyle(store.hardwareConnected
-                                             ? Color.accentColor : Color.secondary)
-                        Text(store.hardwareConnected
-                             ? store.powerDescription : "Disconnected")
-                    }
+                StatusRow(
+                    label: "Power & Battery",
+                    value: store.hardwareConnected ? store.powerDescription : "Disconnected"
+                ) {
+                    // `store.powerIcon`, not a local bolt/battery guess: this
+                    // was the third copy of that mapping in the app.
+                    Image(systemName: store.powerIcon)
+                        .foregroundStyle(store.hardwareConnected
+                                         ? Color.accentColor : Color.secondary)
+                        .frame(width: 16)
                 }
 
                 if let msg = store.statusMessage {
-                    PropertyRow(label: "Last Operation") {
-                        Text(msg)
-                    }
+                    StatusRow(label: "Last Operation", value: msg) { EmptyView() }
                 }
             }
 

@@ -63,13 +63,15 @@ public final class ConfigStore: ObservableObject {
     var powerIcon: String { status.powerIcon }
 
     /// Colour stays here: `Color` is SwiftUI, and `StatusPresentation` is
-    /// deliberately free of it so the mapping tests need no view stack.
+    /// deliberately free of it so the mapping tests need no view stack. The
+    /// switch is over `Transport`, not over the raw string, so a new case
+    /// fails to compile here rather than quietly rendering grey.
     var transportColor: Color {
-        switch transport {
-        case "wireless_2_4g": return .cyan
-        case "bluetooth": return .blue
-        case "usb": return .green
-        default: return .secondary
+        switch status.link {
+        case .usb: return .green
+        case .wireless24GHz: return .cyan
+        case .bluetooth: return .blue
+        case nil: return .secondary
         }
     }
 

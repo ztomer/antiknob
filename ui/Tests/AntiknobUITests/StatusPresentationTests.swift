@@ -18,17 +18,34 @@ private func status(
 
 @Suite("Status presentation")
 struct StatusPresentationTests {
+    /// Driven by `Transport.allCases`, so adding a transport extends this test
+    /// automatically. A new case that reuses another's label or glyph fails
+    /// here; one that is never rendered fails to compile in `transportColor`.
     @Test("every transport maps to its own label and glyph")
     func transportsAreDistinct() {
-        let known = ["usb", "wireless_2_4g", "bluetooth"]
-        let labels = known.map { status($0).transportDisplay }
-        let icons = known.map { status($0).transportIcon }
+        let all = Transport.allCases
+        #expect(all.count >= 3, "transports disappeared: \(all)")
 
-        #expect(Set(labels).count == known.count, "two transports share a label: \(labels)")
-        #expect(Set(icons).count == known.count, "two transports share a glyph: \(icons)")
+        let labels = all.map(\.displayName)
+        let icons = all.map(\.icon)
+        #expect(Set(labels).count == all.count, "two transports share a label: \(labels)")
+        #expect(Set(icons).count == all.count, "two transports share a glyph: \(icons)")
+        #expect(!labels.contains(""), "a transport has no label")
+        #expect(!icons.contains(""), "a transport has no glyph")
+
         #expect(status("usb").transportDisplay == "USB (Wired)")
         #expect(status("wireless_2_4g").transportDisplay == "2.4GHz Wireless")
         #expect(status("bluetooth").transportDisplay == "Bluetooth Wireless")
+    }
+
+    /// The raw values are the daemon's wire strings; renaming one silently
+    /// stops the UI recognising that link.
+    @Test("transport raw values match the daemon's wire strings")
+    func rawValuesMatchTheWire() {
+        #expect(Transport(rawValue: "usb") == .usb)
+        #expect(Transport(rawValue: "wireless_2_4g") == .wireless24GHz)
+        #expect(Transport(rawValue: "bluetooth") == .bluetooth)
+        #expect(Transport(rawValue: "disconnected") == nil)
     }
 
     @Test("an unrecognised transport falls back rather than showing a raw tag")

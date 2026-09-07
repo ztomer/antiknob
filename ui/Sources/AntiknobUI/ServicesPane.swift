@@ -101,23 +101,31 @@ struct ServicesPane: View {
     private var daemonSection: some View {
         Section {
             PropertyGrid {
-                PropertyRow(label: "Daemon Socket") {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(store.daemonConnected ? Color.green : Color.orange)
-                            .frame(width: 8, height: 8)
-                        Text(store.daemonConnected ? "Connected" : "Offline")
-                            .foregroundStyle(store.daemonConnected ? .primary : .secondary)
-                    }
+                StatusRow(
+                    label: "Daemon Socket",
+                    value: store.daemonConnected ? "Connected" : "Offline",
+                    valueStyle: store.daemonConnected ? .primary : .secondary
+                ) {
+                    StatusDot(color: store.daemonConnected ? .green : .orange)
                 }
 
-                PropertyRow(label: "Socket Path") {
+                GridRow {
+                    Text("Socket Path")
+                        .foregroundStyle(.secondary)
+                        .gridColumnAlignment(.leading)
                     Text("/tmp/antiknob.sock")
                         .font(.system(.body, design: .monospaced))
+                        .gridColumnAlignment(.leading)
+                    EmptyView()
                 }
 
-                PropertyRow(label: "Protocol") {
+                GridRow {
+                    Text("Protocol")
+                        .foregroundStyle(.secondary)
+                        .gridColumnAlignment(.leading)
                     Text("JSON-RPC 2.0 over AF_UNIX stream")
+                        .gridColumnAlignment(.leading)
+                    EmptyView()
                 }
             }
 
@@ -148,16 +156,14 @@ struct ServicesPane: View {
     private var eventTapSection: some View {
         Section {
             PropertyGrid {
-                PropertyRow(label: "Event Tap Status") {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(store.tapActive ? Color.green : Color.orange)
-                            .frame(width: 8, height: 8)
-                        Text(store.tapActive
-                             ? "Active (Swallowing & Synthesizing)"
-                             : "Degraded (Permission Needed)")
-                            .foregroundStyle(store.tapActive ? .primary : .secondary)
-                    }
+                StatusRow(
+                    label: "Event Tap Status",
+                    value: store.tapActive
+                        ? "Active (Swallowing & Synthesizing)"
+                        : "Degraded (Permission Needed)",
+                    valueStyle: store.tapActive ? .primary : .secondary
+                ) {
+                    StatusDot(color: store.tapActive ? .green : .orange)
                 }
             }
 

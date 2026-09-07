@@ -40,12 +40,16 @@ Two ways to make the number mean something, in order of value:
 * Put a seam under `SocketClient` (247 lines, 0%) so its JSON-RPC framing and
   error paths can be tested without a live daemon.
 
-`ui/.swiftlint-baseline.json` is the companion ratchet: 12 entries, all
+`ui/.swiftlint-baseline.json` is the companion ratchet: 11 entries, all
 `cyclomatic_complexity` / `function_body_length` / `type_body_length` on view
 bodies and the two exhaustive `Action` coding switches. It is shrink-only --
 new violations fail, and a listed one that grows fails too, because the match
 key includes the count in the reason string. Delete entries as the bodies get
-split; do not re-record it to make a failure go away.
+split; do not re-record it to make a failure go away. It has been re-recorded
+once, when splitting `LayerDetail.swift` moved three entries to a new file and
+eliminated a fourth; that was verified as a pure move (zero new debt, ignoring
+which file each violation lived in) before re-recording, which is the only
+form of re-record the ratchet permits.
 
 ### 2. `rdev` drags in a crate a future rustc will reject
 

@@ -13,10 +13,12 @@ Antiknob is written in 100% pure Rust and native SwiftUI, permissively licensed 
   * **System-Managed Tab Bar**: A native `TabView` renders the tab strip into the window titlebar, alongside the traffic lights. One tab per layer, plus Switching, Lighting, Hardware, Inspector and Services.
   * **Interactive Knob Centerpiece**: Rendered knob header with clickable gesture zones (Twist Left/Right, Hold + Twist Left/Right, Press) that highlight and select the corresponding gesture row.
   * **Layer Management**: Each layer's pane carries its name, its position (`Move Left` / `Move Right`, with a `n of m` readout) and a confirmed `Delete Layer`; `+` in the toolbar adds one.
+  * **Column Layout**: Property rows, status rows and record lists are laid out on shared column edges (`PropertyGrid` / `StatusRow` / `PropertyRow`), so labels, values, state lights and controls each read down one straight edge instead of ragging against the trailing margin. HID endpoints are a four-column table; state lights sit in their own column right of the text.
   * **System Settings Capsule Chord Recorder**: One-click shortcut capture displaying macOS native glyphs (`⌃`, `⌥`, `⇧`, `⌘`).
   * **Macro Sequence Editor**: Sheet modal supporting multi-step macros, millisecond wait steps, and drag-to-reorder.
   * **Dynamic Hardware Lighting**: Real-time LED mode controls (Off, Backlight, Shock/Breathe, Shock 2, Press Reactive, Custom) with color swatches sending instant updates to hardware.
   * **Bottom Status Bar**: Connection, transport and power source read as SF Symbol glyphs in the lower-right corner (words in the tooltip), next to a manual refresh and the transient autosave badge.
+  * **One Mapping Per Question**: Transport is a `Transport` enum, not a string compared at each call site, so every switch over it is exhaustive and adding a link is a compile error at each place that must render it. Power source, transport glyph and LED mode name each have exactly one definition.
 * **Single Source of Truth (`src/api/`)**:
   * Unified schema and tool definitions shared across the Unix socket interface and the MCP server.
 * **Unix Domain Socket Interface (`/tmp/antiknob.sock`)**:
@@ -180,6 +182,7 @@ what its 4% coverage floor does and does not mean.
 | [.cargo/audit.toml](.cargo/audit.toml) | `cargo audit` deny list and the advisory-ignore ratchet. |
 | [ui/Package.swift](ui/Package.swift) | The SwiftUI app as an SPM package, so the house Swift gate can reach it. |
 | [ui/.swiftlint.yml](ui/.swiftlint.yml) | Lint rules, with the reason for each deviation from the defaults. |
+| [ui/.swiftlint-baseline.json](ui/.swiftlint-baseline.json) | Shrink-only lint ratchet. Re-recorded only when the debt shrinks, never to silence a failure. |
 
 ---
 

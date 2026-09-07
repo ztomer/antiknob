@@ -49,6 +49,42 @@ struct PropertyRow<Value: View>: View {
     }
 }
 
+/// `label | value | indicator` — the state light gets its own column to the
+/// right of the text, so the lights read down one straight edge instead of
+/// sitting at whatever x each value's first character happens to land on.
+struct StatusRow<Indicator: View>: View {
+    let label: String
+    let value: String
+    var valueStyle: Color = .primary
+    @ViewBuilder var indicator: Indicator
+
+    var body: some View {
+        GridRow {
+            Text(label)
+                .foregroundStyle(.secondary)
+                .gridColumnAlignment(.leading)
+            Text(value)
+                .foregroundStyle(valueStyle)
+                .gridColumnAlignment(.leading)
+            indicator
+                .gridColumnAlignment(.leading)
+        }
+    }
+}
+
+/// A filled state dot, sized so every indicator column lines up whether it
+/// holds a dot or an SF Symbol.
+struct StatusDot: View {
+    let color: Color
+
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: 8, height: 8)
+            .frame(width: 16, alignment: .center)
+    }
+}
+
 /// A short uppercase tag, used for transports. Sized by its grid column
 /// rather than by its own text, so tags of different lengths still leave the
 /// following column on a straight edge.

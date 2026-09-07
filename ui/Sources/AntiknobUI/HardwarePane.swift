@@ -99,31 +99,27 @@ struct HardwarePane: View {
     private var deviceInfoSection: some View {
         Section("Hardware & Transport Details") {
             PropertyGrid {
-                PropertyRow(label: "Device Model") {
-                    Text(store.hardwareProduct)
+                StatusRow(label: "Device Model", value: store.hardwareProduct) {
+                    StatusDot(color: store.hardwareConnected ? .green : .secondary)
                 }
-                PropertyRow(label: "Active Transport") {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(store.hardwareConnected
-                                  ? store.transportColor : Color.secondary)
-                            .frame(width: 8, height: 8)
-                        Image(systemName: store.transportIcon)
-                            .foregroundStyle(store.hardwareConnected
-                                             ? store.transportColor : Color.secondary)
-                        Text(store.hardwareConnected
-                             ? store.transportDisplay : "Not detected")
-                            .foregroundStyle(store.hardwareConnected ? .primary : .secondary)
-                    }
+                StatusRow(
+                    label: "Active Transport",
+                    value: store.hardwareConnected ? store.transportDisplay : "Not detected",
+                    valueStyle: store.hardwareConnected ? .primary : .secondary
+                ) {
+                    Image(systemName: store.transportIcon)
+                        .foregroundStyle(store.hardwareConnected
+                                         ? store.transportColor : Color.secondary)
+                        .frame(width: 16)
                 }
-                PropertyRow(label: "Power Supply") {
-                    HStack(spacing: 6) {
-                        Image(systemName: store.powerIcon)
-                            .foregroundStyle(store.hardwareConnected
-                                             ? Color.accentColor : Color.secondary)
-                        Text(store.hardwareConnected
-                             ? store.powerDescription : "Disconnected")
-                    }
+                StatusRow(
+                    label: "Power Supply",
+                    value: store.hardwareConnected ? store.powerDescription : "Disconnected"
+                ) {
+                    Image(systemName: store.powerIcon)
+                        .foregroundStyle(store.hardwareConnected
+                                         ? Color.accentColor : Color.secondary)
+                        .frame(width: 16)
                 }
             }
         }

@@ -176,46 +176,50 @@ struct LedSection: View {
 
     private var modeSelectionSection: some View {
         Section("Lighting Mode") {
-            ForEach(LedMode.all, id: \.id) { m in
-                modeRow(m)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        selectedMode = m.id
-                        if liveApply { sendLedUpdate() }
-                    }
-                    .padding(.vertical, 2)
+            PropertyGrid(horizontalSpacing: 14, verticalSpacing: 9) {
+                ForEach(LedMode.all, id: \.id) { m in
+                    modeRow(m)
+                }
             }
         }
     }
 
-    /// Name over description in one left-aligned column.
+    /// Four columns: glyph, name, description, selection mark.
     ///
-    /// The description used to be pushed to the trailing edge by a `Spacer`,
-    /// which left five lines of prose with five different left edges and no
-    /// column for the eye to follow. The checkmark keeps its space when the
-    /// row is unselected so selecting one does not shift the text.
+    /// The description gets a column of its own between the name and the
+    /// mark, so five explanations of very different lengths read down one
+    /// edge. The name column expands, which keeps the mark pinned to the
+    /// trailing edge where it was, and the mark keeps its space when the row
+    /// is unselected so selecting one does not shift the text.
     private func modeRow(_ m: LedMode) -> some View {
         let isSelected = selectedMode == m.id
-        return HStack(spacing: 10) {
+        return GridRow {
             Image(systemName: m.icon)
-                .frame(width: Self.iconColumn)
                 .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                .frame(width: Self.iconColumn, alignment: .leading)
+                .gridColumnAlignment(.leading)
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(m.name)
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
-                Text(m.desc)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text(m.name)
+                .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+                .gridColumnAlignment(.leading)
 
-            Spacer(minLength: 8)
+            Text(m.desc)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .gridColumnAlignment(.leading)
 
             Image(systemName: "checkmark")
                 .foregroundStyle(Color.accentColor)
                 .fontWeight(.semibold)
                 .opacity(isSelected ? 1 : 0)
                 .accessibilityHidden(!isSelected)
+                .gridColumnAlignment(.leading)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            selectedMode = m.id
+            if liveApply { sendLedUpdate() }
         }
     }
 

@@ -24,9 +24,13 @@ struct LayerDetail: View {
     @Binding var sel: TabSelection
 
     @State private var selected: Gesture?
-    @State private var pendingKeystroke: Set<Gesture> = []
-    @State private var editingSequence: Gesture?
     @State private var confirmingDelete = false
+
+    // Module-internal rather than private: the binding plumbing in
+    // LayerBindings.swift is an extension on this type, and an extension in
+    // another file cannot see `private` members.
+    @State var pendingKeystroke: Set<Gesture> = []
+    @State var editingSequence: Gesture?
 
     var body: some View {
         if idx < store.cfg.layers.count {
@@ -40,8 +44,10 @@ struct LayerDetail: View {
                 layerSection
 
                 Section("Knob Gestures") {
-                    ForEach(Gesture.allCases) { g in
-                        gestureRow(g)
+                    PropertyGrid(horizontalSpacing: 12, verticalSpacing: 2) {
+                        ForEach(Gesture.allCases) { g in
+                            gestureRow(g)
+                        }
                     }
                 }
             }
@@ -59,26 +65,41 @@ struct LayerDetail: View {
 
     private var layerSection: some View {
         Section("Layer") {
-            TextField("Name", text: $store.cfg.layers[idx].name)
-
-            LabeledContent("Order") {
-                HStack(spacing: 6) {
-                    Button { move(by: -1) } label: {
-                        Image(systemName: "chevron.left")
-                    }
-                    .disabled(idx == 0)
-                    .help("Move this layer left")
-
-                    Button { move(by: 1) } label: {
-                        Image(systemName: "chevron.right")
-                    }
-                    .disabled(idx >= store.cfg.layers.count - 1)
-                    .help("Move this layer right")
-
-                    Text("\(idx + 1) of \(store.cfg.layers.count)")
-                        .font(.caption)
+            PropertyGrid {
+                GridRow {
+                    Text("Name")
                         .foregroundStyle(.secondary)
-                        .padding(.leading, 4)
+                        .gridColumnAlignment(.leading)
+                    TextField("Layer name", text: $store.cfg.layers[idx].name)
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 260)
+                        .gridColumnAlignment(.leading)
+                }
+
+                GridRow {
+                    Text("Order")
+                        .foregroundStyle(.secondary)
+                        .gridColumnAlignment(.leading)
+                    HStack(spacing: 6) {
+                        Button { move(by: -1) } label: {
+                            Image(systemName: "chevron.left")
+                        }
+                        .disabled(idx == 0)
+                        .help("Move this layer left")
+
+                        Button { move(by: 1) } label: {
+                            Image(systemName: "chevron.right")
+                        }
+                        .disabled(idx >= store.cfg.layers.count - 1)
+                        .help("Move this layer right")
+
+                        Text("\(idx + 1) of \(store.cfg.layers.count)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 4)
+                    }
+                    .gridColumnAlignment(.leading)
                 }
             }
 
@@ -124,16 +145,26 @@ struct LayerDetail: View {
         }
     }
 
+    /// Three columns: gesture, its parameter control, its action menu.
+    ///
+    /// These were a `LabeledContent` with both controls crammed into one
+    /// trailing `HStack`, so a stepper on one row and a chord pill on the
+    /// next started at different x and the action menus stepped in and out
+    /// with the parameter's width. Every column is now natural width and
+    /// packed left, so the three read down three straight edges.
     private func gestureRow(_ g: Gesture) -> some View {
-        LabeledContent(gestureTitles[g] ?? g.rawValue) {
-            HStack(spacing: 10) {
-                params(g)
-                actionMenu(g)
-            }
+        GridRow {
+            Text(gestureTitles[g] ?? g.rawValue)
+                .fixedSize(horizontal: true, vertical: false)
+                .gridColumnAlignment(.leading)
+            params(g)
+                .gridColumnAlignment(.leading)
+            actionMenu(g)
+                .gridColumnAlignment(.leading)
         }
+        .padding(.vertical, 3)
         .contentShape(Rectangle())
         .onTapGesture { selected = g }
-        .listRowBackground(selected == g ? Color.accentColor.opacity(0.12) : nil)
     }
 
     // MARK: - Categorized Action Menu
@@ -209,10 +240,30 @@ struct LayerDetail: View {
     // MARK: - Parameter Controls
 
     @ViewBuilder
+    /// Exactly one grid cell, whatever the action type needs inside it.
+    ///
+    /// `paramControls` returns one, two or three views depending on the
+    /// action. As direct children of a `GridRow` those become separate cells,
+    /// which gave rows different column counts and split the scroll Stepper's
+    /// label away from its control. The HStack collapses them to one cell.
     private func params(_ g: Gesture) -> some View {
+        HStack(spacing: 8) {
+            paramControls(g)
+        }
+        .fixedSize()
+    }
+
+    @ViewBuilder
+    private func paramControls(_ g: Gesture) -> some View {
         switch store.cfg.layers[idx][g] {
         case .scroll?:
-            Stepper("\(Int(abs(currentLines(g)))) lines", value: linesBinding(g), in: 1...30)
+            // The label is drawn here rather than passed to `Stepper`, whose
+            // built-in label splits to the leading edge of whatever width it
+            // is given -- inside a grid cell that stretched the whole column
+            // and left "3 lines" a column away from its own arrows.
+            Text("\(Int(abs(currentLines(g)))) lines")
+            Stepper("", value: linesBinding(g), in: 1...30)
+                .labelsHidden()
                 .fixedSize()
         case .keyChord?:
             ChordRecorder(chord: chordBinding(g))
@@ -241,227 +292,6 @@ struct LayerDetail: View {
             if pendingKeystroke.contains(g) {
                 ChordRecorder(chord: chordBinding(g))
             }
-        }
-    }
-
-    // MARK: - Helper Bindings & Actions
-
-    private func currentTitle(_ g: Gesture) -> String {
-        switch store.cfg.layers[idx][g] {
-        case nil, .some(.none):
-            return pendingKeystroke.contains(g) ? "Keystroke" : "None"
-        case .some(.scroll(let lines)):
-            return (lines ?? store.cfg.defaultScrollLines) >= 0 ? "Scroll Up" : "Scroll Down"
-        case .some(.keyChord): return "Keystroke"
-        case .some(.sequence): return "Sequence"
-        case .some(.aux(let k)): return auxTitles[k] ?? "Media"
-        case .some(.launchApp): return "Open App"
-        case .some(.openURL): return "Website"
-        case .some(.openPath): return "Open File"
-        case .some(.quitApp): return "Quit App"
-        case .some(.hotkeySwitch): return "Hotkey Switch"
-        case .some(.mouseClick(let b)): return "Click \(b.rawValue)"
-        }
-    }
-
-    private func presetBinding(_ g: Gesture) -> Binding<ActionPreset> {
-        Binding(
-            get: {
-                switch store.cfg.layers[idx][g] {
-                case nil, .some(.none):
-                    return pendingKeystroke.contains(g) ? .keystroke : .none
-                case .some(.scroll(let lines)):
-                    return (lines ?? store.cfg.defaultScrollLines) >= 0 ? .scrollUp : .scrollDown
-                case .some(.keyChord): return .keystroke
-                case .some(.sequence): return .sequence
-                case .some(.aux(let k)): return .aux(k.unified)
-                case .some(.launchApp): return .openApp
-                case .some(.openURL): return .openURL
-                case .some(.openPath): return .openPath
-                case .some(.quitApp): return .quitApp
-                case .some(.hotkeySwitch): return .hotkeySwitch
-                case .some(.mouseClick): return .none
-                }
-            },
-            set: { p in
-                pendingKeystroke.remove(g)
-                switch p {
-                case .none:
-                    store.cfg.layers[idx][g] = nil
-                case .scrollUp:
-                    store.cfg.layers[idx][g] = .scroll(lines: abs(currentLines(g)))
-                case .scrollDown:
-                    store.cfg.layers[idx][g] = .scroll(lines: -abs(currentLines(g)))
-                case .aux(let k):
-                    store.cfg.layers[idx][g] = .aux(key: k)
-                case .keystroke:
-                    if case .keyChord? = store.cfg.layers[idx][g] { break }
-                    store.cfg.layers[idx][g] = nil
-                    pendingKeystroke.insert(g)
-                case .openApp:
-                    chooseApp(g)
-                case .openURL:
-                    if case .openURL? = store.cfg.layers[idx][g] { break }
-                    store.cfg.layers[idx][g] = .openURL(url: "https://")
-                case .openPath:
-                    choosePath(g)
-                case .quitApp:
-                    chooseApp(g) { .quitApp(bundleId: $0, force: nil) }
-                case .hotkeySwitch:
-                    if case .hotkeySwitch? = store.cfg.layers[idx][g] { break }
-                    store.cfg.layers[idx][g] = .hotkeySwitch(first: nil, second: nil)
-                case .sequence:
-                    if case .sequence? = store.cfg.layers[idx][g] {} else {
-                        store.cfg.layers[idx][g] = .sequence(steps: [])
-                    }
-                    editingSequence = g
-                }
-            }
-        )
-    }
-
-    private func setChord(_ g: Gesture, key: UInt16, label: String) {
-        pendingKeystroke.remove(g)
-        store.cfg.layers[idx][g] = .keyChord(key: key, mods: ["cmd"], label: label)
-    }
-
-    private func setLaunch(_ g: Gesture, _ bundleId: String) {
-        pendingKeystroke.remove(g)
-        store.cfg.layers[idx][g] = .launchApp(bundleId: bundleId)
-    }
-
-    private func setAction(_ g: Gesture, _ a: Action) {
-        pendingKeystroke.remove(g)
-        store.cfg.layers[idx][g] = a
-    }
-
-    private func urlBinding(_ g: Gesture) -> Binding<String> {
-        Binding(
-            get: {
-                if case .openURL(let u)? = store.cfg.layers[idx][g] { return u }
-                return ""
-            },
-            set: { store.cfg.layers[idx][g] = .openURL(url: $0) }
-        )
-    }
-
-    private func currentLines(_ g: Gesture) -> Int32 {
-        if case .scroll(let l)? = store.cfg.layers[idx][g] {
-            return l ?? store.cfg.defaultScrollLines
-        }
-        return store.cfg.defaultScrollLines
-    }
-
-    private func linesBinding(_ g: Gesture) -> Binding<Int> {
-        Binding(
-            get: { Int(abs(currentLines(g))) },
-            set: { v in
-                let sign: Int32 = currentLines(g) >= 0 ? 1 : -1
-                store.cfg.layers[idx][g] = .scroll(lines: sign * Int32(v))
-            }
-        )
-    }
-
-    private func chordBinding(_ g: Gesture) -> Binding<KeyChordSpec?> {
-        Binding(
-            get: {
-                if case .keyChord(let k, let m, let l)? = store.cfg.layers[idx][g] {
-                    return KeyChordSpec(key: k, mods: m, label: l)
-                }
-                return nil
-            },
-            set: { new in
-                guard let n = new else { return }
-                store.cfg.layers[idx][g] = .keyChord(key: n.key, mods: n.mods, label: n.label)
-                pendingKeystroke.remove(g)
-            }
-        )
-    }
-
-    private func stepsBinding(_ g: Gesture) -> Binding<[SeqStep]> {
-        Binding(
-            get: {
-                guard case .sequence(let s)? = store.cfg.layers[idx][g] else { return [] }
-                var rows: [SeqStep] = []
-                for st in s {
-                    if st.key != nil || st.delayMs == nil {
-                        rows.append(SeqStep(key: st.key, mods: st.mods, label: st.label))
-                    }
-                    if let ms = st.delayMs {
-                        rows.append(SeqStep(delayMs: ms))
-                    }
-                }
-                return rows
-            },
-            set: { store.cfg.layers[idx][g] = .sequence(steps: $0) }
-        )
-    }
-
-    private func forceBinding(_ g: Gesture) -> Binding<Bool> {
-        Binding(
-            get: {
-                if case .quitApp(_, let f)? = store.cfg.layers[idx][g] { return f ?? false }
-                return false
-            },
-            set: { v in
-                if case .quitApp(let b, _)? = store.cfg.layers[idx][g] {
-                    store.cfg.layers[idx][g] = .quitApp(bundleId: b, force: v)
-                }
-            }
-        )
-    }
-
-    private func switchChordBinding(_ g: Gesture, second: Bool) -> Binding<KeyChordSpec?> {
-        Binding(
-            get: {
-                if case .hotkeySwitch(let f, let s)? = store.cfg.layers[idx][g] {
-                    return second ? s : f
-                }
-                return nil
-            },
-            set: { new in
-                guard let n = new,
-                      case .hotkeySwitch(let f, let s)? = store.cfg.layers[idx][g] else { return }
-                store.cfg.layers[idx][g] = .hotkeySwitch(
-                    first: second ? f : n,
-                    second: second ? n : s
-                )
-            }
-        )
-    }
-
-    private func appName(_ bundleId: String) -> String {
-        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
-            return FileManager.default.displayName(atPath: url.path)
-        }
-        return bundleId
-    }
-
-    private func pathName(_ path: String) -> String {
-        FileManager.default.displayName(atPath: (path as NSString).expandingTildeInPath)
-    }
-
-    private func chooseApp(_ g: Gesture, make: (String) -> Action = { .launchApp(bundleId: $0) }) {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.application]
-        panel.directoryURL = URL(fileURLWithPath: "/Applications")
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url,
-           let bundleId = Bundle(url: url)?.bundleIdentifier {
-            pendingKeystroke.remove(g)
-            store.cfg.layers[idx][g] = make(bundleId)
-        }
-    }
-
-    private func choosePath(_ g: Gesture) {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url {
-            pendingKeystroke.remove(g)
-            store.cfg.layers[idx][g] = .openPath(path: url.path)
         }
     }
 }

@@ -11,6 +11,7 @@ pub mod engine;
 #[cfg(test)]
 mod engine_virtual_tests;
 pub mod frontmost;
+pub mod gesture_probe;
 pub mod grants;
 pub mod login_item;
 pub mod migrate;

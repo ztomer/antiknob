@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 
 mod cmds;
 mod diag;
+mod probe;
 
 #[derive(Parser)]
 #[command(
@@ -129,6 +130,27 @@ enum Commands {
         wide: bool,
     },
 
+    /// Determine which firmware slot a gesture drives, by writing a
+    /// distinct marker to each candidate and watching what comes out
+    ProbeGestures {
+        /// Slots to probe. Defaults to the two just past the three bound
+        /// knob gestures, which read as present-and-empty on this hardware.
+        #[arg(long, value_delimiter = ',', default_value = "7,8")]
+        candidates: Vec<u8>,
+        /// Device layer to probe on
+        #[arg(long, default_value = "0")]
+        layer: u8,
+        /// Seconds to capture gestures for
+        #[arg(long, default_value = "45")]
+        capture_secs: u64,
+        /// Only watch these devices, e.g. 514c:8850
+        #[arg(long = "device", value_name = "VID:PID")]
+        devices: Vec<String>,
+        /// Layout to read the layer width from
+        #[arg(long)]
+        config: Option<PathBuf>,
+    },
+
     /// Walk every LED mode on one layer so an unmapped one can be identified
     /// by eye (which mode, if any, is a breathe)
     LedProbe {
@@ -187,6 +209,19 @@ fn main() -> Result<()> {
         Commands::ListApps => cmds::run_list_apps()?,
         Commands::ReadSlots { config, wide } => {
             diag::run_read_slots(cmds::layout_slots_per_layer(config)?, wide)?
+        }
+        Commands::ProbeGestures {
+            candidates,
+            layer,
+            capture_secs,
+            devices,
+            config,
+        } => {
+            // Widen by the two candidates so the read can address them:
+            // the device only walks a table as wide as it is told.
+            let width = cmds::layout_slots_per_layer(config)?
+                .max(candidates.iter().copied().max().unwrap_or(0));
+            probe::run(candidates, layer, width, capture_secs, devices)?
         }
         Commands::LedProbe {
             layer,

@@ -8,11 +8,15 @@
 
 pub mod bind;
 pub mod engine;
+#[cfg(test)]
+mod engine_virtual_tests;
+pub mod frontmost;
 pub mod grants;
 pub mod login_item;
 pub mod migrate;
 pub mod output;
 pub mod tap;
+pub mod virtual_layer;
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -187,9 +191,19 @@ pub struct HostLayer {
     pub hold_twist_r: HostAction,
     #[serde(default)]
     pub press: HostAction,
+    /// Alternative binding sets this layer swaps between. Empty for a fixed
+    /// layer, which is every layer that existed before virtual layers did --
+    /// hence `default`, so configs written without it load unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variants: Vec<virtual_layer::LayerVariant>,
 }
 
 impl HostLayer {
+    /// True when this layer's bindings depend on context.
+    pub fn is_virtual(&self) -> bool {
+        !self.variants.is_empty()
+    }
+
     pub fn action(&self, gesture: Gesture) -> &HostAction {
         match gesture {
             Gesture::TwistL => &self.twist_l,
@@ -253,6 +267,7 @@ impl HostConfig {
                         mods: vec!["cmd".to_string()],
                         label: "Up".to_string(),
                     },
+                    variants: vec![],
                 },
                 HostLayer {
                     name: "Media".to_string(),
@@ -269,6 +284,7 @@ impl HostConfig {
                         key: AuxKey::BrightnessUp,
                     },
                     press: HostAction::Aux { key: AuxKey::Mute },
+                    variants: vec![],
                 },
             ],
             double_tap_switch: true,

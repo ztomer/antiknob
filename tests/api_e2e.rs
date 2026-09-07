@@ -59,6 +59,7 @@ fn test_e2e_socket_server_and_client_roundtrip() {
         hold_twist_l: HostAction::None,
         hold_twist_r: HostAction::None,
         press: HostAction::None,
+        variants: vec![],
     });
     let set_cfg_res =
         call_daemon_socket(&sock_path, &Command::SetConfig { config: modified }).unwrap();

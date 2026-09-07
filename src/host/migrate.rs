@@ -223,6 +223,7 @@ pub fn migrate_preset(preset: &Preset) -> (MigratedPreset, Vec<String>) {
             .map(|s| migrate_slot(s, &mut warnings))
             .unwrap_or_default(),
         press: migrate_slot(preset.press, &mut warnings),
+        variants: vec![],
     };
     let led_spec = format!("mode{} {}", preset.led_mode, preset.led_color);
     (MigratedPreset { layer, led_spec }, warnings)

@@ -6,8 +6,11 @@
 //! double-tap window, per-slot alternating hotkey-switch state that resets
 //! on config change.
 
+use super::frontmost::{self, FrontmostApp};
+use super::virtual_layer::{self, Resolution, SwitchContext};
 use super::{gesture_for_chord, ChordSpec, Gesture, HostAction, HostConfig};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// A fully resolved output event. Hotkey-switch and defaulted scroll lines
 /// are resolved at dispatch; the output layer never sees ambiguity.
@@ -45,15 +48,76 @@ pub struct Engine {
     pending_press_ms: Option<u64>,
     /// Alternation state per `L{layer}.{gesture:?}` slot.
     toggle_state: HashMap<String, bool>,
+    /// Where "which app is in front" comes from. Behind a seam so the
+    /// variant rules can be exercised against a browser, an editor and an
+    /// unknown app without any of them being open.
+    frontmost: Arc<dyn FrontmostApp>,
+    /// A variant pinned by hand or by an agent, outranking the app.
+    variant_override: Option<String>,
 }
 
 impl Engine {
     pub fn new(cfg: HostConfig) -> Self {
+        Self::with_frontmost(cfg, frontmost::system_source())
+    }
+
+    pub fn with_frontmost(cfg: HostConfig, frontmost: Arc<dyn FrontmostApp>) -> Self {
         Self {
             layer_idx: 0,
             pending_press_ms: None,
             toggle_state: HashMap::new(),
+            frontmost,
+            variant_override: None,
             cfg,
+        }
+    }
+
+    /// Pin a variant, or clear the pin and go back to app-driven choice.
+    ///
+    /// Clearing must actually clear: a pin that lingered after being
+    /// removed would leave the knob doing something the user had already
+    /// told it to stop doing.
+    pub fn set_variant_override(&mut self, name: Option<String>) {
+        self.variant_override = name;
+    }
+
+    pub fn variant_override(&self) -> Option<&str> {
+        self.variant_override.as_deref()
+    }
+
+    /// What is true right now, read at the moment it is needed.
+    ///
+    /// Never cached. The frontmost app when a gesture completes is not
+    /// necessarily the one the user was looking at when they turned the
+    /// knob (the repo's rule 8: resolve user intent at interaction time).
+    fn context(&self) -> SwitchContext {
+        SwitchContext {
+            frontmost: self.frontmost.bundle_id(),
+            override_name: self.variant_override.clone(),
+        }
+    }
+
+    /// Which variant is live on the current layer, and why.
+    pub fn resolution(&self) -> Resolution {
+        match self.cfg.layers.get(self.layer_idx) {
+            Some(layer) => virtual_layer::resolve(&layer.variants, &self.context()),
+            None => Resolution::Base,
+        }
+    }
+
+    /// The single place a gesture becomes an action.
+    ///
+    /// Every caller goes through here. Four call sites used to index the
+    /// layer and ask it directly, and a fifth added later would have been
+    /// the one that forgot about variants -- the layer's own binding is
+    /// still the right answer for a fixed layer, so nothing would have
+    /// looked broken until someone configured a virtual one.
+    fn action_for(&self, gesture: Gesture) -> HostAction {
+        match self.cfg.layers.get(self.layer_idx) {
+            Some(layer) => {
+                virtual_layer::action_for(layer, &layer.variants, &self.context(), gesture).clone()
+            }
+            None => HostAction::None,
         }
     }
 
@@ -113,7 +177,7 @@ impl Engine {
         }
         // Any non-press gesture cancels an armed double-tap (it was a single).
         let mut out = self.flush_pending_press();
-        let action = self.cfg.layers[self.layer_idx].action(gesture).clone();
+        let action = self.action_for(gesture);
         out.push(self.fire(action, gesture));
         out
     }
@@ -124,9 +188,7 @@ impl Engine {
         match self.pending_press_ms {
             Some(t) if now_ms.saturating_sub(t) >= self.tap_window_ms() => {
                 self.pending_press_ms = None;
-                let action = self.cfg.layers[self.layer_idx]
-                    .action(Gesture::Press)
-                    .clone();
+                let action = self.action_for(Gesture::Press).clone();
                 vec![self.fire(action, Gesture::Press)]
             }
             _ => vec![],
@@ -135,9 +197,7 @@ impl Engine {
 
     fn handle_press(&mut self, now_ms: u64) -> Vec<EngineEvent> {
         if !self.cfg.double_tap_switch {
-            let action = self.cfg.layers[self.layer_idx]
-                .action(Gesture::Press)
-                .clone();
+            let action = self.action_for(Gesture::Press).clone();
             return vec![self.fire(action, Gesture::Press)];
         }
         match self.pending_press_ms {
@@ -159,9 +219,7 @@ impl Engine {
         // press: run it first so no input is lost.
         match self.pending_press_ms.take() {
             Some(_) => {
-                let action = self.cfg.layers[self.layer_idx]
-                    .action(Gesture::Press)
-                    .clone();
+                let action = self.action_for(Gesture::Press).clone();
                 vec![self.fire(action, Gesture::Press)]
             }
             None => vec![],

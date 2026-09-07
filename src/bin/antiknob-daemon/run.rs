@@ -41,6 +41,11 @@ pub(crate) fn load_or_default(path: &Path) -> Result<HostConfig> {
     Ok(HostConfig::load_json(&text))
 }
 
+/// Whether the keyboard tap is currently up, for the menu bar to show.
+fn tap_is_up(health: &Arc<Mutex<TapHealth>>) -> bool {
+    health.lock().map(|h| h.active).unwrap_or(false)
+}
+
 fn describe_fire(action: &FiredAction) -> String {
     match action {
         FiredAction::Scroll { lines } => format!("scroll {:+} lines", lines),
@@ -77,10 +82,24 @@ fn handle_events(out: Vec<EngineEvent>, active: bool) {
     }
 }
 
-fn log_tap_warning(reason: &str) {
-    eprintln!("[ Wrn ] Event tap unavailable: {}", reason);
-    eprintln!("        Grant Accessibility (and Input Monitoring) in macOS System Settings.");
-    eprintln!("        Daemon socket server and USB HID management remain active.");
+/// Report a dead tap once, not once every retry.
+///
+/// The supervisor rebuilds the tap every three seconds; the reason it failed
+/// changes far less often than that, and the old warning spent three lines on
+/// each attempt -- a log that grows forever while saying one thing. Print a
+/// reason the first time it is seen and stay quiet until it changes, and let
+/// macOS raise its own Accessibility prompt once, which puts the daemon in
+/// the pane's list with a switch beside it instead of leaving the user to
+/// find a path.
+fn log_tap_warning(last: &mut Option<String>, reason: &str) {
+    if last.as_deref() == Some(reason) {
+        return;
+    }
+    *last = Some(reason.to_string());
+    eprintln!("[ Wrn ] {}", reason);
+    if !crate::permissions::current_grants().accessibility {
+        crate::permissions::prompt_for_accessibility_once();
+    }
 }
 
 /// Watches the host config file for external edits (hand edits, GUI
@@ -163,6 +182,10 @@ fn apply_tray_action(
             force_reload(tap, config_path);
             false
         }
+        TrayAction::OpenAccessibility => {
+            crate::permissions::open_accessibility_pane();
+            false
+        }
         TrayAction::Quit => {
             println!("[ Ok  ] Quit from menu bar.");
             true
@@ -202,8 +225,9 @@ pub(crate) fn run_observe(
     });
 
     let mut watch = ConfigWatch::new(config_path);
+    let mut last_tap_warning: Option<String> = None;
     let mut tray = if with_tray {
-        match TrayUi::new(&tap) {
+        match TrayUi::new(&tap, tap_is_up(&tap_health)) {
             Ok(t) => Some(t),
             Err(e) => {
                 println!("[ Wrn ] Menu bar unavailable ({}); continuing headless.", e);
@@ -244,11 +268,11 @@ pub(crate) fn run_observe(
                 }
             }
             Ok(DaemonMsg::TapDead(reason)) => {
-                log_tap_warning(&reason);
+                log_tap_warning(&mut last_tap_warning, &reason);
             }
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => {
-                log_tap_warning("listener thread disconnected");
+                log_tap_warning(&mut last_tap_warning, "listener thread disconnected");
             }
         }
         if let Ok(mut t) = tap.lock() {
@@ -256,7 +280,7 @@ pub(crate) fn run_observe(
             handle_events(t.poll_expiry(start.elapsed().as_millis() as u64), false);
         }
         if let Some(tray) = tray.as_mut() {
-            tray.refresh(&tap);
+            tray.refresh(&tap, tap_is_up(&tap_health));
             if let Ok(mut t) = tap.lock() {
                 for action in tray.poll() {
                     if apply_tray_action(action, &mut t, config_path, false) {
@@ -305,47 +329,50 @@ pub(crate) fn run_active(
     // menu bar must live on the main thread, which runs the loop below.
     let grab_tap = Arc::clone(&tap);
     let grab_health = Arc::clone(&tap_health);
-    std::thread::spawn(move || loop {
-        if let Ok(mut h) = grab_health.lock() {
-            h.active = true;
-            h.error = None;
-        }
-        let start = Instant::now();
-        let thread_tap = Arc::clone(&grab_tap);
-        let res = keytap::grab(move |ev: KeyEvent| -> Decision {
-            let KeyEvent { code, pressed } = ev;
-            let now_ms = start.elapsed().as_millis() as u64;
-            let Ok(mut t) = thread_tap.lock() else {
-                return Decision::Pass;
-            };
-            if pressed {
-                let out = t.key(code, true, now_ms);
-                if out.is_empty() {
-                    Decision::Pass
-                } else {
-                    handle_events(out, true);
-                    Decision::Swallow
-                }
-            } else if t.release_swallow(code) {
-                Decision::Swallow
-            } else {
-                Decision::Pass
+    std::thread::spawn(move || {
+        let mut last_warning: Option<String> = None;
+        loop {
+            if let Ok(mut h) = grab_health.lock() {
+                h.active = true;
+                h.error = None;
             }
-        });
-        let reason = match res {
-            Err(e) => e,
-            Ok(()) => "event tap ended".to_string(),
-        };
-        if let Ok(mut h) = grab_health.lock() {
-            h.active = false;
-            h.error = Some(reason.clone());
+            let start = Instant::now();
+            let thread_tap = Arc::clone(&grab_tap);
+            let res = keytap::grab(move |ev: KeyEvent| -> Decision {
+                let KeyEvent { code, pressed } = ev;
+                let now_ms = start.elapsed().as_millis() as u64;
+                let Ok(mut t) = thread_tap.lock() else {
+                    return Decision::Pass;
+                };
+                if pressed {
+                    let out = t.key(code, true, now_ms);
+                    if out.is_empty() {
+                        Decision::Pass
+                    } else {
+                        handle_events(out, true);
+                        Decision::Swallow
+                    }
+                } else if t.release_swallow(code) {
+                    Decision::Swallow
+                } else {
+                    Decision::Pass
+                }
+            });
+            let reason = match res {
+                Err(e) => e,
+                Ok(()) => "event tap ended".to_string(),
+            };
+            if let Ok(mut h) = grab_health.lock() {
+                h.active = false;
+                h.error = Some(reason.clone());
+            }
+            log_tap_warning(&mut last_warning, &reason);
+            std::thread::sleep(Duration::from_secs(3));
         }
-        log_tap_warning(&reason);
-        std::thread::sleep(Duration::from_secs(3));
     });
 
     let mut tray = if with_tray {
-        match TrayUi::new(&tap) {
+        match TrayUi::new(&tap, tap_is_up(&tap_health)) {
             Ok(t) => Some(t),
             Err(e) => {
                 println!("[ Wrn ] Menu bar unavailable ({}); continuing headless.", e);
@@ -358,7 +385,7 @@ pub(crate) fn run_active(
     loop {
         std::thread::sleep(Duration::from_millis(50));
         if let Some(tray) = tray.as_mut() {
-            tray.refresh(&tap);
+            tray.refresh(&tap, tap_is_up(&tap_health));
             if let Ok(mut t) = tap.lock() {
                 for action in tray.poll() {
                     if apply_tray_action(action, &mut t, config_path, true) {

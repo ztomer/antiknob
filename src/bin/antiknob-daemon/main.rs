@@ -20,6 +20,7 @@ use clap::Parser;
 use std::path::{Path, PathBuf};
 
 mod keytap;
+mod permissions;
 mod run;
 mod synth;
 mod tray;
@@ -91,26 +92,57 @@ fn home_dir() -> Result<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// True while launchd still knows about the label.
+fn agent_is_loaded(target: &str) -> bool {
+    std::process::Command::new("launchctl")
+        .args(["print", target])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Unload the agent and wait for launchd to actually let go.
+///
+/// `bootout` returns before the job is gone, and a `bootstrap` issued into
+/// that gap fails with a bare "5: Input/output error" -- which reads like a
+/// broken plist and is really just impatience. Poll instead of sleeping a
+/// guessed interval, and give up loudly rather than bootstrapping into a
+/// domain that still holds the label.
+fn bootout_and_wait(target: &str) {
+    let _ = std::process::Command::new("launchctl")
+        .args(["bootout", target])
+        .output();
+    for _ in 0..50 {
+        if !agent_is_loaded(target) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
 fn install_login_item(config_path: &Path) -> Result<()> {
     use antiknob::host::login_item;
     let home = home_dir()?;
-    let exe = std::env::current_exe()?;
+    let exe = login_item::preferred_executable(&std::env::current_exe()?);
     let plist_path = login_item::install(&home, &exe, config_path)?;
+    println!("[ ==> ] Login item will start {}.", exe.display());
     println!("[ ==> ] Wrote {}.", plist_path.display());
     let domain = user_domain()?;
     let target = format!("{}/{}", domain, login_item::AGENT_LABEL);
     // Loading an already-loaded agent fails; unload first for idempotence.
-    let _ = std::process::Command::new("launchctl")
-        .args(["bootout", &target])
-        .output();
+    bootout_and_wait(&target);
     let load = std::process::Command::new("launchctl")
         .args(["bootstrap", &domain])
         .arg(&plist_path)
         .output()?;
     if !load.status.success() {
         anyhow::bail!(
-            "launchctl bootstrap failed: {}",
-            String::from_utf8_lossy(&load.stderr)
+            "launchctl bootstrap failed: {}\n\
+             The agent is written at {}; `launchctl bootstrap {} {}` retries it.",
+            String::from_utf8_lossy(&load.stderr).trim(),
+            plist_path.display(),
+            domain,
+            plist_path.display()
         );
     }
     println!(

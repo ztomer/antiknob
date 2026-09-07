@@ -23,7 +23,13 @@ pub fn default_log_path(home: &Path) -> PathBuf {
 }
 
 /// Render the agent plist: run the daemon `--active` with the given
-/// config at login, keep it alive, log to file.
+/// config at login, restart it if it crashes, log to file.
+///
+/// `KeepAlive` is `SuccessfulExit: false`, not a bare `true`. A bare `true`
+/// means launchd relaunches the daemon within seconds of ANY exit, including
+/// the deliberate one behind the menu bar's Quit -- so Quit did not quit,
+/// `kill` did not kill, and the process looked wedged when it was being
+/// resurrected. Restarting a crash is the job; overriding the user is not.
 pub fn render_agent_plist(executable: &Path, config: &Path, log_path: &Path) -> String {
     format!(
         concat!(
@@ -44,7 +50,10 @@ pub fn render_agent_plist(executable: &Path, config: &Path, log_path: &Path) -> 
             "\t<key>RunAtLoad</key>\n",
             "\t<true/>\n",
             "\t<key>KeepAlive</key>\n",
-            "\t<true/>\n",
+            "\t<dict>\n",
+            "\t\t<key>SuccessfulExit</key>\n",
+            "\t\t<false/>\n",
+            "\t</dict>\n",
             "\t<key>StandardOutPath</key>\n",
             "\t<string>{}</string>\n",
             "\t<key>StandardErrorPath</key>\n",
@@ -76,6 +85,40 @@ pub fn install(home: &Path, executable: &Path, config: &Path) -> anyhow::Result<
         render_agent_plist(executable, config, &log_path),
     )?;
     Ok(plist_path)
+}
+
+/// The bundled twin of a loose `bin/antiknob-daemon`, by path alone.
+///
+/// The daemon is installed twice from the same bits: as
+/// `<root>/bin/antiknob-daemon` and as
+/// `<root>/AntiknobDaemon.app/Contents/MacOS/AntiknobDaemon`. Pure, so the
+/// mapping is testable without either file existing.
+pub fn bundled_twin(exe: &Path) -> Option<PathBuf> {
+    let dir = exe.parent()?;
+    if dir.file_name()? != "bin" || exe.file_name()? != "antiknob-daemon" {
+        return None;
+    }
+    Some(
+        dir.parent()?
+            .join("AntiknobDaemon.app/Contents/MacOS/AntiknobDaemon"),
+    )
+}
+
+/// Which executable the login item should actually start.
+///
+/// TCC identifies a process by its code signature, so the loose binary and
+/// the one inside `AntiknobDaemon.app` are two different programs to System
+/// Settings -- and only the bundle is listed there, by name, with an icon.
+/// The Accessibility pane's `+` button will not even accept an executable
+/// buried under `Contents/MacOS`. So a login item that starts the loose
+/// binary can never be granted by adding the app, which is the only thing
+/// the user can add: they grant Antiknob, the daemon stays deaf, and nothing
+/// says why. Start the bundle whenever it is installed.
+pub fn preferred_executable(exe: &Path) -> PathBuf {
+    match bundled_twin(exe) {
+        Some(bundled) if bundled.is_file() => bundled,
+        _ => exe.to_path_buf(),
+    }
 }
 
 /// Remove the agent plist. Returns true when a previous install existed.
@@ -115,10 +158,65 @@ mod tests {
             dict.get("Label").and_then(|v| v.as_string()),
             Some("com.antiknob.daemon")
         );
+        // A crash is restarted; a clean exit (menu bar Quit) is honoured.
+        assert_eq!(
+            dict.get("KeepAlive")
+                .and_then(|v| v.as_dictionary())
+                .and_then(|d| d.get("SuccessfulExit"))
+                .and_then(|v| v.as_boolean()),
+            Some(false)
+        );
     }
 
     fn io_cursor(text: &str) -> std::io::Cursor<&[u8]> {
         std::io::Cursor::new(text.as_bytes())
+    }
+
+    #[test]
+    fn a_loose_daemon_maps_to_the_bundled_one() {
+        assert_eq!(
+            bundled_twin(Path::new("/Applications/Antiknob/bin/antiknob-daemon")),
+            Some(PathBuf::from(
+                "/Applications/Antiknob/AntiknobDaemon.app/Contents/MacOS/AntiknobDaemon"
+            ))
+        );
+        // Already the bundled executable, or somewhere else entirely.
+        assert_eq!(
+            bundled_twin(Path::new(
+                "/Applications/Antiknob/AntiknobDaemon.app/Contents/MacOS/AntiknobDaemon"
+            )),
+            None
+        );
+        assert_eq!(bundled_twin(Path::new("/tmp/antiknob-daemon")), None);
+    }
+
+    #[test]
+    fn the_login_item_prefers_the_bundle_only_when_it_is_there() {
+        let root = temp_home("preferred");
+        let _ = std::fs::remove_dir_all(&root);
+        let loose = root.join("bin/antiknob-daemon");
+        std::fs::create_dir_all(loose.parent().unwrap()).unwrap();
+        std::fs::write(
+            &loose,
+            b"#!/bin/sh
+",
+        )
+        .unwrap();
+
+        // No bundle installed yet: the loose binary is all there is.
+        assert_eq!(preferred_executable(&loose), loose);
+
+        let bundled = root.join("AntiknobDaemon.app/Contents/MacOS/AntiknobDaemon");
+        std::fs::create_dir_all(bundled.parent().unwrap()).unwrap();
+        std::fs::write(
+            &bundled,
+            b"#!/bin/sh
+",
+        )
+        .unwrap();
+        assert_eq!(preferred_executable(&loose), bundled);
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

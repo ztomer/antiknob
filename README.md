@@ -61,6 +61,28 @@ This will:
 3. Assemble and codesign `AntiknobDaemon.app` (menu-bar only, `LSUIElement`).
 4. Install to `/Applications/Antiknob` with symlinks in `/Applications` and `~/.local/bin`.
 
+### Letting the daemon read the knob
+
+The daemon translates knob gestures through a global keyboard tap, and macOS
+refuses that tap until it is granted. Switch on **AntiknobDaemon** in
+**System Settings > Privacy & Security > Accessibility** (if it is not listed,
+click **+** and add `/Applications/Antiknob/AntiknobDaemon.app`). Everything
+else — flashing the hardware, LED control, the settings app — works without
+it. The menu-bar icon says `knob gestures off` while the grant is missing and
+its menu opens the pane for you.
+
+The grant lands on a code signature, not a path. With the default ad-hoc
+signature every rebuild is a program macOS has not seen before, so a
+reinstall silently voids a switch that still looks on — toggle it off and on
+again. To keep one identity across rebuilds, make a self-signed code-signing
+certificate named `Antiknob Dev` (Keychain Access > Certificate Assistant >
+Create a Certificate, type "Code Signing") and `install.sh` will find it, or
+name any identity yourself:
+
+```bash
+ANTIKNOB_SIGN_ID="Antiknob Dev" ./install.sh
+```
+
 ---
 
 ## Quick Start
@@ -130,6 +152,18 @@ antiknob-daemon --active
 # Start at login (per-user LaunchAgent) / remove it
 antiknob-daemon --install-login-item
 antiknob-daemon --uninstall-login-item
+```
+
+Run `--install-login-item` from `AntiknobDaemon.app/Contents/MacOS/AntiknobDaemon`
+(what `install.sh` prints) rather than the loose `bin/antiknob-daemon`: only the
+app bundle can be granted Accessibility, and the login item starts whichever one
+installed it.
+
+The agent restarts the daemon if it crashes, so `kill` alone will not stop it —
+that is launchd, not a hang. Use **Quit** in the menu bar, or:
+
+```bash
+launchctl bootout gui/$(id -u)/com.antiknob.daemon
 ```
 
 ---

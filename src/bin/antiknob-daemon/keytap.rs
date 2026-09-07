@@ -18,7 +18,8 @@
 //!   releasing one Control while the other is held is reported for the key
 //!   that actually moved (see `decode`).
 //! * Failure that says what to do. A tap that cannot be created is almost
-//!   always a missing Accessibility grant; that is now what the message says.
+//!   always a missing grant, so the failure asks macOS which one and names
+//!   the switch that turns it on (see `permissions`).
 
 use core_foundation::runloop::CFRunLoop;
 use core_graphics::event::{
@@ -169,15 +170,7 @@ fn run_tap(
         CFRunLoop::run_current,
     );
 
-    result.map_err(|()| accessibility_hint())
-}
-
-/// The only realistic reason a tap fails to create, and the one the user can
-/// act on. One definition: both `probe` and `run_tap` report it.
-fn accessibility_hint() -> String {
-    "could not create the event tap -- grant Accessibility (and Input Monitoring) \
-     to this binary in System Settings > Privacy & Security"
-        .to_string()
+    result.map_err(|()| crate::permissions::tap_failure_reason())
 }
 
 #[cfg(test)]

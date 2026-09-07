@@ -31,6 +31,7 @@ fn tray_icon() -> Option<Icon> {
 pub enum TrayAction {
     SwitchLayer(usize),
     ReloadNow,
+    OpenAccessibility,
     Quit,
 }
 
@@ -38,9 +39,27 @@ pub struct TrayUi {
     tray: TrayIcon,
     layer_ids: Vec<muda::MenuId>,
     reload_id: muda::MenuId,
+    fix_id: Option<muda::MenuId>,
     quit_id: muda::MenuId,
     last_title: String,
     last_names: Vec<String>,
+    last_tap_ok: bool,
+}
+
+/// What the menu says when macOS is not letting the daemon read the
+/// keyboard. The menu bar is where the user is already looking when the
+/// knob does nothing, so it carries the way out rather than a log line
+/// they would have to know to go and read.
+const FIX_LABEL: &str = "Knob gestures off — open Accessibility settings";
+
+/// A tray that says nothing while the daemon is deaf is the reason the
+/// user has to go looking for a log; the tooltip carries the state.
+fn tooltip(title: &str, tap_ok: bool) -> String {
+    if tap_ok {
+        format!("Antiknob — layer {}", title)
+    } else {
+        format!("Antiknob — layer {} (knob gestures off)", title)
+    }
 }
 
 fn layer_label(idx: usize, name: &str, active: bool) -> String {
@@ -51,10 +70,15 @@ fn layer_label(idx: usize, name: &str, active: bool) -> String {
     }
 }
 
-fn build_menu(
-    names: &[String],
-    active: usize,
-) -> anyhow::Result<(Menu, Vec<muda::MenuId>, muda::MenuId, muda::MenuId)> {
+struct BuiltMenu {
+    menu: Menu,
+    layer_ids: Vec<muda::MenuId>,
+    reload_id: muda::MenuId,
+    fix_id: Option<muda::MenuId>,
+    quit_id: muda::MenuId,
+}
+
+fn build_menu(names: &[String], active: usize, tap_ok: bool) -> anyhow::Result<BuiltMenu> {
     let menu = Menu::new();
     let mut layer_ids = Vec::new();
     for (i, name) in names.iter().enumerate() {
@@ -63,62 +87,79 @@ fn build_menu(
         menu.append(&item)?;
     }
     menu.append(&PredefinedMenuItem::separator())?;
+    let fix_id = if tap_ok {
+        None
+    } else {
+        let fix = MenuItem::new(FIX_LABEL, true, None);
+        let id = fix.id().clone();
+        menu.append(&fix)?;
+        menu.append(&PredefinedMenuItem::separator())?;
+        Some(id)
+    };
     let reload = MenuItem::new("Reload Config", true, None);
     let reload_id = reload.id().clone();
     menu.append(&reload)?;
     let quit = PredefinedMenuItem::quit(None);
     let quit_id = quit.id().clone();
     menu.append(&quit)?;
-    Ok((menu, layer_ids, reload_id, quit_id))
+    Ok(BuiltMenu {
+        menu,
+        layer_ids,
+        reload_id,
+        fix_id,
+        quit_id,
+    })
 }
 
 impl TrayUi {
-    pub fn new(tap: &Arc<Mutex<TapEngine>>) -> anyhow::Result<Self> {
+    pub fn new(tap: &Arc<Mutex<TapEngine>>, tap_ok: bool) -> anyhow::Result<Self> {
         let (names, idx) = {
             let t = tap.lock().map_err(|_| anyhow::anyhow!("tap lock"))?;
             (t.layer_names(), t.layer_idx())
         };
         let title = format!("{}", idx + 1);
-        let (menu, layer_ids, reload_id, quit_id) = build_menu(&names, idx)?;
+        let built = build_menu(&names, idx, tap_ok)?;
         let mut builder = TrayIconBuilder::new()
             .with_title(title.clone())
-            .with_tooltip(format!("Antiknob — layer {}", title))
-            .with_menu(Box::new(menu));
+            .with_tooltip(tooltip(&title, tap_ok))
+            .with_menu(Box::new(built.menu));
         if let Some(icon) = tray_icon() {
             builder = builder.with_icon(icon);
         }
         let tray = builder.build()?;
         Ok(Self {
             tray,
-            layer_ids,
-            reload_id,
-            quit_id,
+            layer_ids: built.layer_ids,
+            reload_id: built.reload_id,
+            fix_id: built.fix_id,
+            quit_id: built.quit_id,
             last_title: title,
             last_names: names,
+            last_tap_ok: tap_ok,
         })
     }
 
     /// Refresh title and menu when layer state or layer names changed.
-    pub fn refresh(&mut self, tap: &Arc<Mutex<TapEngine>>) {
+    pub fn refresh(&mut self, tap: &Arc<Mutex<TapEngine>>, tap_ok: bool) {
         let Ok(t) = tap.lock() else { return };
         let (names, idx) = (t.layer_names(), t.layer_idx());
         let title = format!("{}", idx + 1);
-        if title != self.last_title {
+        if title != self.last_title || tap_ok != self.last_tap_ok {
             self.tray.set_title(Some(title.clone()));
-            let _ = self
-                .tray
-                .set_tooltip(Some(format!("Antiknob — layer {}", title)));
+            let _ = self.tray.set_tooltip(Some(tooltip(&title, tap_ok)));
             self.last_title = title;
         }
-        if names != self.last_names {
-            if let Ok((menu, layer_ids, reload_id, quit_id)) = build_menu(&names, idx) {
-                self.tray.set_menu(Some(Box::new(menu)));
-                self.layer_ids = layer_ids;
-                self.reload_id = reload_id;
-                self.quit_id = quit_id;
+        if names != self.last_names || tap_ok != self.last_tap_ok {
+            if let Ok(built) = build_menu(&names, idx, tap_ok) {
+                self.tray.set_menu(Some(Box::new(built.menu)));
+                self.layer_ids = built.layer_ids;
+                self.reload_id = built.reload_id;
+                self.fix_id = built.fix_id;
+                self.quit_id = built.quit_id;
                 self.last_names = names;
             }
         }
+        self.last_tap_ok = tap_ok;
     }
 
     /// Drain pending menu selections into actions.
@@ -129,6 +170,8 @@ impl TrayUi {
                 out.push(TrayAction::Quit);
             } else if ev.id == self.reload_id {
                 out.push(TrayAction::ReloadNow);
+            } else if self.fix_id.as_ref() == Some(&ev.id) {
+                out.push(TrayAction::OpenAccessibility);
             } else if let Some(i) = self.layer_ids.iter().position(|id| *id == ev.id) {
                 out.push(TrayAction::SwitchLayer(i));
             }
@@ -140,6 +183,12 @@ impl TrayUi {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_tooltip_says_when_gestures_are_off() {
+        assert_eq!(tooltip("2", true), "Antiknob — layer 2");
+        assert!(tooltip("2", false).contains("off"));
+    }
 
     #[test]
     fn embedded_artwork_decodes_to_tray_icon() {

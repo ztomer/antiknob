@@ -8,6 +8,7 @@
 
 pub mod bind;
 pub mod engine;
+pub mod grants;
 pub mod login_item;
 pub mod migrate;
 pub mod output;

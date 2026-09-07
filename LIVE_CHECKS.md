@@ -149,9 +149,15 @@ antiknob led 1 backlight green
   complete.
 - **Check 3** decides layer three's LED.
 - The **device's active layer** is the last open question for the virtual
-  layer roadmap — see `PLAN.md` item 3. A knob with no spare button cannot
-  switch device layers, so either that query is found or Media/Navigate move
-  host-side and lose their no-daemon property. My read-only sweep for it is
-  recorded in `PLAN.md`; if it came up empty, the next step needs the vendor
-  app running under Rosetta with a USB capture, which is a bigger job than
-  anything here.
+  layer roadmap, and I have now bounded it rather than left it open. A
+  read-only sweep of 512 queries found exactly two commands this firmware
+  answers: the LED mode read and the slot table. **Nothing reports the
+  active layer.** The sweep is calibrated — `FA B0` does answer, so a
+  positive would have been visible — and its bounds are in `PLAN.md`.
+
+  The consequence is a decision for you, not more searching: a knob with no
+  spare button cannot switch device layers, so the virtual layer either
+  lives on whichever layer the device is already on, or Media and Navigate
+  move host-side and lose their works-without-the-daemon property. Going
+  further on the query means capturing the vendor app under Rosetta over
+  USB — a bigger job than everything else in this file combined.

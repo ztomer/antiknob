@@ -1,6 +1,6 @@
 use crate::config::{DeviceConfig, KnobConfig, LayerConfig};
-use crate::device::{list_devices, open_device, send_report, DeviceMatch};
-use crate::protocol::{build_led_packet, key_id_for_button, key_id_for_knob, Action, KnobEvent};
+use crate::device::DeviceMatch;
+use crate::gui::clihid::CliHid;
 use anyhow::Result;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,30 +101,29 @@ impl Default for GuiState {
 }
 
 impl GuiState {
-    /// Re-scan USB for a supported device, synchronously on the calling
-    /// thread. The caller is always the GUI main thread; this must stay that
-    /// way (see the main-thread requirement on `crate::device`).
+    /// Re-scan USB via the CLI subprocess (`status --json`). Synchronous
+    /// and subprocess-based: the GUI process never touches hidapi itself
+    /// (see `gui::clihid` for why in-process HID is fatal here).
     pub fn refresh_device(&mut self) {
-        match list_devices() {
-            Ok(devs) => {
-                if let Some(dev) = devs.into_iter().next() {
-                    self.status_message = format!(
-                        "Connected: {} (VID: 0x{:04x}, PID: 0x{:04x})",
-                        dev.name, dev.vendor_id, dev.product_id
-                    );
-                    self.status_is_ok = true;
-                    self.device = Some(dev);
-                } else {
-                    self.status_message =
-                        "No device detected. Connect Anticater VK01 via USB.".to_string();
-                    self.status_is_ok = false;
-                    self.device = None;
-                }
-            }
+        let devs = match CliHid::connect().and_then(|cli| cli.status()) {
+            Ok(devs) => devs,
             Err(e) => {
                 self.status_message = format!("Error scanning USB devices: {}", e);
                 self.status_is_ok = false;
+                return;
             }
+        };
+        if let Some(dev) = devs.into_iter().next() {
+            self.status_message = format!(
+                "Connected: {} (VID: 0x{:04x}, PID: 0x{:04x})",
+                dev.name, dev.vendor_id, dev.product_id
+            );
+            self.status_is_ok = true;
+            self.device = Some(dev);
+        } else {
+            self.status_message = "No device detected. Connect Anticater VK01 via USB.".to_string();
+            self.status_is_ok = false;
+            self.device = None;
         }
     }
 
@@ -279,81 +278,30 @@ impl GuiState {
         }
     }
 
-    /// Flash the active layer plus the LED spec to the device. Runs
-    /// synchronously on the GUI main thread: hidapi's macOS backend
-    /// (IOHIDManager) traps when driven from a worker thread without a
-    /// CFRunLoop, which crashed the app (SIGTRAP in `hid_enumerate`).
-    /// USB writes with pacing complete in well under a second, so no
-    /// background thread is needed.
+    /// Flash the active layer to the device through the CLI subprocess
+    /// (`upload --layer`). The config is staged to a temp YAML file so the
+    /// CLI validates and flashes exactly what the GUI holds. Synchronous;
+    /// a subprocess never touches this process's runloop.
     pub fn save_to_device(&mut self) -> Result<()> {
         let layer_idx = self.active_layer as u8;
-        let led_mode = self.led_mode;
-        let led_color = self.led_color.clone();
 
         self.status_message = format!("Flashing Layer {} to device over USB...", layer_idx);
         self.status_is_ok = true;
 
-        let res = (|| -> Result<usize> {
-            let dev = open_device()?;
-            let layer = self
-                .config
-                .layers
-                .get(layer_idx as usize)
-                .ok_or_else(|| anyhow::anyhow!("Layer not found"))?;
-            let mut sent_count = 0;
-
-            for (knob_idx, knob) in layer.knobs.iter().enumerate() {
-                if let Some(ref s) = knob.ccw {
-                    let action = Action::parse(s)?;
-                    let key_id = key_id_for_knob(knob_idx, KnobEvent::RotateCCW);
-                    send_report(&dev, &action.to_packet(key_id, layer_idx))?;
-                    sent_count += 1;
-                    std::thread::sleep(std::time::Duration::from_millis(15));
-                }
-                if let Some(ref s) = knob.press {
-                    let action = Action::parse(s)?;
-                    let key_id = key_id_for_knob(knob_idx, KnobEvent::Press);
-                    send_report(&dev, &action.to_packet(key_id, layer_idx))?;
-                    sent_count += 1;
-                    std::thread::sleep(std::time::Duration::from_millis(15));
-                }
-                if let Some(ref s) = knob.cw {
-                    let action = Action::parse(s)?;
-                    let key_id = key_id_for_knob(knob_idx, KnobEvent::RotateCW);
-                    send_report(&dev, &action.to_packet(key_id, layer_idx))?;
-                    sent_count += 1;
-                    std::thread::sleep(std::time::Duration::from_millis(15));
-                }
-            }
-
-            let mut btn_idx = 0;
-            for row in &layer.buttons {
-                for btn in row {
-                    if btn != "none" && !btn.is_empty() {
-                        let action = Action::parse(btn)?;
-                        let key_id = key_id_for_button(btn_idx);
-                        send_report(&dev, &action.to_packet(key_id, layer_idx))?;
-                        sent_count += 1;
-                        std::thread::sleep(std::time::Duration::from_millis(15));
-                    }
-                    btn_idx += 1;
-                }
-            }
-
-            let led_spec = format!("mode{} {}", led_mode, led_color);
-            if let Ok(pkt) = build_led_packet(layer_idx, &led_spec) {
-                let _ = send_report(&dev, &pkt);
-            }
-
-            Ok(sent_count)
+        let res = (|| -> Result<String, String> {
+            let cli = CliHid::connect()?;
+            let tmp =
+                std::env::temp_dir().join(format!("antiknob-upload-{}.yaml", std::process::id()));
+            crate::gui::profiles::save_profile_file(&self.config, &tmp)
+                .map_err(|e| format!("Failed to stage config: {:#}", e))?;
+            let out = cli.upload_layer(&tmp, Some(layer_idx));
+            let _ = std::fs::remove_file(&tmp);
+            out
         })();
 
         match res {
-            Ok(count) => {
-                self.status_message = format!(
-                    "Successfully flashed {} actions to Layer {} (No sudo)!",
-                    count, layer_idx
-                );
+            Ok(detail) => {
+                self.status_message = format!("Layer {} flashed (No sudo). {}", layer_idx, detail);
                 self.status_is_ok = true;
             }
             Err(e) => {
@@ -366,16 +314,15 @@ impl GuiState {
     }
 
     /// Switch the active device layer and push that layer's configured
-    /// LED to the ring, so lighting follows the layer. Synchronous,
-    /// main-thread HID. A sync failure is reported in the status line but
-    /// never blocks the layer switch itself.
+    /// LED to the ring, so lighting follows the layer. A sync failure is
+    /// reported in the status line but never blocks the layer switch itself.
     pub fn switch_layer(&mut self, layer: usize) {
         self.active_layer = layer;
         self.sync_layer_led();
     }
 
-    /// Send the active layer's configured `led` string to the device.
-    /// No-op when the layer has no LED configured.
+    /// Send the active layer's configured `led` string to the device via
+    /// the CLI subprocess. No-op when the layer has no LED configured.
     pub fn sync_layer_led(&mut self) {
         let spec = match self
             .config
@@ -387,12 +334,7 @@ impl GuiState {
             None => return,
         };
         let layer_idx = self.active_layer as u8;
-        match (|| -> Result<()> {
-            let dev = open_device()?;
-            let pkt = build_led_packet(layer_idx, &spec)?;
-            send_report(&dev, &pkt)?;
-            Ok(())
-        })() {
+        match CliHid::connect().and_then(|cli| cli.led(layer_idx, &spec)) {
             Ok(()) => {
                 self.status_message = format!("Layer {} active, LED synced ({})", layer_idx, spec);
                 self.status_is_ok = true;
@@ -406,20 +348,14 @@ impl GuiState {
 
     /// Flash the one-time host-translate slot bindings
     /// (CCW=ctrl-alt-F16, Press=ctrl-alt-F17, CW=ctrl-alt-F18) to all
-    /// device layers. Synchronous, main-thread HID. Hold+twist slots are
+    /// device layers through the CLI subprocess. Hold+twist slots are
     /// deliberately left untouched (key IDs unverified).
     pub fn restore_slot_bindings(&mut self) {
         self.status_message = "Flashing slot bindings to device over USB...".to_string();
         self.status_is_ok = true;
-        match (|| -> Result<usize> {
-            let dev = open_device()?;
-            crate::host::bind::flash_slot_bindings(&dev, &crate::host::bind::BIND_LAYERS)
-        })() {
-            Ok(count) => {
-                self.status_message = format!(
-                    "Slot bindings restored ({} packets). Verify with: antiknob listen",
-                    count
-                );
+        match CliHid::connect().and_then(|cli| cli.bind_slots()) {
+            Ok(detail) => {
+                self.status_message = format!("Slot bindings restored. {}", detail);
                 self.status_is_ok = true;
             }
             Err(e) => {
@@ -429,21 +365,14 @@ impl GuiState {
         }
     }
 
-    /// Send the current LED mode/color to the device, synchronously on the
-    /// GUI main thread (same IOHIDManager thread-affinity requirement as
-    /// `save_to_device`; the old worker-thread version of this function is
-    /// what crashed the app when changing lighting mode).
+    /// Send the current LED mode/color to the device through the CLI
+    /// subprocess (the lighting control whose in-process version crashed
+    /// the app in 2026-09).
     pub fn apply_led_to_device(&mut self) {
         let layer_idx = self.active_layer as u8;
         let led_spec = format!("mode{} {}", self.led_mode, self.led_color);
         self.status_message = format!("Applying LED {}...", led_spec);
-        let res = (|| -> Result<()> {
-            let dev = open_device()?;
-            let pkt = build_led_packet(layer_idx, &led_spec)?;
-            send_report(&dev, &pkt)?;
-            Ok(())
-        })();
-        match res {
+        match CliHid::connect().and_then(|cli| cli.led(layer_idx, &led_spec)) {
             Ok(()) => {
                 self.status_message = format!("LED lighting applied: {}", led_spec);
                 self.status_is_ok = true;

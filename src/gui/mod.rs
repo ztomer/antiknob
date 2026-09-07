@@ -1,4 +1,5 @@
 pub mod canvas;
+pub mod clihid;
 pub mod host_more;
 pub mod host_view;
 pub mod palette;

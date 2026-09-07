@@ -1,15 +1,13 @@
-//! Regression tests for the lighting-mode crash (2026-09-06).
+//! Regression tests for the two HID crash classes (2026-09-06 SIGTRAP,
+//! 2026-09-07 SIGABRT).
 //!
-//! Crash: `GuiState::apply_led_to_device` (and `save_to_device` /
-//! `refresh_device`) spawned a worker thread that called `HidApi::new()`.
-//! hidapi's vendored C backend schedules its IOHIDManager on the calling
-//! thread's CFRunLoop (`IOHIDManagerScheduleWithRunLoop(hid_mgr,
-//! CFRunLoopGetCurrent(), ...)`), which traps (SIGTRAP in `hid_enumerate`)
-//! on any non-main thread, killing the app. Fix: all HID work runs
-//! synchronously on the GUI main thread, and the constructor performs no
-//! HID I/O at all. These tests pin both halves of that fix without
-//! touching real hardware (libtest itself runs tests on worker threads,
-//! so any HID call here would trap whenever any HID device is present).
+//! hidapi's macOS backend pumps the calling thread's CFRunLoop inside
+//! hid_enumerate: worker threads trap (SIGTRAP), and the GUI main thread
+//! aborts reentrantly inside the running event loop (SIGABRT). The fix is
+//! architectural: the GUI process never calls hidapi at all and shells
+//! out to the CLI binary instead (see `gui::clihid`). These tests pin
+//! both halves: an I/O-free constructor and zero in-process HID calls in
+//! `src/gui`.
 
 use antiknob::gui::state::GuiState;
 
@@ -33,21 +31,45 @@ fn constructor_performs_no_hid_io() {
     );
 }
 
-/// Structural pin: no worker threads may exist around HID calls in the GUI
-/// state machine. If anyone re-adds `thread::spawn` to `state.rs`, the
-/// crash class returns, so fail loudly here instead of in production.
+/// Structural pin: no in-process HID calls may exist anywhere under
+/// src/gui. If anyone re-adds direct hidapi use to the GUI, the crash
+/// classes return, so fail loudly here instead of in production.
 #[test]
-fn no_worker_threads_around_hid() {
-    let state_src = std::fs::read_to_string(crate_root().join("src/gui/state.rs"))
-        .expect("read src/gui/state.rs");
+fn no_in_process_hid_in_gui() {
+    let gui_dir = crate_root().join("src/gui");
+    let mut offenders = Vec::new();
+    let mut files = vec![gui_dir.clone()];
+    while let Some(path) = files.pop() {
+        if path.is_dir() {
+            for entry in std::fs::read_dir(&path).expect("read gui dir") {
+                files.push(entry.expect("dir entry").path());
+            }
+            continue;
+        }
+        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+            continue;
+        }
+        let src = std::fs::read_to_string(&path).expect("read gui source");
+        for token in [
+            "hidapi::",
+            "open_device(",
+            "list_devices(",
+            "send_report(",
+            "HidDevice",
+            "thread::spawn",
+        ] {
+            if src.contains(token) {
+                offenders.push(format!(
+                    "{} contains forbidden token {:?}",
+                    path.display(),
+                    token
+                ));
+            }
+        }
+    }
     assert!(
-        !state_src.contains("thread::spawn"),
-        "src/gui/state.rs must not spawn threads: HID calls are main-thread-only"
-    );
-    let device_src =
-        std::fs::read_to_string(crate_root().join("src/device.rs")).expect("read src/device.rs");
-    assert!(
-        device_src.contains("main thread") || device_src.contains("main-thread"),
-        "src/device.rs must document the main-thread requirement"
+        offenders.is_empty(),
+        "GUI must shell out to the CLI, never touch HID in-process:\n{}",
+        offenders.join("\n")
     );
 }

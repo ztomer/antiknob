@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use hidapi::{HidApi, HidDevice};
+use serde::{Deserialize, Serialize};
 
 pub const SUPPORTED_DEVICES: &[(u16, u16, &str)] = &[
     (0x514C, 0x8850, "Anticater / LQKJ VK01 (0x514c:0x8850)"),
@@ -14,13 +15,18 @@ pub const VENDOR_USAGE_PAGE: u16 = 0xFF00;
 pub const REPORT_ID: u8 = 0x03;
 
 /// Thread-affinity contract (macOS): every function in this module drives
-/// hidapi's IOHIDManager backend, which must run on the main thread.
-/// Calling `HidApi::new()` from a worker thread without a CFRunLoop traps
-/// inside `hid_enumerate` (`__CFCheckCFInfoPACSignature`, SIGTRAP) and kills
-/// the process. The GUI therefore performs all HID work synchronously on
-/// the main thread and never spawns threads around these calls.
+/// hidapi's IOHIDManager backend, which must run on the main thread of a
+/// process whose CFRunLoop is NOT currently dispatching: hid_enumerate
+/// pumps the runloop reentrantly, which aborts inside a running GUI event
+/// loop (SIGTRAP off-main-thread, SIGABRT reentrantly on it; both observed
+/// on macOS 26).
+///
+/// Consequences: the CLI (plain main thread, no runloop) calls these
+/// directly. The GUI must NEVER call them in-process; it shells out to the
+/// CLI binary instead (see `gui::clihid`). Pinned structurally by
+/// `tests/hid_main_thread.rs`.
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceMatch {
     pub vendor_id: u16,
     pub product_id: u16,

@@ -20,7 +20,11 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Probe and display status of connected Anticater / CH57x hardware without sudo
-    Status,
+    Status {
+        /// Machine-readable JSON device list (for the GUI subprocess bridge)
+        #[arg(long)]
+        json: bool,
+    },
 
     /// Validate configuration YAML file syntax offline
     Validate {
@@ -32,6 +36,9 @@ enum Commands {
     Upload {
         #[arg(default_value = "config.yaml")]
         file: PathBuf,
+        /// Flash only this device layer (default: all layers)
+        #[arg(long)]
+        layer: Option<u8>,
     },
 
     /// Set LED lighting mode (e.g., led 0 backlight white, led 0 shock blue, led 0 off)
@@ -79,9 +86,13 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Status => {
-            println!("[ ==> ] Scanning for Anticater / CH57x USB devices...");
+        Commands::Status { json } => {
             let devices = device::list_devices()?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&devices)?);
+                return Ok(());
+            }
+            println!("[ ==> ] Scanning for Anticater / CH57x USB devices...");
 
             if devices.is_empty() {
                 println!("[ Wrn ] No supported devices detected on USB.");
@@ -121,7 +132,7 @@ fn main() -> Result<()> {
             );
         }
 
-        Commands::Upload { file } => {
+        Commands::Upload { file, layer } => {
             println!("[ ==> ] Loading and validating '{:?}'...", file);
             let cfg = config::DeviceConfig::load_from_file(&file)?;
             cfg.validate()?;
@@ -129,12 +140,26 @@ fn main() -> Result<()> {
             println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
             let dev = device::open_device()?;
 
+            let layers: Vec<(usize, &config::LayerConfig)> = match layer {
+                Some(l) => {
+                    let idx = l as usize;
+                    if idx >= cfg.layers.len() {
+                        anyhow::bail!(
+                            "Layer {} out of range (config has {} layer(s))",
+                            idx,
+                            cfg.layers.len()
+                        );
+                    }
+                    vec![(idx, &cfg.layers[idx])]
+                }
+                None => cfg.layers.iter().enumerate().collect(),
+            };
             println!(
                 "[ ==> ] Flashing keymaps across {} layer(s)...",
-                cfg.layers.len()
+                layers.len()
             );
 
-            for (layer_idx, layer) in cfg.layers.iter().enumerate() {
+            for (layer_idx, layer) in layers {
                 let layer_u8 = layer_idx as u8;
 
                 // 1. Program buttons

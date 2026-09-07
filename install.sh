@@ -18,9 +18,11 @@ cp "${TARGET_DIR}/release/antiknob-gui" "${DEST_DIR}/bin/antiknob-gui"
 cp "${TARGET_DIR}/release/antiknob-daemon" "${DEST_DIR}/bin/antiknob-daemon"
 cp config.yaml "${DEST_DIR}/config.yaml"
 
-# Assemble macOS Application Bundle
+# Assemble macOS Application Bundle (clean rebuild: stale nested content
+# breaks codesigning with "unsealed contents present in the bundle root")
 APP_BUNDLE="${DEST_DIR}/Antiknob.app"
 echo "[ ==> ] Creating macOS App Bundle at ${APP_BUNDLE}..."
+rm -rf "${APP_BUNDLE}"
 mkdir -p "${APP_BUNDLE}/Contents/MacOS"
 mkdir -p "${APP_BUNDLE}/Contents/Resources"
 
@@ -66,6 +68,7 @@ codesign -s - --force --deep "${APP_BUNDLE}"
 # Assemble menu-bar daemon bundle (LSUIElement: tray icon, no dock icon)
 DAEMON_BUNDLE="${DEST_DIR}/AntiknobDaemon.app"
 echo "[ ==> ] Creating daemon App Bundle at ${DAEMON_BUNDLE}..."
+rm -rf "${DAEMON_BUNDLE}"
 mkdir -p "${DAEMON_BUNDLE}/Contents/MacOS"
 mkdir -p "${DAEMON_BUNDLE}/Contents/Resources"
 
@@ -108,10 +111,13 @@ PLIST
 echo "[ ==> ] Ad-hoc codesigning Daemon Bundle..."
 codesign -s - --force --deep "${DAEMON_BUNDLE}"
 
-# Create convenient symlink in /Applications for Spotlight / Launchpad
+# Convenient symlinks in /Applications for Spotlight / Launchpad.
+# rm first: ln follows a stale symlinked dir and would nest the link
+# inside the bundle (breaking codesign with "unsealed contents").
 if [[ "${DEST_DIR}" == "/Applications/Antiknob" ]]; then
-    ln -sf "${APP_BUNDLE}" "/Applications/Antiknob.app"
-    ln -sf "${DAEMON_BUNDLE}" "/Applications/AntiknobDaemon.app"
+    rm -f "/Applications/Antiknob.app" "/Applications/AntiknobDaemon.app"
+    ln -s "${APP_BUNDLE}" "/Applications/Antiknob.app"
+    ln -s "${DAEMON_BUNDLE}" "/Applications/AntiknobDaemon.app"
 fi
 
 # Link CLIs if user has ~/.local/bin in PATH

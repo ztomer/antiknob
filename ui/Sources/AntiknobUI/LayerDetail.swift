@@ -43,6 +43,8 @@ struct LayerDetail: View {
 
                 layerSection
 
+                ReachabilityNotice(mode: store.modePresentation)
+
                 Section("Knob Gestures") {
                     PropertyGrid(horizontalSpacing: 12, verticalSpacing: 2) {
                         ForEach(Gesture.allCases) { g in

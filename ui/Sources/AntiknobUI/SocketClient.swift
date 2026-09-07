@@ -239,6 +239,14 @@ final class SocketClient: @unchecked Sendable {
         return (res as? [String: Any]) ?? [:]
     }
 
+    /// Ask the daemon what the knob's firmware will actually do with a
+    /// gesture. The layer view needs this before it can honestly draw a
+    /// host layer as live.
+    func getKnobMode() throws -> [String: Any] {
+        let res = try rpcCall(method: "get_knob_mode", timeoutSecs: 5)
+        return (res as? [String: Any]) ?? [:]
+    }
+
     func bindSlots(layer: Int? = nil, dryRun: Bool = false) throws -> String {
         var params: [String: Any] = ["dry_run": dryRun]
         if let l = layer { params["layer"] = l }

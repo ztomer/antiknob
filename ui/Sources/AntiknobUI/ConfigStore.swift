@@ -45,36 +45,17 @@ public final class ConfigStore: ObservableObject {
     @Published var activeLayerIdx: Int = 0
     @Published var statusMessage: String?
     @Published var isBindingSlots: Bool = false
+    /// What the knob's firmware will do with a gesture. Deliberately NOT on
+    /// the 2-second status poll: reading it walks the device's slot table,
+    /// and hammering the HID device to redraw a banner that changes only
+    /// when the firmware is reflashed would be a poor trade. Refreshed on
+    /// launch, on becoming active, and after any flash.
+    @Published var knobModeRaw: String?
     @Published var startOnLogin: Bool = false
 
     /// Everything the status bar renders, as a pure value. Lives in
     /// `StatusPresentation` rather than here so it can be tested without
     /// standing up a store -- `init()` loads config and starts a poll timer.
-    var status: StatusPresentation {
-        StatusPresentation(
-            transport: transport,
-            powerDescription: powerDescription,
-            connected: hardwareConnected
-        )
-    }
-
-    var transportDisplay: String { status.transportDisplay }
-    var transportIcon: String { status.transportIcon }
-    var powerIcon: String { status.powerIcon }
-
-    /// Colour stays here: `Color` is SwiftUI, and `StatusPresentation` is
-    /// deliberately free of it so the mapping tests need no view stack. The
-    /// switch is over `Transport`, not over the raw string, so a new case
-    /// fails to compile here rather than quietly rendering grey.
-    var transportColor: Color {
-        switch status.link {
-        case .usb: return .green
-        case .wireless24GHz: return .cyan
-        case .bluetooth: return .blue
-        case nil: return .secondary
-        }
-    }
-
     private var syncing = false
     private let client = SocketClient.shared
     private nonisolated(unsafe) var pollTimer: Timer?
@@ -108,6 +89,19 @@ public final class ConfigStore: ObservableObject {
 
         checkStartOnLogin()
         refreshStatus()
+        refreshKnobMode()
+    }
+
+    /// Read the firmware's slot table and record what it says. Failure
+    /// leaves the mode nil, which presents as "unknown" -- never as one of
+    /// the two real modes, because not knowing is not the same as knowing.
+    func refreshKnobMode() {
+        Task.detached(priority: .utility) {
+            let mode = (try? SocketClient.shared.getKnobMode())?["mode"] as? String
+            await MainActor.run { [weak self] in
+                self?.knobModeRaw = mode
+            }
+        }
     }
 
     private func startPolling() {
@@ -123,6 +117,7 @@ public final class ConfigStore: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.refreshStatus()
+                self?.refreshKnobMode()
             }
         }
     }

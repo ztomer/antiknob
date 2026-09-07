@@ -100,3 +100,52 @@ struct LedModeNameTests {
         #expect(ledModeNames[9] == nil)
     }
 }
+
+/// The layer view must never present a host layer as live when the firmware
+/// cannot produce it. These pin the three cases, including the one that says
+/// "not sure" rather than guessing.
+@Suite("Knob mode presentation")
+struct ModePresentationTests {
+    @Test("only host-translate can fire host layers")
+    func onlyHostTranslateFires() {
+        #expect(ModePresentation(rawMode: "host-translate").hostLayersCanFire)
+        #expect(!ModePresentation(rawMode: "standalone").hostLayersCanFire)
+        #expect(!ModePresentation(rawMode: "unknown").hostLayersCanFire)
+    }
+
+    @Test("host-translate says nothing, because nothing is wrong")
+    func hostTranslateIsQuiet() {
+        let p = ModePresentation(rawMode: "host-translate")
+        #expect(p.banner == nil)
+        #expect(p.callToAction == nil)
+    }
+
+    @Test("standalone says the layers are inactive and offers the way out")
+    func standaloneExplainsItself() {
+        let p = ModePresentation(rawMode: "standalone")
+        #expect(p.mode == .standalone)
+        #expect(p.banner?.contains("inactive") == true, "banner: \(p.banner ?? "nil")")
+        #expect(p.callToAction == "Flash Slot Bindings")
+    }
+
+    /// A missing or unrecognised reading is its own state. Falling back to
+    /// either real mode would be the app inventing a fact about hardware it
+    /// has not read.
+    @Test("an unread or unrecognised mode is neither of the others")
+    func unknownIsItsOwnState() {
+        for raw in [nil, "", "wat", "HOST-TRANSLATE"] {
+            let p = ModePresentation(rawMode: raw)
+            #expect(p.mode == .unknown, "raw: \(raw ?? "nil")")
+            #expect(!p.hostLayersCanFire)
+            #expect(p.banner != nil)
+            #expect(p.callToAction == nil)
+        }
+    }
+
+    @Test("each mode has its own glyph")
+    func glyphsAreDistinct() {
+        let icons = ["host-translate", "standalone", "unknown"]
+            .map { ModePresentation(rawMode: $0).icon }
+        #expect(Set(icons).count == 3, "two modes share a glyph: \(icons)")
+    }
+}

@@ -1,6 +1,6 @@
 [package]
 name = "antiknob"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 authors = ["Tomer Zaidentein <ztomer@gmail.com>"]
 description = "Native macOS Apple Silicon configuration utility for the Anticater VK01 Knob"
@@ -8,10 +8,15 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 hidapi = "2.6"
-rdev = { version = "0.5", features = ["unstable_grab"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-core-graphics = "0.19"
+# 0.25, not 0.19: it carries the safe CGEventTap wrapper the daemon's
+# keyboard tap is built on, and unlike the rdev/cocoa chain it replaced it
+# pulls no `block`. One version of core-graphics in the graph, deliberately.
+# `highsierra` gates CGEventCreateScrollWheelEvent2, which the knob's scroll
+# synthesis needs. Our deployment floor is macOS 26, so the gate is moot.
+core-graphics = { version = "0.25", features = ["highsierra"] }
+core-foundation = "0.10"
 objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-core-graphics = "0.3"

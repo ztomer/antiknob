@@ -11,45 +11,16 @@ use antiknob::host::HostConfig;
 
 use super::synth::synthesize;
 use super::tray::{TrayAction, TrayUi};
+use crate::keytap::{self, Decision, KeyEvent};
 use anyhow::{Context, Result};
-use rdev::{Event, EventType, Key};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 enum DaemonMsg {
-    Input(Event),
+    Input(KeyEvent),
     TapDead(String),
-}
-
-/// CG keycode mirror of rdev's macOS mapping for the keys the daemon
-/// cares about; F16+ arrive as `Key::Unknown` carrying the raw code.
-fn cg_code(key: &Key) -> Option<u16> {
-    match key {
-        Key::ControlLeft => Some(59),
-        Key::ControlRight => Some(62),
-        Key::Alt => Some(58),
-        Key::AltGr => Some(61),
-        Key::ShiftLeft => Some(56),
-        Key::ShiftRight => Some(60),
-        Key::MetaLeft => Some(55),
-        Key::MetaRight => Some(54),
-        Key::F1 => Some(122),
-        Key::F2 => Some(120),
-        Key::F3 => Some(99),
-        Key::F4 => Some(118),
-        Key::F5 => Some(96),
-        Key::F6 => Some(97),
-        Key::F7 => Some(98),
-        Key::F8 => Some(100),
-        Key::F9 => Some(101),
-        Key::F10 => Some(109),
-        Key::F11 => Some(103),
-        Key::F12 => Some(111),
-        Key::Unknown(code) => (*code).try_into().ok(),
-        _ => None,
-    }
 }
 
 pub(crate) fn default_config_path() -> Result<PathBuf> {
@@ -199,28 +170,6 @@ fn apply_tray_action(
     }
 }
 
-/// Verbose tap diagnostics: every non-movement event, so gestures that
-/// emit wheel, button, or media actions are visible too — not just
-/// keyboard chords. MouseMove is skipped (flood).
-pub(crate) fn log_raw_event(ev: &Event) {
-    match &ev.event_type {
-        EventType::KeyPress(key) => match cg_code(key) {
-            Some(code) => println!("[raw] key down code={}", code),
-            None => println!("[raw] key down {:?}", key),
-        },
-        EventType::KeyRelease(key) => match cg_code(key) {
-            Some(code) => println!("[raw] key up code={}", code),
-            None => println!("[raw] key up {:?}", key),
-        },
-        EventType::ButtonPress(button) => println!("[raw] button press {:?}", button),
-        EventType::ButtonRelease(button) => println!("[raw] button release {:?}", button),
-        EventType::Wheel { delta_x, delta_y } => {
-            println!("[raw] wheel x={} y={}", delta_x, delta_y)
-        }
-        EventType::MouseMove { .. } => {}
-    }
-}
-
 pub(crate) fn run_observe(
     tap: Arc<Mutex<TapEngine>>,
     tap_health: Arc<Mutex<TapHealth>>,
@@ -237,11 +186,11 @@ pub(crate) fn run_observe(
             h.error = None;
         }
         let tx_clone = tx.clone();
-        let res = rdev::listen(move |ev| {
+        let res = keytap::listen(move |ev| {
             let _ = tx_clone.send(DaemonMsg::Input(ev));
         });
         let reason = match res {
-            Err(e) => format!("{:?}", e),
+            Err(e) => e,
             Ok(()) => "listener ended".to_string(),
         };
         if let Ok(mut h) = thread_health.lock() {
@@ -275,32 +224,23 @@ pub(crate) fn run_observe(
         let now_ms = start.elapsed().as_millis() as u64;
         match rx.recv_timeout(tick) {
             Ok(DaemonMsg::Input(ev)) => {
-                if verbose {
-                    log_raw_event(&ev);
-                }
-                let code = match ev.event_type {
-                    EventType::KeyPress(key) => cg_code(&key).map(|c| (c, true)),
-                    EventType::KeyRelease(key) => cg_code(&key).map(|c| (c, false)),
-                    _ => None,
-                };
-                if let Some((code, pressed)) = code {
-                    if let Ok(mut t) = tap.lock() {
-                        if verbose {
-                            println!(
-                                "[key] code={} {} mods={:?}",
-                                code,
-                                if pressed { "down" } else { "up" },
-                                t.held_mods()
-                            );
-                        }
-                        let out = if pressed {
-                            t.key(code, true, now_ms)
-                        } else {
-                            t.release_swallow(code);
-                            vec![]
-                        };
-                        handle_events(out, false);
+                let KeyEvent { code, pressed } = ev;
+                if let Ok(mut t) = tap.lock() {
+                    if verbose {
+                        println!(
+                            "[key] code={} {} mods={:?}",
+                            code,
+                            if pressed { "down" } else { "up" },
+                            t.held_mods()
+                        );
                     }
+                    let out = if pressed {
+                        t.key(code, true, now_ms)
+                    } else {
+                        t.release_swallow(code);
+                        vec![]
+                    };
+                    handle_events(out, false);
                 }
             }
             Ok(DaemonMsg::TapDead(reason)) => {
@@ -372,35 +312,28 @@ pub(crate) fn run_active(
         }
         let start = Instant::now();
         let thread_tap = Arc::clone(&grab_tap);
-        let res = rdev::grab(move |ev: Event| -> Option<Event> {
-            let code = match ev.event_type {
-                EventType::KeyPress(key) => cg_code(&key).map(|c| (c, true)),
-                EventType::KeyRelease(key) => cg_code(&key).map(|c| (c, false)),
-                _ => None,
-            };
-            let Some((code, pressed)) = code else {
-                return Some(ev);
-            };
+        let res = keytap::grab(move |ev: KeyEvent| -> Decision {
+            let KeyEvent { code, pressed } = ev;
             let now_ms = start.elapsed().as_millis() as u64;
             let Ok(mut t) = thread_tap.lock() else {
-                return Some(ev);
+                return Decision::Pass;
             };
             if pressed {
                 let out = t.key(code, true, now_ms);
                 if out.is_empty() {
-                    Some(ev)
+                    Decision::Pass
                 } else {
                     handle_events(out, true);
-                    None
+                    Decision::Swallow
                 }
             } else if t.release_swallow(code) {
-                None
+                Decision::Swallow
             } else {
-                Some(ev)
+                Decision::Pass
             }
         });
         let reason = match res {
-            Err(e) => format!("{:?}", e),
+            Err(e) => e,
             Ok(()) => "event tap ended".to_string(),
         };
         if let Ok(mut h) = grab_health.lock() {

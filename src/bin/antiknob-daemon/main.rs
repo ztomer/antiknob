@@ -19,6 +19,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::{Path, PathBuf};
 
+mod keytap;
 mod run;
 mod synth;
 mod tray;

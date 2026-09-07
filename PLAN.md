@@ -13,6 +13,11 @@ file carries only what is still open. `git log --oneline` and
 * Architecture: the GUI and CLI stay TCC-free (device flashing, presets, LED,
   YAML). The daemon alone needs Accessibility / Input Monitoring for host-side
   translation. `host.json` is the contract between them.
+* The keyboard tap is a `CGEventTap` driven directly (`keytap.rs` in the
+  daemon). It replaced `rdev`, whose `cocoa`/`block` chain carried a lint that
+  a future rustc turns into a hard error. Modifiers arrive as `FlagsChanged`
+  with no up/down bit; `keytap::decode` derives it from the device-dependent
+  NX flag bits, so left and right are distinguished.
 * All hidapi calls are marshalled onto one dedicated thread by
   `device::with_hid` / `device::with_device`; nothing outside `src/device/`
   may reach the `hidapi` crate. See `tests/hid_thread_affinity.rs` for why.
@@ -54,32 +59,7 @@ that GROWS, because the match key includes the measured count. It has been
 re-recorded twice, both times verified file-agnostically as zero new debt
 first, which is the only form of re-record it permits.
 
-### 2. `rdev` drags in a crate a future rustc will reject
-
-`cargo build` warns that `block v0.1.6` "contains code that will be rejected by
-a future version of Rust". The lint is `static of uninhabited type`
-(rust-lang/rust#74840) on `_NSConcreteStackBlock`, and it becomes a hard error.
-
-Investigated 2026-09-07, so the next session need not repeat it:
-
-* The chain is `antiknob -> rdev 0.5.3 -> cocoa 0.22.0 -> block 0.1.6`.
-* **0.5.3 is the newest rdev**; there is no version to bump to, and `block` is
-  unmaintained, so waiting is not a plan.
-* The surface is small: `Event`, `EventType`, `Key`, `rdev::listen` and
-  `rdev::grab`, at exactly two call sites (`src/host/tap.rs:240`,
-  `src/bin/antiknob-daemon/run.rs:375`).
-* `tap.rs` already speaks CG keycodes internally and holds its own mirror of
-  rdev's macOS mapping, so the translation layer that would normally dominate
-  such a port is already written.
-* The hard part is `grab`: swallowing an event needs a `CGEventTap` that
-  returns NULL for consumed events. `objc2-core-graphics` is already a
-  dependency, so nothing new is added.
-
-Not attempted here on purpose: this is the code path that can swallow the
-user's keystrokes, and getting it wrong leaves the keyboard misbehaving. It
-wants its own session with the daemon running in observe mode first.
-
-### 3. Hold+twist firmware slots stay unbound
+### 2. Hold+twist firmware slots stay unbound
 
 `bind-slots` binds three slots per layer (CCW / Press / CW) to
 `ctrl-alt-F16..F18`. The hold+twist key IDs were never verified against the
@@ -101,7 +81,7 @@ Still blocked on the same thing: a device whose hold+twist gestures have been
 configured **by the vendor app**, to diff against. Without that reference the
 dump shows what is there, not which byte means hold+twist.
 
-### 4. Bluetooth transport is inferred, and cannot be confirmed here
+### 3. Bluetooth transport is inferred, and cannot be confirmed here
 
 `device::classify_device` decides a device is ours, and over which transport,
 from its VID/PID, its bus type and its product string. Only USB and the 2.4GHz

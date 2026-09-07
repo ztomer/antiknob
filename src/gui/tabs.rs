@@ -9,4 +9,6 @@ pub const TABS: &[(ActiveTab, &str)] = &[
     (ActiveTab::Led, "RGB LED Lighting"),
     (ActiveTab::Mouse, "Mouse & Scroll"),
     (ActiveTab::Procreate, "Creative & Procreate"),
+    (ActiveTab::Slots, "Slot Bindings"),
+    (ActiveTab::Host, "Host Layers"),
 ];

@@ -285,6 +285,21 @@ fn parse_keycode(s: &str) -> Option<u8> {
         "f11" => Some(0x44),
         "f12" => Some(0x45),
 
+        // Extended function keys F13-F24 (USB HID usage codes 0x68-0x73).
+        // Needed for host-translate slot bindings (ctrl-alt-F16..F20).
+        "f13" => Some(0x68),
+        "f14" => Some(0x69),
+        "f15" => Some(0x6A),
+        "f16" => Some(0x6B),
+        "f17" => Some(0x6C),
+        "f18" => Some(0x6D),
+        "f19" => Some(0x6E),
+        "f20" => Some(0x6F),
+        "f21" => Some(0x70),
+        "f22" => Some(0x71),
+        "f23" => Some(0x72),
+        "f24" => Some(0x73),
+
         // Navigation
         "printscreen" | "prtscn" => Some(0x46),
         "scrolllock" => Some(0x47),
@@ -345,6 +360,34 @@ mod tests {
 
         let click = Action::parse("click").unwrap();
         assert_eq!(click, Action::MouseClick { button: 1 });
+    }
+
+    #[test]
+    fn test_parse_extended_function_keys() {
+        // USB HID: F13=0x68 .. F24=0x73.
+        for (i, name) in ["f13", "f14", "f15", "f16", "f17", "f18", "f19", "f20"]
+            .iter()
+            .enumerate()
+        {
+            let action = Action::parse(name).unwrap();
+            assert_eq!(
+                action,
+                Action::Key {
+                    modifiers: 0,
+                    code: 0x68 + i as u8
+                },
+                "keycode for {name}"
+            );
+        }
+        // The host-translate slot chord.
+        let slot = Action::parse("ctrl-alt-f16").unwrap();
+        assert_eq!(
+            slot,
+            Action::Key {
+                modifiers: 0x01 | 0x04,
+                code: 0x6B
+            }
+        );
     }
 
     #[test]

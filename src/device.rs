@@ -13,6 +13,13 @@ pub const SUPPORTED_DEVICES: &[(u16, u16, &str)] = &[
 pub const VENDOR_USAGE_PAGE: u16 = 0xFF00;
 pub const REPORT_ID: u8 = 0x03;
 
+/// Thread-affinity contract (macOS): every function in this module drives
+/// hidapi's IOHIDManager backend, which must run on the main thread.
+/// Calling `HidApi::new()` from a worker thread without a CFRunLoop traps
+/// inside `hid_enumerate` (`__CFCheckCFInfoPACSignature`, SIGTRAP) and kills
+/// the process. The GUI therefore performs all HID work synchronously on
+/// the main thread and never spawns threads around these calls.
+
 #[derive(Debug, Clone)]
 pub struct DeviceMatch {
     pub vendor_id: u16,

@@ -1,0 +1,147 @@
+//! antiknob-daemon: host-side translation daemon (Phase 3, slice 2).
+//!
+//! Listens for the knob's bound slot chords (ctrl+alt+F16..F20) on a global
+//! event tap and dispatches them through the pure `host` engine.
+//!
+//! Modes:
+//! - Observe (default): nothing swallowed, nothing synthesized; resolved
+//!   actions log as `WOULD ...` lines.
+//! - Active (`--active`): slot chords and recorded layer hotkeys are
+//!   swallowed and their actions synthesized (keys, scroll, brightness).
+//!   Aux media, launch/open/quit plan correctly but synthesize in slice 2b:
+//!   they are swallowed and SKIP-logged so no cryptic chord ever leaks.
+//!
+//! Needs Accessibility (and Input Monitoring) grants to install the tap;
+//! without them it exits 2 with an honest message. GUI and CLI stay
+//! completely TCC-free: all permission needs live in this binary alone.
+
+use anyhow::{Context, Result};
+use clap::Parser;
+use std::path::{Path, PathBuf};
+
+mod run;
+mod synth;
+mod tray;
+use run::{default_config_path, load_or_default, run_active, run_observe};
+
+#[derive(Parser)]
+#[command(
+    name = "antiknob-daemon",
+    version,
+    about = "Host-side translator for Anticater VK01 knob slot chords"
+)]
+struct Cli {
+    /// Host config JSON path (created with defaults if missing)
+    #[arg(long)]
+    config: Option<PathBuf>,
+
+    /// Stop after N seconds (0 = run forever)
+    #[arg(long, default_value = "0")]
+    timeout_secs: u64,
+
+    /// Swallow slot chords and synthesize their actions (default: observe only)
+    #[arg(long)]
+    active: bool,
+
+    /// Run without the menu-bar icon (headless use)
+    #[arg(long)]
+    no_tray: bool,
+
+    /// Install the per-user LaunchAgent (start at login) and load it now
+    #[arg(long)]
+    install_login_item: bool,
+
+    /// Unload and remove the per-user LaunchAgent
+    #[arg(long)]
+    uninstall_login_item: bool,
+}
+
+fn user_domain() -> Result<String> {
+    let out = std::process::Command::new("id").arg("-u").output()?;
+    if !out.status.success() {
+        anyhow::bail!("could not determine uid via `id -u`");
+    }
+    Ok(format!(
+        "gui/{}",
+        String::from_utf8_lossy(&out.stdout).trim()
+    ))
+}
+
+fn home_dir() -> Result<PathBuf> {
+    std::env::var("HOME")
+        .context("HOME is not set")
+        .map(PathBuf::from)
+}
+
+fn install_login_item(config_path: &Path) -> Result<()> {
+    use antiknob::host::login_item;
+    let home = home_dir()?;
+    let exe = std::env::current_exe()?;
+    let plist_path = login_item::install(&home, &exe, config_path)?;
+    println!("[ ==> ] Wrote {}.", plist_path.display());
+    let domain = user_domain()?;
+    // Loading an already-loaded agent fails; unload first for idempotence.
+    let _ = std::process::Command::new("launchctl")
+        .args(["bootout", &domain, login_item::AGENT_LABEL])
+        .output();
+    let load = std::process::Command::new("launchctl")
+        .args(["bootstrap", &domain])
+        .arg(&plist_path)
+        .output()?;
+    if !load.status.success() {
+        anyhow::bail!(
+            "launchctl bootstrap failed: {}",
+            String::from_utf8_lossy(&load.stderr)
+        );
+    }
+    println!(
+        "[ Ok  ] Login item installed and loaded ({}).",
+        login_item::AGENT_LABEL
+    );
+    Ok(())
+}
+
+fn uninstall_login_item() -> Result<()> {
+    use antiknob::host::login_item;
+    let home = home_dir()?;
+    let domain = user_domain()?;
+    let _ = std::process::Command::new("launchctl")
+        .args(["bootout", &domain, login_item::AGENT_LABEL])
+        .output();
+    if login_item::uninstall(&home)? {
+        println!("[ Ok  ] Login item removed.");
+    } else {
+        println!("[ Ok  ] No login item was installed.");
+    }
+    Ok(())
+}
+
+fn main() -> Result<()> {
+    let cli = Cli::parse();
+    let config_path = match cli.config {
+        Some(p) => p,
+        None => default_config_path()?,
+    };
+    if cli.uninstall_login_item {
+        uninstall_login_item()?;
+        return Ok(());
+    }
+    let cfg = load_or_default(&config_path)?;
+    if cli.install_login_item {
+        install_login_item(&config_path)?;
+        return Ok(());
+    }
+    println!(
+        "[ ==> ] Loaded {} host layer(s) (double-tap switch: {})",
+        cfg.layers.len(),
+        cfg.double_tap_switch
+    );
+
+    if cli.active {
+        println!("[ ==> ] ACTIVE mode: slot chords are swallowed and synthesized.");
+        run_active(cfg, cli.timeout_secs, &config_path, !cli.no_tray);
+    } else {
+        println!("[ ==> ] OBSERVE mode: chords pass through, actions are only logged.");
+        run_observe(cfg, cli.timeout_secs, &config_path, !cli.no_tray);
+    }
+}

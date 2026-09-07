@@ -1,8 +1,11 @@
 pub mod canvas;
+pub mod host_more;
+pub mod host_view;
 pub mod palette;
 pub mod presets;
 pub mod profiles;
 pub mod recorder;
+pub mod seq_editor;
 pub mod state;
 pub mod tabs;
 
@@ -24,7 +27,11 @@ pub fn run() -> Result<()> {
         options,
         Box::new(|cc| {
             egui_extras::install_image_loaders(&cc.egui_ctx);
-            Ok(Box::new(AntiknobApp::new()))
+            // This closure runs on the main thread, so the first device
+            // scan is safe here (HID is main-thread-only, see device.rs).
+            let mut app = AntiknobApp::new();
+            app.state.refresh_device();
+            Ok(Box::new(app))
         }),
     )
     .map_err(|e| anyhow::anyhow!("Failed to run eframe: {}", e))
@@ -50,7 +57,6 @@ impl Default for AntiknobApp {
 
 impl eframe::App for AntiknobApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.state.poll_events();
         ctx.request_repaint_after(std::time::Duration::from_millis(150));
 
         // Intercept keystroke when recording shortcut
@@ -74,6 +80,30 @@ impl eframe::App for AntiknobApp {
             });
             if let Some(key_str) = recorded {
                 self.state.record_key(&key_str);
+            }
+        }
+
+        // Intercept keystroke when recording a host-gesture keystroke
+        if self.state.host_recording {
+            let mut recorded = None;
+            ctx.input(|i| {
+                for event in &i.events {
+                    if let egui::Event::Key {
+                        key,
+                        pressed: true,
+                        modifiers,
+                        ..
+                    } = event
+                    {
+                        if let Some(formatted) = recorder::format_shortcut(modifiers, *key) {
+                            recorded = Some(formatted);
+                            break;
+                        }
+                    }
+                }
+            });
+            if let Some(key_str) = recorded {
+                crate::gui::host_view::record_host_keystroke(&mut self.state, &key_str);
             }
         }
 
@@ -107,7 +137,7 @@ impl eframe::App for AntiknobApp {
                         let is_active = self.state.active_layer == l;
                         let text = format!("Layer {}", l);
                         if ui.selectable_label(is_active, text).clicked() {
-                            self.state.active_layer = l;
+                            self.state.switch_layer(l);
                         }
                     }
                     ui.label("Active Layer:");

@@ -1,62 +1,36 @@
-# Antiknob: Pure Rust Native Plan for Anticater VK01 Knob
+# Antiknob Plan (forward-looking)
 
-## Strategic Context & Hardware Discovery
+## Context
 
-* **Hardware Identified & Verified On USB**:
-  * Connected device: **VID `0x514C` (LQKJ), PID `0x8850`**
-  * Product: `USB Composite Device`, Serial: `EB60121120051103`
-  * Vendor Usage Page: `0xFF00`, Usage `0x0001`, Report ID `0x03` (64 bytes).
-  * **Zero Sudo Requirement**: Dynamic testing confirmed that macOS `IOHIDManager` allows opening the `0xFF00` configuration interface without root/sudo privileges.
-* **Licensing & Commercialization**:
-  * **100% Permissive Open Source**: Dual-licensed under **MIT OR Apache-2.0**.
-  * **No Dual-Licensing / No Copyleft**: Clean commercialization with zero GPL, AGPL, or SSPL encumbrance.
-  * All crate dependencies (`hidapi`, `serde`, `clap`, `anyhow`) are MIT / Apache-2.0.
-* **Rosetta 2 Deprecation (macOS 27, September 2026)**:
-  * Pure native `aarch64-apple-darwin` binary built with Rust.
+* Hardware: Anticater VK01 knob, VID `0x514C` (LQKJ), PID `0x8850`
+  (serial `EB60121120051103`); vendor usage page `0xFF00`, report `0x03`.
+* Zero-sudo IOHIDManager access. MIT OR Apache-2.0, native arm64.
+* Architecture: GUI + CLI stay TCC-free (device flashing, presets, LED,
+  YAML). The daemon alone needs Accessibility / Input Monitoring
+  (host-side translation). `host.json` is the contract between them.
 
----
+## Shipped in 0.2.0
 
-## Technical Architecture
+* Crash fix: all HID runs on the GUI main thread (pinned by
+  `tests/hid_main_thread.rs`).
+* Host engine (`src/host/`): JSON layers, rolodex, double-tap window,
+  hotkey-switch alternation, chord matching, output plans, preset
+  migration, app discovery, login-item plist, tap glue.
+* Daemon (`antiknob-daemon`, `AntiknobDaemon.app`): observe/active modes,
+  full synthesis (keys, scroll, fn-brightness, NX media, mouse incl.
+  middle, launch/open/quit), tray with layer title + menu, login item,
+  instant-apply with last-good rule.
+* CLI: `status validate upload led show-keys bind-slots listen
+  import-presets list-apps`.
+* GUI: presets, recorder, palettes, Slots tab, Host Layers tab with full
+  gesture editor (None/Scroll/Media/Key/Sequence/launch/quit/open/mouse),
+  preset export, layer-switch LED sync.
 
-```
-+-------------------------------------------------------+
-|                     User Config                       |
-|           (config.yaml: keys, layers, knobs)          |
-+-------------------------------------------------------+
-                           |
-                           v
-+-------------------------------------------------------+
-|                       antiknob                        |
-|        (Pure Rust Native Binary: aarch64-apple-darwin)|
-|              Dual-licensed: MIT / Apache-2.0          |
-+-------------------------------------------------------+
-                           |
-                           v
-+-------------------------------------------------------+
-|                    hidapi (MIT)                       |
-|          Apple IOHIDManager (macOS System Framework)  |
-|            Usage Page 0xFF00 - NO SUDO NEEDED         |
-+-------------------------------------------------------+
-                           |
-                           v
-+-------------------------------------------------------+
-|             Anticater VK01 Knob Keyboard              |
-|        (CH57x Microcontroller: 0x514C:0x8850)         |
-+-------------------------------------------------------+
-```
+## Open items (need hands on hardware or the owner)
 
----
-
-## Implementation Workstreams
-
-1. **Rust Crate Setup**:
-   * Create `Cargo.toml` with `hidapi`, `serde`, `serde_yaml`, `clap`, `anyhow`.
-   * Add `LICENSE-MIT` and `LICENSE-APACHE`.
-2. **Device & Protocol Layer**:
-   * `src/device.rs`: Device enumeration and handle management targeting `UsagePage == 0xFF00`.
-   * `src/protocol.rs`: CH57x packet serialization (Report ID 3, 0xFE commands, knob & layer mappings).
-3. **Configuration & CLI**:
-   * `src/config.rs`: YAML model definition.
-   * `src/main.rs`: CLI commands (`status`, `validate`, `upload`, `led`, `show-keys`).
-4. **Verification**:
-   * Live hardware probe with `antiknob status` confirming unprivileged access to the connected knob.
+1. Twist-to-action proof: twist/press the knob under `--active`, confirm
+   FIRED lines + real effects. (Self-injection via osascript does not
+   reach taps; cannot automate headless.)
+2. Live slot flash: `antiknob bind-slots` overwrites the knob's bindings;
+   verify with `antiknob listen`.
+3. Production reinstall after this release: `./install.sh`.

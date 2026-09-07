@@ -12,12 +12,32 @@ pub fn render_palette(ui: &mut Ui, state: &mut GuiState) {
         ActiveTab::Led => render_led_panel(ui, state),
         ActiveTab::Mouse => render_mouse(ui, state),
         ActiveTab::Procreate => render_procreate(ui, state),
+        ActiveTab::Slots => render_slots(ui, state),
+        ActiveTab::Host => crate::gui::host_view::render_host_view(ui, state),
     });
 }
 
 fn render_presets(ui: &mut Ui, state: &mut GuiState) {
     ui.heading("Curated 1-Click Workflow Presets");
     ui.label("Select a workflow preset to instantly map the knob, button, and LED lighting.");
+    ui.separator();
+
+    ui.horizontal(|ui| {
+        ui.label("Host daemon:");
+        if ui
+            .button("Export Presets to Host Config")
+            .on_hover_text("Write the six presets as daemon host layers (never overwrites)")
+            .clicked()
+        {
+            match crate::host::default_config_path() {
+                Ok(path) => state.export_presets_to_host(&path),
+                Err(e) => {
+                    state.status_message = format!("Export failed (HOME): {}", e);
+                    state.status_is_ok = false;
+                }
+            }
+        }
+    });
     ui.separator();
     ui.add_space(6.0);
 
@@ -400,4 +420,40 @@ fn render_procreate(ui: &mut Ui, state: &mut GuiState) {
             }
         });
     }
+}
+
+fn render_slots(ui: &mut Ui, state: &mut GuiState) {
+    ui.heading("Host-Translate Slot Bindings");
+    ui.label("One-time setup: binds the knob slots to fixed chords (CCW = ctrl-alt-F16, Press = ctrl-alt-F17, CW = ctrl-alt-F18) on all device layers, so a host-side translator can swallow them and run layered actions.");
+    ui.separator();
+    ui.add_space(6.0);
+
+    ui.strong("Bound slots (3 per layer):");
+    ui.label("Rotate CCW  ->  ctrl-alt-F16");
+    ui.label("Press Down  ->  ctrl-alt-F17");
+    ui.label("Rotate CW   ->  ctrl-alt-F18");
+    ui.add_space(4.0);
+    ui.colored_label(
+        Color32::from_rgb(230, 126, 34),
+        "Hold+twist slots are NOT bound here (key IDs unverified). Bind those with the vendor app.",
+    );
+
+    ui.add_space(10.0);
+    ui.horizontal(|ui| {
+        if ui
+            .add_sized([210.0, 34.0], egui::Button::new("Restore Slot Bindings"))
+            .clicked()
+        {
+            state.restore_slot_bindings();
+        }
+        if ui
+            .add_sized([170.0, 34.0], egui::Button::new("Sync Layer LED"))
+            .clicked()
+        {
+            state.sync_layer_led();
+        }
+    });
+
+    ui.add_space(8.0);
+    ui.small("Verify what the knob actually sends: antiknob listen --timeout-secs 10");
 }

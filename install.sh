@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Antiknob CLI and macOS GUI App to /Applications/Antiknob
+# Install Antiknob CLI, GUI app, and menu-bar daemon to /Applications/Antiknob
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,6 +15,7 @@ echo "[ ==> ] Installing to ${DEST_DIR}..."
 mkdir -p "${DEST_DIR}/bin"
 cp "${TARGET_DIR}/release/antiknob" "${DEST_DIR}/bin/antiknob"
 cp "${TARGET_DIR}/release/antiknob-gui" "${DEST_DIR}/bin/antiknob-gui"
+cp "${TARGET_DIR}/release/antiknob-daemon" "${DEST_DIR}/bin/antiknob-daemon"
 cp config.yaml "${DEST_DIR}/config.yaml"
 
 # Assemble macOS Application Bundle
@@ -26,8 +27,10 @@ mkdir -p "${APP_BUNDLE}/Contents/Resources"
 cp "${DEST_DIR}/bin/antiknob-gui" "${APP_BUNDLE}/Contents/MacOS/Antiknob"
 chmod +x "${APP_BUNDLE}/Contents/MacOS/Antiknob"
 
-if [[ -f "extracted_assets/Antiknob.icns" ]]; then
-    cp "extracted_assets/Antiknob.icns" "${APP_BUNDLE}/Contents/Resources/Antiknob.icns"
+# Original cartoon AK-12 app icon (assets/Antiknob.icns, generated from
+# assets/ak12-1024.png — original artwork, no vendor assets).
+if [[ -f "assets/Antiknob.icns" ]]; then
+    cp "assets/Antiknob.icns" "${APP_BUNDLE}/Contents/Resources/Antiknob.icns"
 fi
 
 cat << 'PLIST' > "${APP_BUNDLE}/Contents/Info.plist"
@@ -46,9 +49,9 @@ cat << 'PLIST' > "${APP_BUNDLE}/Contents/Info.plist"
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>0.2.0</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>2</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>12.0</string>
 	<key>NSHighResolutionCapable</key>
@@ -60,17 +63,66 @@ PLIST
 echo "[ ==> ] Ad-hoc codesigning App Bundle..."
 codesign -s - --force --deep "${APP_BUNDLE}"
 
+# Assemble menu-bar daemon bundle (LSUIElement: tray icon, no dock icon)
+DAEMON_BUNDLE="${DEST_DIR}/AntiknobDaemon.app"
+echo "[ ==> ] Creating daemon App Bundle at ${DAEMON_BUNDLE}..."
+mkdir -p "${DAEMON_BUNDLE}/Contents/MacOS"
+mkdir -p "${DAEMON_BUNDLE}/Contents/Resources"
+
+cp "${DEST_DIR}/bin/antiknob-daemon" "${DAEMON_BUNDLE}/Contents/MacOS/AntiknobDaemon"
+chmod +x "${DAEMON_BUNDLE}/Contents/MacOS/AntiknobDaemon"
+
+if [[ -f "assets/Antiknob.icns" ]]; then
+    cp "assets/Antiknob.icns" "${DAEMON_BUNDLE}/Contents/Resources/Antiknob.icns"
+fi
+
+cat << 'PLIST' > "${DAEMON_BUNDLE}/Contents/Info.plist"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleExecutable</key>
+	<string>AntiknobDaemon</string>
+	<key>CFBundleIconFile</key>
+	<string>Antiknob.icns</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.antiknob.daemon</string>
+	<key>CFBundleName</key>
+	<string>AntiknobDaemon</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.2.0</string>
+	<key>CFBundleVersion</key>
+	<string>2</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>12.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+</dict>
+</plist>
+PLIST
+
+echo "[ ==> ] Ad-hoc codesigning Daemon Bundle..."
+codesign -s - --force --deep "${DAEMON_BUNDLE}"
+
 # Create convenient symlink in /Applications for Spotlight / Launchpad
 if [[ "${DEST_DIR}" == "/Applications/Antiknob" ]]; then
     ln -sf "${APP_BUNDLE}" "/Applications/Antiknob.app"
+    ln -sf "${DAEMON_BUNDLE}" "/Applications/AntiknobDaemon.app"
 fi
 
-# Link CLI if user has ~/.local/bin in PATH
+# Link CLIs if user has ~/.local/bin in PATH
 if [[ -d "${HOME}/.local/bin" ]]; then
     ln -sf "${DEST_DIR}/bin/antiknob" "${HOME}/.local/bin/antiknob"
-    echo "[ Ok  ] Symlinked CLI to ${HOME}/.local/bin/antiknob"
+    ln -sf "${DEST_DIR}/bin/antiknob-daemon" "${HOME}/.local/bin/antiknob-daemon"
+    echo "[ Ok  ] Symlinked CLIs to ${HOME}/.local/bin/antiknob{,-daemon}"
 fi
 
 echo "[ Ok  ] Antiknob installed successfully to ${DEST_DIR}!"
 echo "        GUI App: ${APP_BUNDLE}"
+echo "        Daemon App: ${DAEMON_BUNDLE} (menu bar, no dock icon)"
 echo "        CLI tool: ${DEST_DIR}/bin/antiknob"
+echo "        Start at login with: ${DEST_DIR}/bin/antiknob-daemon --install-login-item"

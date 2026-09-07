@@ -1,4 +1,4 @@
-use antiknob::{config, device, protocol};
+use antiknob::{apps, config, device, host, protocol};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -9,7 +9,7 @@ use std::time::Duration;
 #[derive(Parser)]
 #[command(
     name = "antiknob",
-    version = "0.1.0",
+    version,
     about = "Native macOS Apple Silicon configurator for Anticater VK01 Knob (MIT OR Apache-2.0)"
 )]
 struct Cli {
@@ -43,6 +43,36 @@ enum Commands {
 
     /// Show all supported key names, media keys, and modifiers
     ShowKeys,
+
+    /// Flash one-time host-translate slot bindings (ctrl-alt-F16..F18) to firmware
+    BindSlots {
+        /// Device layer to bind (default: all layers 0-2)
+        #[arg(long)]
+        layer: Option<u8>,
+        /// Print the packet plan without touching hardware
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Dump raw input reports for a few seconds (verify what the knob sends)
+    Listen {
+        /// How long to listen, in seconds
+        #[arg(long, default_value = "10")]
+        timeout_secs: u64,
+    },
+
+    /// Migrate the six built-in presets to host-layer JSON for the daemon
+    ImportPresets {
+        /// Write host.json here (default: print to stdout)
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Overwrite an existing output file
+        #[arg(long)]
+        force: bool,
+    },
+
+    /// List installed apps (names + bundle IDs) for launch/quit actions
+    ListApps,
 }
 
 fn main() -> Result<()> {
@@ -180,7 +210,7 @@ fn main() -> Result<()> {
             println!("Keys:");
             println!("  a-z, 1-0, enter, esc, backspace, tab, space, minus, equal");
             println!("  leftbracket, rightbracket, backslash, semicolon, quote, grave");
-            println!("  comma, period, slash, capslock, f1-f12, printscreen, scrolllock");
+            println!("  comma, period, slash, capslock, f1-f12, f13-f24, printscreen, scrolllock");
             println!("  pause, insert, home, pageup, delete, end, pagedown, up, down, left, right");
             println!();
             println!("Media Keys:");
@@ -188,6 +218,129 @@ fn main() -> Result<()> {
             println!();
             println!("Mouse Actions:");
             println!("  click, rclick, mclick, wheelup, wheeldown");
+        }
+
+        Commands::BindSlots { layer, dry_run } => {
+            let layers: Vec<u8> = match layer {
+                Some(l) => vec![l],
+                None => host::bind::BIND_LAYERS.to_vec(),
+            };
+            if dry_run {
+                println!("[ ==> ] Slot binding plan (dry run, no hardware touched):");
+                for packet in host::bind::binding_packets(&layers)? {
+                    println!(
+                        "        layer byte={} key_id={} kind={} mods=0x{:02x} code=0x{:02x}",
+                        packet[3], packet[2], packet[4], packet[11], packet[12]
+                    );
+                }
+                println!(
+                    "        3 slots x {} layer(s). Hold+twist slots are NOT bound",
+                    layers.len()
+                );
+                println!("        (key IDs unverified; use the vendor app for those).");
+                return Ok(());
+            }
+            println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
+            let dev = device::open_device()?;
+            let sent = host::bind::flash_slot_bindings(&dev, &layers)?;
+            println!(
+                "[ Ok  ] Flashed {} slot binding(s): CCW=ctrl-alt-F16, Press=ctrl-alt-F17, CW=ctrl-alt-F18.",
+                sent
+            );
+            println!(
+                "        Hold+twist slots unchanged (key IDs unverified; use the vendor app)."
+            );
+            println!("        Verify with: antiknob listen --timeout-secs 10");
+        }
+
+        Commands::Listen { timeout_secs } => {
+            use std::time::Instant;
+            println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
+            let dev = device::open_device()?;
+            dev.set_blocking_mode(false)?;
+            let deadline = Instant::now() + Duration::from_secs(timeout_secs);
+            println!(
+                "[ ==> ] Listening for input reports for {}s (twist / press the knob)...",
+                timeout_secs
+            );
+            let mut buf = [0u8; 64];
+            while Instant::now() < deadline {
+                match dev.read_timeout(&mut buf, 200) {
+                    Ok(0) => {}
+                    Ok(n) => {
+                        if buf[..n].iter().any(|&b| b != 0) {
+                            let hex: Vec<String> =
+                                buf[..n].iter().map(|b| format!("{:02x}", b)).collect();
+                            print!("        +{}B: {}", n, hex.join(" "));
+                            // Best-effort hint only: the input layout mirrors
+                            // the output layout on this firmware family.
+                            if n > 2 && buf[0] == 0x03 && (16..=18).contains(&buf[2]) {
+                                print!("   <-- possible slot key_id={}", buf[2]);
+                            }
+                            println!();
+                        }
+                    }
+                    Err(e) => {
+                        println!("[ Wrn ] Read error: {}", e);
+                        break;
+                    }
+                }
+            }
+            println!("[ Ok  ] Listen window closed.");
+        }
+
+        Commands::ImportPresets { out, force } => {
+            let (cfg, leds, warnings) = host::migrate::migrate_all_presets();
+            println!(
+                "[ ==> ] Migrated {} preset(s) to host layers.",
+                cfg.layers.len()
+            );
+            println!("        Note: {}", host::migrate::REINTERPRET_NOTE);
+            for w in &warnings {
+                println!("[ Wrn ] {}", w);
+            }
+            println!("[ ==> ] Companion device LED specs (apply with: antiknob led <layer> ...):");
+            for (i, (name, spec)) in leds.iter().enumerate() {
+                println!("        layer {} ({}): {}", i, name, spec);
+            }
+            let json = cfg.to_json_pretty();
+            match out {
+                Some(path) => {
+                    if path.exists() && !force {
+                        println!(
+                            "[ Err ] {} exists; refusing to overwrite without --force.",
+                            path.display()
+                        );
+                        return Ok(());
+                    }
+                    std::fs::write(&path, &json)?;
+                    println!("[ Ok  ] Wrote host config to {}.", path.display());
+                }
+                None => {
+                    println!("--- host.json ---");
+                    println!("{}", json);
+                }
+            }
+        }
+
+        Commands::ListApps => {
+            let dirs = apps::default_app_dirs();
+            println!("[ ==> ] Scanning {:?} ...", dirs);
+            let found = apps::scan_app_dirs(&dirs);
+            if found.is_empty() {
+                println!("[ Wrn ] No .app bundles found.");
+                return Ok(());
+            }
+            for app in &found {
+                match &app.bundle_id {
+                    Some(id) => println!("        {:<40} {}", app.name, id),
+                    None => println!("        {:<40} (no bundle id)", app.name),
+                }
+            }
+            println!(
+                "[ Ok  ] {} app(s). Use bundle IDs in launchApp/quitApp actions.",
+                found.len()
+            );
         }
     }
 

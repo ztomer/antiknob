@@ -10,13 +10,14 @@ Antiknob is written in 100% pure Rust, permissively licensed (**MIT OR Apache-2.
 
 * **Apple Silicon Native (`arm64`)**: Prepared for macOS 27+ with zero reliance on Rosetta 2.
 * **Modern Desktop GUI (`antiknob-gui` / `Antiknob.app`)**:
-  * **Interactive Radial Dial**: Visual rotary dial with 5 distinct interactive sectors (<- CCW, CW ->, Press, <- Press+CCW, Press+CW ->).
+  * **Interactive Radial Dial**: Visual rotary dial with 3 functional sectors (<- CCW, CW ->, Press). Press+twist sectors render but are firmware stubs; use hold+twist host gestures instead.
   * **Direct Keyboard Shortcut Recorder**: Click any knob action or key and press the keys on your keyboard ("Press to Assign").
   * **Curated Workflow Presets**: 1-click profiles for Video Scrubbing (Final Cut / Premiere), Media Master, Digital Art (Photoshop / Procreate), Spaces & Window Tiling, Developer, and Web Reading.
   * **Live Animated RGB LED Ring Simulator**: Real-time breathing, shock, and backlight pulse waveforms matching active device lighting.
   * **Profile Management**: Human-readable YAML profiles with 1-click Import / Export and layer sync.
 * **Unprivileged USB HID (`no sudo`)**: Targets vendor usage page (`0xFF00`), avoiding macOS kernel driver collisions and running cleanly as a regular user.
-* **Dual Binaries**: CLI tool (`antiknob`) for headless automation and full macOS GUI (`antiknob-gui`).
+* **Triple Binaries**: CLI tool (`antiknob`) for headless automation, full macOS GUI (`antiknob-gui`), and host-side translation daemon (`antiknob-daemon` / `AntiknobDaemon.app`, menu-bar only).
+* **Host-Side Translation ("bind once")**: One-time firmware slot binding (`ctrl-alt-F16..F18`) plus a macOS daemon that swallows those chords and runs unlimited layered actions (scroll, keystrokes, sequences, media, brightness, launch/open/quit, mouse) with double-tap and hotkey layer switching. Only the daemon needs Accessibility / Input Monitoring; GUI and CLI stay grant-free.
 * **100% Permissive Open Source**: Dual-licensed under MIT OR Apache-2.0 with an audited dependency tree (0% copyleft/GPL/AGPL/LGPL).
 
 ---
@@ -41,8 +42,9 @@ Run the included installer to build and install `Antiknob.app` and CLI tools:
 This will:
 1. Build native Apple Silicon release binaries.
 2. Install to `/Applications/Antiknob`.
-3. Create and ad-hoc codesign `/Applications/Antiknob/Antiknob.app` and `/Applications/Antiknob.app` for Spotlight and Finder.
-4. Symlink the CLI to `~/.local/bin/antiknob`.
+3. Create and ad-hoc codesign `Antiknob.app` (plus a Spotlight symlink at `/Applications/Antiknob.app`).
+4. Create and ad-hoc codesign `AntiknobDaemon.app` (menu-bar only, `LSUIElement`, no dock icon).
+5. Symlink the CLIs to `~/.local/bin/antiknob{,-daemon}`.
 
 ---
 
@@ -53,8 +55,9 @@ This will:
 # Launch via terminal or Spotlight:
 open -a Antiknob
 
-# Or run directly:
-./bin/antiknob-gui
+# Or run the installed binaries directly:
+/Applications/Antiknob/bin/antiknob-gui
+/Applications/Antiknob/bin/antiknob-daemon --active
 ```
 
 ### Command-Line Interface
@@ -75,7 +78,37 @@ antiknob upload config.yaml
 antiknob led 0 backlight white
 antiknob led 0 shock blue
 antiknob led 0 off
+
+# 6. One-time host-translate slot binding (flash once, translate forever)
+antiknob bind-slots --dry-run   # inspect the 9-packet plan first
+antiknob bind-slots             # CCW=ctrl-alt-F16, Press=F17, CW=F18
+
+# 7. Verify what the knob actually sends
+antiknob listen --timeout-secs 10   # twist/press the knob, watch reports
+
+# 8. Migrate presets to daemon host layers
+antiknob import-presets --out ~/Library/Application\ Support/antiknob/host.json
+
+# 9. List installed apps (bundle IDs for launch/quit actions)
+antiknob list-apps
 ```
+
+### Host Translation Daemon
+```bash
+# Observe what slot chords would do (nothing swallowed, nothing synthesized)
+antiknob-daemon --timeout-secs 10
+
+# Go live: swallow slot chords, synthesize layered actions, show menu-bar icon
+antiknob-daemon --active
+
+# Start at login (per-user LaunchAgent) / remove it
+antiknob-daemon --install-login-item
+antiknob-daemon --uninstall-login-item
+```
+
+The GUI's Host Layers tab views and edits the same `host.json`
+(layers, gestures, sequences, app pickers); the running daemon applies
+edits within a tick via instant-apply.
 
 ---
 

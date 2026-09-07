@@ -11,12 +11,12 @@ Antiknob is written in 100% pure Rust and native SwiftUI, permissively licensed 
 * **Native macOS SwiftUI Configurator (`Antiknob.app`)**:
   * **System Settings Aesthetic**: Native `.formStyle(.grouped)` layout with Liquid Glass materials and SF Symbols.
   * **System-Managed Tab Bar**: A native `TabView` renders the tab strip into the window titlebar, alongside the traffic lights. One tab per layer, plus Switching, Lighting, Hardware, Inspector and Services.
-  * **Interactive Knob Centerpiece**: Rendered knob header with clickable gesture zones (Twist Left/Right, Hold + Twist Left/Right, Press) that highlight and select the corresponding gesture row.
+  * **Interactive Knob Centerpiece**: Rendered knob header with clickable gesture zones. Hold+Twist is shown but marked unreachable — the firmware has only three knob gestures (CCW, press, CW).
   * **Layer Management**: Each layer's pane carries its name, its position (`Move Left` / `Move Right`, with a `n of m` readout) and a confirmed `Delete Layer`; `+` in the toolbar adds one.
   * **Column Layout**: Property rows, status rows and record lists are laid out on shared column edges (`PropertyGrid` / `StatusRow` / `PropertyRow`), so labels, values, state lights and controls each read down one straight edge instead of ragging against the trailing margin. HID endpoints are a four-column table; state lights sit in their own column right of the text.
   * **System Settings Capsule Chord Recorder**: One-click shortcut capture displaying macOS native glyphs (`⌃`, `⌥`, `⇧`, `⌘`).
   * **Macro Sequence Editor**: Sheet modal supporting multi-step macros, millisecond wait steps, and drag-to-reorder.
-  * **Dynamic Hardware Lighting**: Real-time LED mode controls (Off, Backlight, Shock/Breathe, Shock 2, Press Reactive, Custom) with color swatches sending instant updates to hardware.
+  * **Dynamic Hardware Lighting**: Real-time LED mode controls (Off, Static, Reactive, Ripple, Rainbow) per device layer. This knob has a single fixed colour — layers are told apart by effect, not colour.
   * **Bottom Status Bar**: Connection, transport and power source read as SF Symbol glyphs in the lower-right corner (words in the tooltip), next to a manual refresh and the transient autosave badge.
   * **One Mapping Per Question**: Transport is a `Transport` enum, not a string compared at each call site, so every switch over it is exhaustive and adding a link is a compile error at each place that must render it. Power source, transport glyph and LED mode name each have exactly one definition.
 * **Single Source of Truth (`src/api/`)**:
@@ -123,8 +123,8 @@ antiknob upload config.yaml
 antiknob upload config.yaml --layer 0   # flash one layer only
 
 # 5. Set LED lighting dynamically
-antiknob led 0 backlight white
-antiknob led 0 shock blue
+antiknob led 0 static           # steady
+antiknob led 0 rainbow          # cycling multicolour, the shipped effect
 antiknob led 0 off
 
 # 6. One-time host-translate slot binding (flash once, translate forever)

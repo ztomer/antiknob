@@ -6,24 +6,6 @@ import Foundation
 
 // MARK: - Enums & Gestures
 
-enum Gesture: String, CaseIterable, Identifiable, Hashable, Sendable {
-    case twistL
-    case twistR
-    case holdTwistL
-    case holdTwistR
-    case press
-
-    var id: String { rawValue }
-}
-
-let gestureTitles: [Gesture: String] = [
-    .twistL: "Twist Left",
-    .twistR: "Twist Right",
-    .holdTwistL: "Hold + Twist Left",
-    .holdTwistR: "Hold + Twist Right",
-    .press: "Press"
-]
-
 enum AuxKey: String, Codable, CaseIterable, Hashable, Sendable {
     case volumeUp
     case volumeDown

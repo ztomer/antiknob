@@ -96,13 +96,17 @@ Record shape, request and reply alike (`FE` = write, `FA` = read):
 Groups `0x01..=0x24` x counters 1-3 return the whole table
 (`device::slot_table_addresses`); everything else is silent.
 
-Still open: hold+twist. The wide dump shows populated slots well past the six
-CCW/press/CW occupy -- key IDs 19 and 21 carrying `prev`/`next` on layers 2
-and 3 -- so the slot space is larger than the gesture set we bind, and the
-old assumption that hold+twist IDs are unknowable without the vendor app is
-not established. The next step is to write a distinctive action to each
-candidate ID and read back which gesture produces it, which the read-back
-harness now makes cheap.
+**Hold+twist does not exist.** Settled two ways. The reference project's
+whole knob vocabulary is `KnobAction { RotateCCW, Press, RotateCW }` -- three
+actions, on every model. And `antiknob probe-gestures` wrote distinct markers
+to slots 7 and 8 on real hardware, confirmed both landed, and neither fired
+for any hold-and-turn; what the capture showed instead was the press binding
+followed by the rotate binding. The firmware has no third kind of gesture to
+bind.
+
+`Gesture::HoldTwistL/R` remain in the enum so host configs that carry
+bindings for them keep loading, but `Gesture::is_bindable` reports them
+unreachable and anything showing a gesture to a user must say so.
 
 ### 3. Three layers, the third one virtual and daemon-driven
 
@@ -120,14 +124,14 @@ translates slot chords into. The shape wanted is:
 * **The MCP server exposes the swap**, so an agent can set or define the
   active virtual layer the same way a user can.
 
-LED identity per layer, as requested: Media breathing red, Navigate
-breathing green, virtual multicoloured breathing. `build_led_packet` already
-takes a mode and colour per device layer, so the first two are configuration
-rather than new protocol; the multicoloured breathe needs checking against
-the modes the firmware actually has (`led-read` reports a mode byte, and the
-vendor mode table is only partly mapped).
+LED identity per layer: **by effect, not colour.** This knob has a single
+fixed colour -- mode 1 was set with blue, red and green in turn and stayed
+red every time -- so "breathing red / breathing green / multicoloured
+breathing" is not achievable as asked. The shipped layout uses
+`static` / `ripple` / `rainbow`, and mode 4 (rainbow) is the multicoloured
+effect the device arrives in. See item 5 for the protocol.
 
-Open questions before this is buildable:
+Open questions before this is buildable:Open questions before this is buildable:
 
 * The virtual layer only fires when the knob sends slot chords, so it
   presupposes host-translate mode -- and this hardware currently cannot be
@@ -167,7 +171,45 @@ unmapped mode 5 is one. `probe-gestures` makes hold+twist a one-command
 question -- slots 7 and 8 exist and carry only a factory placeholder, so the
 old "needs the vendor app" note was wrong.
 
-### 4. Bluetooth transport is inferred, and cannot be confirmed here
+### 4. The LED protocol, and what this knob can actually do
+
+Resolved 2026-09-07 by capturing ANTICATER.app's HID traffic
+(`tools/hidsnoop/`) and reading kriomant/ch57x-keyboard-tool#173 and #175.
+
+Packet: `03 FE B0 <layer> <mode>`, base colour at bytes 5-7, sixteen per-key
+RGB triples from byte 8. Layers are 0-based. No commit follows.
+
+Three things this build had wrong, each of which produced a write the device
+accepted and ignored:
+
+1. **`03 FB FB FB` is required first.** Without it the firmware stores the
+   mode, reads it back correctly, and changes nothing. That false read-back
+   is why this took so long to find: it confirmed every write and said
+   nothing about the effect. All LED writes now go through
+   `device::send_led`.
+2. **Mode 5 crashes the firmware.** Sending it wedged this knob's LED
+   renderer until it was power-cycled -- on a model with no power switch,
+   which stays lit on battery when unplugged. It is refused, in the CLI and
+   in the GUI, with tests that fail if it returns.
+3. **The mode table was another family's.** For a `514c:8850` it is
+   `0 off, 1 static, 2 reactive, 3 ripple, 4 rainbow`. `cmds.rs` carried a
+   second copy of the old table, so `led-read` kept printing the wrong names
+   after the shared one was fixed.
+
+**This knob ignores the colour bytes.** Measured with three distinct colours.
+They are still sent, correctly placed, because the 16-key device sharing this
+product id does honour them -- but nothing in this repo may promise colour on
+the knob, which is why the GUI's swatches now carry a notice.
+
+Known firmware bug (#175): LEDs freeze after 2s-2m and only a replug
+recovers. If a mode change appears to do nothing, replug before debugging.
+
+The lesson worth keeping: the answers were in the reference project's ISSUE
+TRACKER, tested on this exact hardware, while hours went into inferring them
+from a disassembly. The source was fetched early; the issues were not opened
+until much later.
+
+### 5. Bluetooth transport is inferred, and cannot be confirmed here
 
 `device::classify_device` decides a device is ours, and over which transport,
 from its VID/PID, its bus type and its product string. Only USB and the 2.4GHz

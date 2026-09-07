@@ -70,25 +70,41 @@ DYLD_INSERT_LIBRARIES=/tmp/hidlog.dylib HIDLOG=/tmp/hidlog.txt \
 interposing works. The interposer source is in this session's scratch; it is
 30 lines and logs only, forwarding every call unchanged.
 
-What the capture established, none of which was reliably guessable:
+What the capture established:
 
-* `03 FE B0 <layer> <mode>` then a 48-byte palette from offset 5 -- sixteen
-  RGB triples, one per entry.
-* **The palette is per-entry.** The vendor sends a rainbow
-  (`ff0000 ff8030 ffff30 00ff00 00ffff 0000ff`, cycled). Its own UI offers
-  six preset buttons and NO colour control, so the hardware does more than
-  the vendor exposes.
-* **Mode 0 is the palette-driven mode, not "off".** Save sends mode 0 with a
-  full palette. `off` is that mode over a black palette.
-* **Mode 5 carries a palette too.** An earlier version of `build_led_packet`
-  refused one and sent mode 5 over black.
-* **Only layer 0 receives the selected mode**; layers 1 and 2 are always
-  written mode 0.
-* Selecting a mode in the UI sends nothing. Only **Save settings**
-  transmits, and it sends no commit afterwards.
-* The `03 FB FB FB` handshake replies with device state INCLUDING the live
-  palette -- a second read path, still undecoded, and the only way to read
-  back a colour rather than just a mode.
+* `03 FE B0 <layer> <mode>`, then a base colour at bytes 5-7 and sixteen
+  per-key RGB triples from byte 8.
+* Selecting a mode in the UI sends nothing. Only **Save settings** transmits,
+  and it sends no commit afterwards.
+* Only layer 0 receives the selected mode; layers 1 and 2 are always written
+  mode 0.
+* The `03 FB FB FB` handshake replies with device state including the live
+  palette -- a read path that returns a colour, unlike `FA B0` which returns
+  only a mode byte.
+
+**Read the issue tracker, not just the source.** Everything below was already
+written down in `kriomant/ch57x-keyboard-tool` issues #173 and #175, tested
+on this exact hardware, while this session spent hours inferring it from a
+disassembly and a packet capture. The source was fetched; the issues were
+not opened until much later.
+
+* **`03 FB FB FB` is REQUIRED before any LED write.** Without it the device
+  accepts the write, stores the mode, reads it back correctly, and changes
+  nothing. Confirmed here: mode 0 turned the light off only once the init
+  preceded it.
+* **Mode table for this device**: `0 off, 1 static, 2 reactive, 3 ripple,
+  4 rainbow`. Mode 4 is the multicoloured effect the knob ships in.
+* **Mode 5 CRASHES the firmware.** It wedged this knob's LED renderer until
+  the device was power-cycled -- and this model has no power switch and stays
+  lit on battery when unplugged.
+* **The 3-button knob ignores the colour bytes.** Mode 1 was set with blue,
+  red and green in turn and stayed red every time. The 16-key device sharing
+  this product id does honour them, which is why they are still sent.
+* Known firmware bug: LEDs freeze after 2s-2m and only a replug recovers.
+
+An earlier version of this file said the LED packet layout was "correct as
+written" and that mode 5 carried a palette. Both were wrong, and both were
+written confidently off partial evidence.
 
 ---
 

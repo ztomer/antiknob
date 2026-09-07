@@ -11,8 +11,12 @@
 
 ## Shipped in 0.2.0
 
-* Crash fix: all HID runs on the GUI main thread (pinned by
-  `tests/hid_main_thread.rs`).
+* Crash fixes: worker-thread SIGTRAP closed by moving HID to the main
+  thread; then a launch-time SIGABRT (hid_enumerate pumping the running
+  event loop reentrantly) closed architecturally — the GUI process never
+  calls hidapi and shells out to the CLI (`gui::clihid`: resolution,
+  `status --json`, `upload --layer`, `led`, `bind-slots`). Pinned by a
+  structural test asserting zero in-process HID under `src/gui`.
 * Host engine (`src/host/`): JSON layers, rolodex, double-tap window,
   hotkey-switch alternation, chord matching, output plans, preset
   migration, app discovery, login-item plist, tap glue.

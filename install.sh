@@ -7,6 +7,8 @@ cd "${SCRIPT_DIR}"
 
 DEST_DIR="${1:-/Applications/Antiknob}"
 TARGET_DIR="$(cargo metadata --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')"
+PKG_VERSION="$(cargo metadata --format-version 1 | python3 -c 'import json, sys; print([p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "antiknob"][0])')"
+PKG_BUILD="$(git rev-list --count HEAD)"
 
 echo "[ ==> ] Building release binaries (arm64)..."
 cargo build --release
@@ -16,7 +18,12 @@ mkdir -p "${DEST_DIR}/bin"
 cp "${TARGET_DIR}/release/antiknob" "${DEST_DIR}/bin/antiknob"
 cp "${TARGET_DIR}/release/antiknob-gui" "${DEST_DIR}/bin/antiknob-gui"
 cp "${TARGET_DIR}/release/antiknob-daemon" "${DEST_DIR}/bin/antiknob-daemon"
-cp config.yaml "${DEST_DIR}/config.yaml"
+# Never overwrite a live config: install the starter only when missing.
+if [[ ! -f "${DEST_DIR}/config.yaml" ]]; then
+    cp config.yaml "${DEST_DIR}/config.yaml"
+else
+    echo "[ --- ] Keeping existing ${DEST_DIR}/config.yaml (repo copy differs; diff to review)."
+fi
 
 # Assemble macOS Application Bundle (clean rebuild: stale nested content
 # breaks codesigning with "unsealed contents present in the bundle root")
@@ -35,7 +42,7 @@ if [[ -f "assets/Antiknob.icns" ]]; then
     cp "assets/Antiknob.icns" "${APP_BUNDLE}/Contents/Resources/Antiknob.icns"
 fi
 
-cat << 'PLIST' > "${APP_BUNDLE}/Contents/Info.plist"
+cat << PLIST > "${APP_BUNDLE}/Contents/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -51,9 +58,9 @@ cat << 'PLIST' > "${APP_BUNDLE}/Contents/Info.plist"
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.2.0</string>
+	<string>${PKG_VERSION}</string>
 	<key>CFBundleVersion</key>
-	<string>2</string>
+	<string>${PKG_BUILD}</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>12.0</string>
 	<key>NSHighResolutionCapable</key>
@@ -79,7 +86,7 @@ if [[ -f "assets/Antiknob.icns" ]]; then
     cp "assets/Antiknob.icns" "${DAEMON_BUNDLE}/Contents/Resources/Antiknob.icns"
 fi
 
-cat << 'PLIST' > "${DAEMON_BUNDLE}/Contents/Info.plist"
+cat << PLIST > "${DAEMON_BUNDLE}/Contents/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -95,9 +102,9 @@ cat << 'PLIST' > "${DAEMON_BUNDLE}/Contents/Info.plist"
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.2.0</string>
+	<string>${PKG_VERSION}</string>
 	<key>CFBundleVersion</key>
-	<string>2</string>
+	<string>${PKG_BUILD}</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>12.0</string>
 	<key>LSUIElement</key>

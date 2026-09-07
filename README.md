@@ -16,6 +16,7 @@ Antiknob is written in 100% pure Rust, permissively licensed (**MIT OR Apache-2.
   * **Live Animated RGB LED Ring Simulator**: Real-time breathing, shock, and backlight pulse waveforms matching active device lighting.
   * **Profile Management**: Human-readable YAML profiles with 1-click Import / Export and layer sync.
 * **Unprivileged USB HID (`no sudo`)**: Targets vendor usage page (`0xFF00`), avoiding macOS kernel driver collisions and running cleanly as a regular user.
+* **Crash-proof HID isolation**: hidapi's macOS backend pumps the calling thread's runloop, which aborts inside GUI event loops. The GUI process therefore never calls HID in-process — every device operation shells out to the `antiknob` CLI (`status --json`, `upload --layer`, `led`, `bind-slots`). Only the CLI touches hardware, on a plain main thread.
 * **Triple Binaries**: CLI tool (`antiknob`) for headless automation, full macOS GUI (`antiknob-gui`), and host-side translation daemon (`antiknob-daemon` / `AntiknobDaemon.app`, menu-bar only).
 * **Host-Side Translation ("bind once")**: One-time firmware slot binding (`ctrl-alt-F16..F18`) plus a macOS daemon that swallows those chords and runs unlimited layered actions (scroll, keystrokes, sequences, media, brightness, launch/open/quit, mouse) with double-tap and hotkey layer switching. Only the daemon needs Accessibility / Input Monitoring; GUI and CLI stay grant-free.
 * **100% Permissive Open Source**: Dual-licensed under MIT OR Apache-2.0 with an audited dependency tree (0% copyleft/GPL/AGPL/LGPL).
@@ -73,6 +74,10 @@ antiknob validate config.yaml
 
 # 4. Flash configuration to hardware (No sudo required)
 antiknob upload config.yaml
+antiknob upload config.yaml --layer 0   # flash one layer only
+
+# 4b. Machine-readable device list (used by the GUI subprocess bridge)
+antiknob status --json
 
 # 5. Set LED lighting
 antiknob led 0 backlight white

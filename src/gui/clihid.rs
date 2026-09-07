@@ -18,25 +18,47 @@ const CLI_NAME: &str = "antiknob";
 /// PATH lookup. Layouts, in order: beside the running executable (cargo
 /// `target/debug|release`), `../../bin` above an `.app/Contents/MacOS`
 /// bundle executable, then `PATH`.
+///
+/// Critical guard: a candidate that canonicalizes to the running
+/// executable itself is skipped. On case-insensitive filesystems the
+/// beside-exe probe `.../MacOS/antiknob` resolves to the GUI binary
+/// `.../MacOS/Antiknob`; exec'ing it relaunches the GUI, whose startup
+/// scan spawns another copy — an exponential fork bomb (observed live).
 pub fn resolve_in(
     exe_dir: &Path,
+    own_exe: Option<&Path>,
     path_lookup: impl Fn(&str) -> Option<PathBuf>,
 ) -> Result<PathBuf, String> {
-    let beside = exe_dir.join(CLI_NAME);
-    if is_executable(&beside) {
-        return Ok(beside);
+    let own_canon = own_exe.and_then(|p| std::fs::canonicalize(p).ok());
+    let accept = |candidate: PathBuf| -> Option<PathBuf> {
+        if !is_executable(&candidate) {
+            return None;
+        }
+        // Never exec ourselves (covers case-insensitive aliasing).
+        if let (Some(own), Ok(canon)) = (own_canon.as_ref(), std::fs::canonicalize(&candidate)) {
+            if &canon == own {
+                return None;
+            }
+        }
+        Some(candidate)
+    };
+
+    if let Some(hit) = accept(exe_dir.join(CLI_NAME)) {
+        return Ok(hit);
     }
     // App-bundle layout: <root>/Antiknob.app/Contents/MacOS/<exe> looks in
     // <root>/bin. ancestors()[3] of the MacOS dir is <root>.
-    if let Some(bundle_bin) = exe_dir
+    if let Some(hit) = exe_dir
         .ancestors()
         .nth(3)
         .map(|root| root.join("bin").join(CLI_NAME))
-        .filter(|p| is_executable(p))
+        .and_then(accept)
     {
-        return Ok(bundle_bin);
+        return Ok(hit);
     }
-    path_lookup(CLI_NAME).ok_or_else(|| "antiknob CLI not found (reinstall the app)".to_string())
+    path_lookup(CLI_NAME)
+        .filter(|p| accept(p.clone()).is_some())
+        .ok_or_else(|| "antiknob CLI not found (reinstall the app)".to_string())
 }
 
 fn is_executable(path: &Path) -> bool {
@@ -49,11 +71,12 @@ fn is_executable(path: &Path) -> bool {
 
 /// Resolve via the real process environment.
 pub fn resolve() -> Result<PathBuf, String> {
-    let exe_dir = std::env::current_exe()
-        .ok()
+    let current = std::env::current_exe().ok();
+    let exe_dir = current
+        .as_ref()
         .and_then(|p| p.parent().map(Path::to_path_buf))
         .unwrap_or_else(|| PathBuf::from("."));
-    resolve_in(&exe_dir, |name| {
+    resolve_in(&exe_dir, current.as_deref(), |name| {
         std::env::var_os("PATH").and_then(|paths| {
             std::env::split_paths(&paths)
                 .map(|dir| dir.join(name))
@@ -157,7 +180,10 @@ mod tests {
         let exe_dir = root.join("debug");
         std::fs::create_dir_all(&exe_dir).unwrap();
         let beside = make_exe(&exe_dir, "antiknob");
-        let found = resolve_in(&exe_dir, |_| Some(PathBuf::from("/elsewhere/antiknob"))).unwrap();
+        let elsewhere_dir = root.join("elsewhere");
+        std::fs::create_dir_all(&elsewhere_dir).unwrap();
+        let elsewhere = make_exe(&elsewhere_dir, "antiknob");
+        let found = resolve_in(&exe_dir, None, |_| Some(elsewhere.clone())).unwrap();
         assert_eq!(found, beside);
 
         std::fs::remove_file(&beside).unwrap();
@@ -165,16 +191,40 @@ mod tests {
         std::fs::create_dir_all(&bundle_mac).unwrap();
         std::fs::create_dir_all(root.join("bin")).unwrap();
         let _ = make_exe(&root.join("bin"), "antiknob");
-        let found = resolve_in(&bundle_mac, |_| None).unwrap();
+        let found = resolve_in(&bundle_mac, None, |_| None).unwrap();
         assert_eq!(found, root.join("bin/antiknob"));
 
-        let found = resolve_in(&root.join("empty"), |_| {
-            Some(PathBuf::from("/elsewhere/antiknob"))
-        })
-        .unwrap();
-        assert_eq!(found, PathBuf::from("/elsewhere/antiknob"));
+        let found = resolve_in(&root.join("empty"), None, |_| Some(elsewhere.clone())).unwrap();
+        assert_eq!(found, elsewhere);
 
-        assert!(resolve_in(&root.join("empty"), |_| None).is_err());
+        assert!(resolve_in(&root.join("empty"), None, |_| None).is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn resolve_never_returns_the_running_executable() {
+        // Fork-bomb guard: a candidate that IS our own binary (same file,
+        // e.g. via case-insensitive aliasing) must be skipped in every
+        // layout position.
+        let root = temp_root("selfexec");
+        let exe_dir = root.join("MacOS");
+        std::fs::create_dir_all(&exe_dir).unwrap();
+        let gui_binary = make_exe(&exe_dir, "Antiknob");
+        // Same file reachable as the beside-exe probe name: on this
+        // machine's case-insensitive disk the alias exists by
+        // construction; elsewhere a hardlink stands in for it.
+        let _ = std::fs::hard_link(&gui_binary, exe_dir.join("antiknob"));
+        let fallback_dir = root.join("fallback");
+        std::fs::create_dir_all(&fallback_dir).unwrap();
+        let fallback = make_exe(&fallback_dir, "antiknob");
+
+        // Without the guard this would return the GUI itself; with it, the
+        // lookup falls through to PATH.
+        let found = resolve_in(&exe_dir, Some(&gui_binary), |_| Some(fallback.clone())).unwrap();
+        assert_eq!(found, fallback);
+
+        // And with no fallback it errors instead of returning self.
+        assert!(resolve_in(&exe_dir, Some(&gui_binary), |_| None).is_err());
         let _ = std::fs::remove_dir_all(&root);
     }
 

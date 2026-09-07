@@ -55,6 +55,14 @@ impl ApiContext {
 }
 
 /// Execute an API command and return a JSON result.
+/// The button count from the installed layout, which is where every other
+/// command gets it. Not a constant: it decides which slots are the knob's.
+fn installed_button_count() -> Result<usize> {
+    let home = PathBuf::from(std::env::var("HOME").context("HOME is not set")?);
+    let path = crate::config::resolve_device_config_path(&home, None)?;
+    Ok(DeviceConfig::load_from_file(&path)?.button_count())
+}
+
 pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
     match cmd {
         Command::GetStatus {} => {
@@ -185,11 +193,45 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
             }))
         }
 
-        Command::BindSlots { layers } => {
+        Command::GetKnobMode { buttons } => {
+            // Falls back to the installed layout rather than a constant:
+            // the button count decides which slots are read, so guessing it
+            // would misreport the mode exactly as it would misflash it.
+            let buttons = match buttons {
+                Some(n) => n,
+                None => installed_button_count()?,
+            };
+            let slots = u8::try_from(buttons + 3).unwrap_or(u8::MAX);
+            let table = device::with_device(move |dev| {
+                Ok(device::read_slot_table(dev, slots, device::DEVICE_LAYERS))
+            })
+            .context("Cannot read the slot table from the Anticater USB device")?;
+            let mode = device::mode::classify(&table, buttons);
+            Ok(json!({
+                "mode": mode.as_str(),
+                "buttons": buttons,
+                "slots_read": table.len(),
+                "host_layers_can_fire": mode == device::mode::KnobMode::HostTranslate
+            }))
+        }
+
+        Command::BindSlots { layers, buttons } => {
             let target_layers = layers.unwrap_or_else(|| BIND_LAYERS.to_vec());
             let flash_layers = target_layers.clone();
-            let count = device::with_device(move |dev| flash_slot_bindings(dev, &flash_layers))
-                .context("Cannot flash slot bindings to the Anticater USB device")?;
+            // Knob slots follow the buttons; see `protocol::key_id_for_knob`.
+            // The fallback is the installed layout, never a constant: a
+            // wrong count writes bindings the firmware never reads and
+            // nothing reports a failure.
+            let buttons = match buttons {
+                Some(n) => n,
+                None => installed_button_count().context(
+                    "bind_slots needs the device's button count and no layout was \
+                     readable; pass `buttons` explicitly",
+                )?,
+            };
+            let count =
+                device::with_device(move |dev| flash_slot_bindings(dev, buttons, &flash_layers))
+                    .context("Cannot flash slot bindings to the Anticater USB device")?;
             Ok(json!({
                 "ok": true,
                 "flashed_slots": count,
@@ -231,24 +273,19 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                         button_count += 1;
                     }
                 }
+                // Knob slots continue after the buttons; `button_count` is
+                // what places them (see `protocol::key_id_for_knob`).
                 for (knob_idx, knob) in lcfg.knobs.iter().enumerate() {
-                    if let Some(ref ccw_str) = knob.ccw {
-                        let action = Action::parse(ccw_str)?;
-                        let key_id =
-                            protocol::key_id_for_knob(knob_idx, protocol::KnobEvent::RotateCCW);
-                        packets.push(action.to_packet(key_id, layer_u8));
-                    }
-                    if let Some(ref press_str) = knob.press {
-                        let action = Action::parse(press_str)?;
-                        let key_id =
-                            protocol::key_id_for_knob(knob_idx, protocol::KnobEvent::Press);
-                        packets.push(action.to_packet(key_id, layer_u8));
-                    }
-                    if let Some(ref cw_str) = knob.cw {
-                        let action = Action::parse(cw_str)?;
-                        let key_id =
-                            protocol::key_id_for_knob(knob_idx, protocol::KnobEvent::RotateCW);
-                        packets.push(action.to_packet(key_id, layer_u8));
+                    for (spec, event) in [
+                        (&knob.ccw, protocol::KnobEvent::RotateCCW),
+                        (&knob.press, protocol::KnobEvent::Press),
+                        (&knob.cw, protocol::KnobEvent::RotateCW),
+                    ] {
+                        if let Some(text) = spec {
+                            let action = Action::parse(text)?;
+                            let key_id = protocol::key_id_for_knob(button_count, knob_idx, event);
+                            packets.push(action.to_packet(key_id, layer_u8));
+                        }
                     }
                 }
                 if let Some(ref led_mode) = lcfg.led {

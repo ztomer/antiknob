@@ -109,6 +109,23 @@ pub fn all_tools() -> Vec<ToolDef> {
                         "type": "array",
                         "items": { "type": "integer" },
                         "description": "Optional list of layers to bind. Defaults to all [0, 1, 2]."
+                    },
+                    "buttons": {
+                        "type": "integer",
+                        "description": "The device's physical button count (VK01 = 3). Knob slot IDs follow the buttons, so a wrong count writes bindings the firmware never reads without reporting an error. Defaults to the installed layout's count."
+                    }
+                }
+            }),
+        },
+        ToolDef {
+            name: "get_knob_mode",
+            description: "Read the knob's firmware slot table and report whether its gestures send host slot chords (host-translate, so host layers run) or ordinary actions (standalone, so host layers cannot fire). Returns 'unknown' when the table says nothing about the knob rather than guessing.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "buttons": {
+                        "type": "integer",
+                        "description": "The device's physical button count (VK01 = 3). Decides which slots are the knob's; defaults to the installed layout's."
                     }
                 }
             }),
@@ -260,7 +277,21 @@ pub enum Command {
     },
 
     #[serde(rename = "bind_slots")]
-    BindSlots { layers: Option<Vec<u8>> },
+    BindSlots {
+        layers: Option<Vec<u8>>,
+        /// Physical button count; knob slot IDs follow the buttons. No
+        /// default: a wrong count writes bindings nothing reads.
+        #[serde(default)]
+        buttons: Option<usize>,
+    },
+
+    /// Read the firmware's slot table and say whether the knob's gestures
+    /// can reach the host layers at all.
+    #[serde(rename = "get_knob_mode")]
+    GetKnobMode {
+        #[serde(default)]
+        buttons: Option<usize>,
+    },
 
     #[serde(rename = "upload_keymap")]
     UploadKeymap { yaml: String, layer: Option<u8> },

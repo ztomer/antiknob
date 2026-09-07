@@ -32,12 +32,17 @@ pub struct SlotBinding {
 
 /// Build the binding plan for the given device layers. Pure: no HID I/O,
 /// so this is fully unit-testable and powers CLI `--dry-run`.
-pub fn slot_binding_plan(layers: &[u8]) -> Result<Vec<SlotBinding>> {
+///
+/// `button_count` places the knob's slots, which follow the buttons in the
+/// key-ID space. Passing the wrong count writes real packets into slots the
+/// firmware never reads, and nothing anywhere reports a failure -- see
+/// `protocol::key_id_for_knob`.
+pub fn slot_binding_plan(button_count: usize, layers: &[u8]) -> Result<Vec<SlotBinding>> {
     let mut plan = Vec::new();
     for &layer in layers {
         for (event, chord) in SLOT_SPECS {
             plan.push(SlotBinding {
-                key_id: key_id_for_knob(0, event),
+                key_id: key_id_for_knob(button_count, 0, event),
                 layer,
                 action: Action::parse(chord)?,
             });
@@ -48,8 +53,8 @@ pub fn slot_binding_plan(layers: &[u8]) -> Result<Vec<SlotBinding>> {
 
 /// Serialize the plan to raw 64-byte HID packets (byte-for-byte identical
 /// to what `flash_slot_bindings` sends).
-pub fn binding_packets(layers: &[u8]) -> Result<Vec<Vec<u8>>> {
-    slot_binding_plan(layers)?
+pub fn binding_packets(button_count: usize, layers: &[u8]) -> Result<Vec<Vec<u8>>> {
+    slot_binding_plan(button_count, layers)?
         .iter()
         .map(|b| Ok(b.action.to_packet(b.key_id, b.layer)))
         .collect()
@@ -58,9 +63,9 @@ pub fn binding_packets(layers: &[u8]) -> Result<Vec<Vec<u8>>> {
 /// Flash the plan to the device with inter-packet pacing, then commit.
 /// Main thread only (same IOHIDManager thread-affinity contract as
 /// `crate::device`).
-pub fn flash_slot_bindings(dev: &HidDevice, layers: &[u8]) -> Result<usize> {
+pub fn flash_slot_bindings(dev: &HidDevice, button_count: usize, layers: &[u8]) -> Result<usize> {
     let mut sent = 0;
-    for packet in binding_packets(layers)? {
+    for packet in binding_packets(button_count, layers)? {
         send_report(dev, &packet)?;
         sent += 1;
         std::thread::sleep(std::time::Duration::from_millis(15));
@@ -75,38 +80,38 @@ mod tests {
 
     #[test]
     fn plan_covers_three_slots_per_layer() {
-        let plan = slot_binding_plan(&BIND_LAYERS).unwrap();
+        let plan = slot_binding_plan(3, &BIND_LAYERS).unwrap();
         assert_eq!(plan.len(), 9);
         let ids: Vec<u8> = plan.iter().map(|b| b.key_id).collect();
-        assert_eq!(ids, vec![16, 17, 18, 16, 17, 18, 16, 17, 18]);
+        assert_eq!(ids, vec![4, 5, 6, 4, 5, 6, 4, 5, 6]);
         let layers: Vec<u8> = plan.iter().map(|b| b.layer).collect();
         assert_eq!(layers, vec![0, 0, 0, 1, 1, 1, 2, 2, 2]);
     }
 
     #[test]
     fn packets_match_expected_bytes() {
-        let packets = binding_packets(&[0]).unwrap();
+        let packets = binding_packets(3, &[0]).unwrap();
         assert_eq!(packets.len(), 3);
         // CCW -> ctrl-alt-F16 on layer 0.
         let ccw = &packets[0];
-        assert_eq!(&ccw[0..5], &[0x03, 0xFE, 16, 1, 1]);
+        assert_eq!(&ccw[0..5], &[0x03, 0xFE, 4, 1, 1]);
         assert_eq!(ccw[10], 1);
         assert_eq!(ccw[11], 0x01 | 0x04);
         assert_eq!(ccw[12], 0x6B);
         // Press -> ctrl-alt-F17.
-        assert_eq!(packets[1][2], 17);
+        assert_eq!(packets[1][2], 5);
         assert_eq!(packets[1][12], 0x6C);
         // CW -> ctrl-alt-F18.
-        assert_eq!(packets[2][2], 18);
+        assert_eq!(packets[2][2], 6);
         assert_eq!(packets[2][12], 0x6D);
         // Layer 1 uses 1-based layer byte 2.
-        let l1 = &binding_packets(&[1]).unwrap()[0];
+        let l1 = &binding_packets(3, &[1]).unwrap()[0];
         assert_eq!(l1[3], 2);
     }
 
     #[test]
     fn single_layer_subset_only_binds_that_layer() {
-        let packets = binding_packets(&[2]).unwrap();
+        let packets = binding_packets(3, &[2]).unwrap();
         assert_eq!(packets.len(), 3);
         assert!(packets.iter().all(|p| p[3] == 3));
     }

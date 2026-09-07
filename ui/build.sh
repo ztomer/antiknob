@@ -69,7 +69,12 @@ BIN_PATH="$(swift build --package-path "${SCRIPT_DIR}" -c release \
 install -m 755 "${BIN_PATH}/Antiknob" "${MACOS_DIR}/Antiknob"
 
 echo "[ ==> ] Codesigning Antiknob.app..."
-IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple Development/ && !/CSSMERR/ {print $2; exit}' || true)
+# install.sh passes the identity it resolved, so both bundles carry one
+# signer; standalone runs still fall back to an Apple Development cert.
+IDENTITY="${ANTIKNOB_SIGN_ID:-}"
+if [[ -z "${IDENTITY}" || "${IDENTITY}" == "-" ]]; then
+    IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple Development/ && !/CSSMERR/ {print $2; exit}' || true)
+fi
 codesign --force --sign "${IDENTITY:--}" "${APP_DIR}"
 echo "[ Ok  ] Signed as: ${IDENTITY:-ad-hoc}"
 echo "[ Ok  ] Built ${APP_DIR} successfully."

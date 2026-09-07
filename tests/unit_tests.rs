@@ -89,14 +89,28 @@ fn test_led_packet_generation() {
     assert_eq!(red_breathing[6], 0); // Red G
 }
 
+/// This test used to pin the knob at 0x10/0x11/0x12 for every device, which
+/// is what the code did and what the hardware does NOT do: a VK01 with three
+/// buttons reads its knob from slots 4/5/6, so every binding written to 16-18
+/// was accepted, stored, and ignored. The old expectations were part of the
+/// defect, not a guard against it -- read back from the device, layer 3 held
+/// our `cmd--`/`cmd-0`/`cmd-=` at 16/17/18 while the knob went on obeying
+/// `volume up`/`prev`/`next` at 4/5/6.
 #[test]
 fn test_key_id_knob_and_buttons() {
-    assert_eq!(key_id_for_knob(0, KnobEvent::RotateCCW), 0x10);
-    assert_eq!(key_id_for_knob(0, KnobEvent::Press), 0x11);
-    assert_eq!(key_id_for_knob(0, KnobEvent::RotateCW), 0x12);
-
+    // Buttons are 1-based and unchanged.
     assert_eq!(key_id_for_button(0), 0x01);
     assert_eq!(key_id_for_button(1), 0x02);
+
+    // The knob follows however many buttons the device declares.
+    assert_eq!(key_id_for_knob(3, 0, KnobEvent::RotateCCW), 4);
+    assert_eq!(key_id_for_knob(3, 0, KnobEvent::Press), 5);
+    assert_eq!(key_id_for_knob(3, 0, KnobEvent::RotateCW), 6);
+
+    // A 15-key macropad is the layout the old constant happened to fit.
+    assert_eq!(key_id_for_knob(15, 0, KnobEvent::RotateCCW), 0x10);
+    assert_eq!(key_id_for_knob(15, 0, KnobEvent::Press), 0x11);
+    assert_eq!(key_id_for_knob(15, 0, KnobEvent::RotateCW), 0x12);
 }
 
 #[test]

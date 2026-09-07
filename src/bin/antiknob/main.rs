@@ -4,6 +4,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 mod cmds;
+mod diag;
 
 #[derive(Parser)]
 #[command(
@@ -27,17 +28,31 @@ enum Commands {
 
     /// Validate configuration YAML file syntax offline
     Validate {
-        #[arg(default_value = "config.yaml")]
-        file: PathBuf,
+        /// Layout file. Defaults to the one in Application Support,
+        /// seeded from the packaged starter on first use.
+        #[arg()]
+        file: Option<PathBuf>,
     },
 
     /// Flash keymaps and knob configurations to device over USB without sudo
     Upload {
-        #[arg(default_value = "config.yaml")]
-        file: PathBuf,
+        /// Layout file. Defaults to the one in Application Support,
+        /// seeded from the packaged starter on first use.
+        #[arg()]
+        file: Option<PathBuf>,
         /// Flash only this device layer (default: all layers)
         #[arg(long)]
         layer: Option<u8>,
+        /// Skip the post-flash read-back. Faster, and reports only that the
+        /// device accepted the packets -- which is not the same as the
+        /// bindings being live.
+        #[arg(long)]
+        no_verify: bool,
+        /// Confirm the target device really has no keys. Required for a
+        /// config declaring zero buttons, because knob slots then start at
+        /// key ID 1 -- which on a device WITH keys are the keys.
+        #[arg(long)]
+        knob_only: bool,
     },
 
     /// Set LED lighting mode (e.g., led 0 backlight white, led 0 shock blue, led 0 off)
@@ -60,6 +75,14 @@ enum Commands {
 
     /// Flash one-time host-translate slot bindings (ctrl-alt-F16..F18) to firmware
     BindSlots {
+        /// Hardware layout to read the button count from. Knob slot IDs
+        /// follow the buttons, so this decides where the bindings land.
+        #[arg(long)]
+        config: Option<PathBuf>,
+        /// Override the button count instead of reading it from a config.
+        /// For a device with no config file to hand.
+        #[arg(long)]
+        buttons: Option<usize>,
         /// Device layer to bind (default: all layers 0-2)
         #[arg(long)]
         layer: Option<u8>,
@@ -70,6 +93,12 @@ enum Commands {
 
     /// Dump raw input reports for a few seconds (verify what the knob sends)
     Listen {
+        /// Only watch these devices (repeatable), e.g. --device 514c:8850.
+        /// Default watches every supported device, which mixes the knob's
+        /// reports in with any other Anticater hardware on the same host.
+        #[arg(long = "device", value_name = "VID:PID")]
+        devices: Vec<String>,
+
         /// How long to listen, in seconds
         #[arg(long, default_value = "10")]
         timeout_secs: u64,
@@ -90,7 +119,12 @@ enum Commands {
 
     /// Dump the device slot table (read-only diagnostic for reverse engineering)
     ReadSlots {
-        /// Scan all groups 0x00-0xFF instead of just the vendor-observed ones
+        /// Layout whose width to read the table at. Defaults to the
+        /// installed one; the device needs telling how wide a layer is.
+        #[arg(long)]
+        config: Option<PathBuf>,
+        /// Exploratory sweep across groups 0x00-0x40 for protocol work,
+        /// instead of reading the table at its real width.
         #[arg(long)]
         wide: bool,
     },
@@ -116,16 +150,31 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Status { json } => cmds::run_status(json)?,
         Commands::Validate { file } => cmds::run_validate(file)?,
-        Commands::Upload { file, layer } => cmds::run_upload(file, layer)?,
+        Commands::Upload {
+            file,
+            layer,
+            no_verify,
+            knob_only,
+        } => cmds::run_upload(file, layer, no_verify, knob_only)?,
         Commands::Led { layer, mode } => cmds::run_led(layer, mode)?,
         Commands::LedRead { layer, raw } => cmds::run_led_read(layer, raw)?,
         Commands::ShowKeys => cmds::run_show_keys()?,
-        Commands::BindSlots { layer, dry_run } => cmds::run_bind_slots(layer, dry_run)?,
-        Commands::Listen { timeout_secs } => cmds::run_listen(timeout_secs)?,
+        Commands::BindSlots {
+            config,
+            buttons,
+            layer,
+            dry_run,
+        } => cmds::run_bind_slots(config, buttons, layer, dry_run)?,
+        Commands::Listen {
+            timeout_secs,
+            devices,
+        } => diag::run_listen(timeout_secs, devices)?,
         Commands::ImportPresets { out, force } => cmds::run_import_presets(out, force)?,
         Commands::ListApps => cmds::run_list_apps()?,
-        Commands::ReadSlots { wide } => cmds::run_read_slots(wide)?,
-        Commands::Raw { bytes } => cmds::run_raw(bytes)?,
+        Commands::ReadSlots { config, wide } => {
+            diag::run_read_slots(cmds::layout_slots_per_layer(config)?, wide)?
+        }
+        Commands::Raw { bytes } => diag::run_raw(bytes)?,
         Commands::Mcp { config } => {
             let config_path = match config {
                 Some(p) => p,

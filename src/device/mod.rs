@@ -3,7 +3,10 @@ use hidapi::HidApi;
 use serde::{Deserialize, Serialize};
 
 mod classify;
+pub mod mode;
+pub mod snoop;
 mod thread;
+pub mod verify;
 pub use classify::classify_device;
 pub use thread::{with_device, with_hid, HidDevice};
 
@@ -276,17 +279,38 @@ pub fn send_report(dev: &HidDevice, payload: &[u8]) -> Result<()> {
 /// consumer, vendor) for passive snooping. Opens NON-exclusively so the
 /// OS keeps receiving input while we watch; never steals the keyboard.
 pub struct SnoopIface {
+    /// `vid:pid` -- short enough to prefix every report line.
     pub label: String,
-    pub usage_page: u16,
-    pub usage: u16,
+    /// The collections this handle covers, named. Header only.
+    pub detail: String,
+    /// Every top-level collection this physical device declares. One handle
+    /// carries all of them, so the decoder needs the whole set, not the one
+    /// the handle happened to be enumerated under.
+    pub usages: Vec<(u16, u16)>,
     pub device: HidDevice,
 }
 
 /// Runs on the HID thread; the handles must not outlive the job.
-pub fn open_all_interfaces_on(api: &HidApi) -> Result<Vec<SnoopIface>> {
+///
+/// One handle per PHYSICAL device, not per usage. hidapi enumerates a macOS
+/// device once per top-level collection, but `open_device` opens the whole
+/// IOHIDDevice, so opening all five entries for the VK01 made every report
+/// arrive five times -- once per handle, each labelled with a different
+/// usage page, as though five interfaces had spoken. A capture that turns
+/// one twist into five lines, four of them attributed to interfaces that
+/// said nothing, is not a diagnostic. Deduplicate on the device path, which
+/// is what identifies the IOHIDDevice being opened.
+///
+/// `filters` narrows to the given `VID:PID` pairs; empty watches every
+/// supported device.
+pub fn open_all_interfaces_on(
+    api: &HidApi,
+    filters: &[snoop::DeviceFilter],
+) -> Result<Vec<SnoopIface>> {
     #[cfg(target_os = "macos")]
     api.set_open_exclusive(false);
     let mut out = Vec::new();
+    let mut opened_paths = std::collections::HashSet::new();
     for dev in api.device_list() {
         let vid = dev.vendor_id();
         let pid = dev.product_id();
@@ -296,12 +320,23 @@ pub fn open_all_interfaces_on(api: &HidApi) -> Result<Vec<SnoopIface>> {
         {
             continue;
         }
-        let usage_page = dev.usage_page();
-        let usage = dev.usage();
-        let label = format!(
-            "{:04x}:{:04x} up={:#06x} use={:#04x}",
-            vid, pid, usage_page, usage
-        );
+        if !snoop::wanted(filters, vid, pid) {
+            continue;
+        }
+        if !opened_paths.insert(dev.path().to_owned()) {
+            continue;
+        }
+        let path = dev.path();
+        let usages: Vec<(u16, u16)> = api
+            .device_list()
+            .filter(|d| d.path() == path)
+            .map(|d| (d.usage_page(), d.usage()))
+            .collect();
+        // The per-line prefix is the device alone; the collections it
+        // carries are header material, printed once. Repeating four hex
+        // pairs on every report made a capture unreadable.
+        let label = format!("{vid:04x}:{pid:04x}");
+        let detail = snoop::collections_label(&usages);
         match dev.open_device(api) {
             Ok(handle) => {
                 if let Err(e) = handle.set_blocking_mode(false) {
@@ -310,8 +345,8 @@ pub fn open_all_interfaces_on(api: &HidApi) -> Result<Vec<SnoopIface>> {
                 }
                 out.push(SnoopIface {
                     label,
-                    usage_page,
-                    usage,
+                    detail,
+                    usages,
                     device: handle,
                 });
             }
@@ -322,6 +357,41 @@ pub fn open_all_interfaces_on(api: &HidApi) -> Result<Vec<SnoopIface>> {
     }
     Ok(out)
 }
+
+/// Addresses covering the whole slot table, exactly once each.
+///
+/// `read_slot`'s first parameter is not an address. It is how many slots the
+/// device should treat a layer as having, and `counter` then walks the
+/// resulting table layer-major: with `slots_per_layer = 6`, counters 1-6 are
+/// layer 1's six slots, 7-12 layer 2's, 13-18 layer 3's. Established against
+/// hardware by sweeping groups 0x00-0x40 x counters 1-8 and reading the
+/// pattern out of which (group, counter) pairs returned which (layer, key).
+///
+/// The first version of this walked groups 0x01..=0x24 x counters 1..=3 --
+/// 108 reads that still missed a slot, because counters were capped at 3 for
+/// no reason beyond the original `read-slots` loop having been written that
+/// way. This is 18 reads and complete.
+pub fn slot_table_addresses(slots_per_layer: u8, layers: u8) -> Vec<(u8, u8)> {
+    (1..=slots_per_layer.saturating_mul(layers))
+        .map(|counter| (slots_per_layer, counter))
+        .collect()
+}
+
+/// Read every slot on the device. Used to confirm a flash landed; a write on
+/// its own proves only that the packet was well-formed.
+pub fn read_slot_table(dev: &HidDevice, slots_per_layer: u8, layers: u8) -> Vec<Vec<u8>> {
+    let mut out = Vec::new();
+    for (group, counter) in slot_table_addresses(slots_per_layer, layers) {
+        if let Ok(bytes) = read_slot(dev, group, counter) {
+            out.push(bytes);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    out
+}
+
+/// How many device layers the firmware holds.
+pub const DEVICE_LAYERS: u8 = 3;
 
 /// Slot-table read query, reverse-engineered from the vendor app's
 /// `Widget::read_Hidkey_Data`: write `[FA group 00 counter]` (report 0x03)
@@ -375,4 +445,40 @@ pub fn send_commit(dev: &HidDevice) -> Result<()> {
     send_report(dev, &payload)?;
     std::thread::sleep(std::time::Duration::from_millis(50));
     Ok(())
+}
+
+#[cfg(test)]
+mod slot_address_tests {
+    use super::*;
+
+    /// Every slot exactly once: the walk that missed one confirmed 17 of 18
+    /// and reported the last as "not seen", which reads like a failed write
+    /// and was a truncated reader.
+    #[test]
+    fn the_addresses_cover_every_slot_once() {
+        let addrs = slot_table_addresses(6, DEVICE_LAYERS);
+        assert_eq!(addrs.len(), 18, "6 slots x 3 layers");
+        let counters: Vec<u8> = addrs.iter().map(|(_, c)| *c).collect();
+        assert_eq!(counters, (1..=18).collect::<Vec<u8>>());
+        assert!(
+            addrs.iter().all(|(g, _)| *g == 6),
+            "the group parameter is the layer width, constant across the walk"
+        );
+    }
+
+    /// A knob-only device is narrower, and a macropad wider; neither should
+    /// need the caller to know anything but its own layout.
+    #[test]
+    fn the_walk_scales_with_the_layer_width() {
+        assert_eq!(slot_table_addresses(3, 3).len(), 9);
+        assert_eq!(slot_table_addresses(18, 3).len(), 54);
+    }
+
+    /// A layout wide enough to overflow the counter must not wrap around and
+    /// silently read a handful of slots instead of refusing.
+    #[test]
+    fn an_unaddressable_width_saturates_rather_than_wrapping() {
+        let addrs = slot_table_addresses(200, 3);
+        assert_eq!(addrs.len(), usize::from(u8::MAX));
+    }
 }

@@ -2,88 +2,10 @@
 
 use antiknob::{api, apps, config, device, host, protocol};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::thread::sleep;
 use std::time::Duration;
-
-/// Best-effort decode of one input report for the snoop log. Keyboard
-/// boot reports show modifiers + keycodes, mouse shows buttons/wheel,
-/// everything else prints raw. Never fails: unknown layouts fall back
-/// to an empty note next to the hex dump.
-fn decode_input(iface: &device::SnoopIface, buf: &[u8]) -> String {
-    // Keyboard boot report: [mods, 00, k1..k6], optionally prefixed
-    // with a zero report ID.
-    let body: &[u8] = if buf.len() == 9 && buf[0] == 0 {
-        &buf[1..]
-    } else {
-        buf
-    };
-    if iface.usage_page == 0x01 && iface.usage == 0x06 && body.len() == 8 && body[1] == 0 {
-        let mods = body[0];
-        let keys: Vec<String> = body[2..8]
-            .iter()
-            .filter(|&&k| k != 0)
-            .map(|k| format!("{:02x}", k))
-            .collect();
-        let mut mod_names = Vec::new();
-        if mods & 0x01 != 0 {
-            mod_names.push("ctrl");
-        }
-        if mods & 0x02 != 0 {
-            mod_names.push("shift");
-        }
-        if mods & 0x04 != 0 {
-            mod_names.push("alt");
-        }
-        if mods & 0x08 != 0 {
-            mod_names.push("cmd");
-        }
-        return format!(
-            "<-- keyboard mods=[{}] keys=[{}]",
-            mod_names.join("+"),
-            keys.join(" ")
-        );
-    }
-    if iface.usage_page == 0x01 && iface.usage == 0x02 && buf.len() >= 3 {
-        let buttons = buf[0];
-        let mut notes = Vec::new();
-        if buttons & 0x01 != 0 {
-            notes.push("left".to_string());
-        }
-        if buttons & 0x02 != 0 {
-            notes.push("right".to_string());
-        }
-        if buttons & 0x04 != 0 {
-            notes.push("middle".to_string());
-        }
-        return format!(
-            "<-- mouse buttons=[{}] x={} wheel={}",
-            notes.join("+"),
-            buf[1] as i8,
-            buf[2] as i8
-        );
-    }
-    if iface.usage_page == 0xFF00 && buf.len() > 2 && buf[0] == 0x03 && (16..=27).contains(&buf[2])
-    {
-        return format!("<-- vendor slot key_id={}", buf[2]);
-    }
-    String::new()
-}
-
-/// Parse hex byte strings ("FC", "0xfc") into a payload. Pure for testing.
-fn parse_hex_bytes(parts: &[String]) -> Result<Vec<u8>> {
-    parts
-        .iter()
-        .map(|s| {
-            let s = s
-                .strip_prefix("0x")
-                .or_else(|| s.strip_prefix("0X"))
-                .unwrap_or(s);
-            u8::from_str_radix(s, 16).map_err(|_| anyhow::anyhow!("Bad hex byte '{}'", s))
-        })
-        .collect()
-}
 
 pub fn run_status(json: bool) -> Result<()> {
     let devices = device::list_devices()?;
@@ -136,7 +58,23 @@ pub fn run_status(json: bool) -> Result<()> {
     }
     Ok(())
 }
-pub fn run_validate(file: PathBuf) -> Result<()> {
+/// The layout file to act on: the explicit argument, else the one in
+/// Application Support, seeded from the packaged starter on first use.
+fn layout_path(explicit: Option<PathBuf>) -> Result<PathBuf> {
+    let home = PathBuf::from(std::env::var("HOME").context("HOME is not set")?);
+    config::resolve_device_config_path(&home, explicit)
+}
+
+/// How wide one device layer is, from the installed layout.
+pub fn layout_slots_per_layer(explicit: Option<PathBuf>) -> Result<u8> {
+    let path = layout_path(explicit)?;
+    let cfg = config::DeviceConfig::load_from_file(&path)?;
+    u8::try_from(cfg.slots_per_layer())
+        .context("layout declares more slots per layer than the protocol can address")
+}
+
+pub fn run_validate(file: Option<PathBuf>) -> Result<()> {
+    let file = layout_path(file)?;
     println!("[ ==> ] Validating configuration file '{:?}'...", file);
     let cfg = config::DeviceConfig::load_from_file(&file)?;
     cfg.validate()?;
@@ -146,10 +84,27 @@ pub fn run_validate(file: PathBuf) -> Result<()> {
     );
     Ok(())
 }
-pub fn run_upload(file: PathBuf, layer: Option<u8>) -> Result<()> {
-    println!("[ ==> ] Loading and validating '{:?}'...", file);
+pub fn run_upload(
+    file: Option<PathBuf>,
+    layer: Option<u8>,
+    skip_verify: bool,
+    knob_only: bool,
+) -> Result<()> {
+    let file = layout_path(file)?;
+    println!("[ ==> ] Loading and validating {}...", file.display());
     let cfg = config::DeviceConfig::load_from_file(&file)?;
     cfg.validate()?;
+    if cfg.knob_slots_start_at_the_first_button() && !knob_only {
+        anyhow::bail!(
+            "{} declares no buttons (rows {} x columns {}), so its knob bindings \n\
+             would be written to key IDs 1/2/3 -- which on a device WITH keys are \n\
+             the keys, silently replacing them. Pass --knob-only if the target \n\
+             device really has no keys, or set rows/columns to the real layout.",
+            file.display(),
+            cfg.rows,
+            cfg.columns
+        );
+    }
 
     let selected: Vec<usize> = match layer {
         Some(l) => {
@@ -189,22 +144,19 @@ pub fn run_upload(file: PathBuf, layer: Option<u8>) -> Result<()> {
             }
         }
 
-        // 2. Program knobs
+        // 2. Program knobs. Their slot IDs continue after the buttons, so
+        // the count above is what places them -- see `key_id_for_knob`.
         for (knob_idx, knob) in layer.knobs.iter().enumerate() {
-            if let Some(ref ccw_str) = knob.ccw {
-                let action = protocol::Action::parse(ccw_str)?;
-                let key_id = protocol::key_id_for_knob(knob_idx, protocol::KnobEvent::RotateCCW);
-                packets.push(action.to_packet(key_id, layer_u8));
-            }
-            if let Some(ref press_str) = knob.press {
-                let action = protocol::Action::parse(press_str)?;
-                let key_id = protocol::key_id_for_knob(knob_idx, protocol::KnobEvent::Press);
-                packets.push(action.to_packet(key_id, layer_u8));
-            }
-            if let Some(ref cw_str) = knob.cw {
-                let action = protocol::Action::parse(cw_str)?;
-                let key_id = protocol::key_id_for_knob(knob_idx, protocol::KnobEvent::RotateCW);
-                packets.push(action.to_packet(key_id, layer_u8));
+            for (spec, event) in [
+                (&knob.ccw, protocol::KnobEvent::RotateCCW),
+                (&knob.press, protocol::KnobEvent::Press),
+                (&knob.cw, protocol::KnobEvent::RotateCW),
+            ] {
+                if let Some(text) = spec {
+                    let action = protocol::Action::parse(text)?;
+                    let key_id = protocol::key_id_for_knob(button_count, knob_idx, event);
+                    packets.push(action.to_packet(key_id, layer_u8));
+                }
             }
         }
 
@@ -215,15 +167,74 @@ pub fn run_upload(file: PathBuf, layer: Option<u8>) -> Result<()> {
     }
 
     println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
-    device::with_device(move |dev| {
+    // Keep a copy to check against: `hid_write` succeeding says the packet
+    // was well-formed, not that the firmware reads the slot it addressed.
+    let written = packets.clone();
+    let slots_per_layer = u8::try_from(cfg.slots_per_layer())
+        .context("layout declares more slots per layer than the protocol can address")?;
+    let observed = device::with_device(move |dev| {
         for packet in &packets {
             device::send_report(dev, packet)?;
             sleep(Duration::from_millis(10));
         }
-        device::send_commit(dev)
+        device::send_commit(dev)?;
+        if skip_verify {
+            return Ok(Vec::new());
+        }
+        sleep(Duration::from_millis(100));
+        Ok(device::read_slot_table(
+            dev,
+            slots_per_layer,
+            device::DEVICE_LAYERS,
+        ))
     })?;
-    println!("[ Ok  ] Configuration successfully written to Anticater VK01!");
+
+    if skip_verify {
+        println!("[ Ok  ] Packets accepted by the device (read-back skipped).");
+        return Ok(());
+    }
+    report_flash_verdict(&written, &observed);
     Ok(())
+}
+
+/// Say what the device now holds, not what was sent to it.
+///
+/// The old message was "Configuration successfully written", printed on the
+/// strength of `hid_write` not erroring -- which it does not do for a
+/// well-formed packet addressed to a slot the firmware stores and never
+/// reads. That is how knob bindings went to key IDs 16/17/18 on a device
+/// that reads 4/5/6, for every flash, with a success line each time.
+fn report_flash_verdict(written: &[Vec<u8>], observed: &[Vec<u8>]) {
+    use device::verify::{summarize, verify, SlotVerdict};
+    let verdicts = verify(written, observed);
+    let confirmed = verdicts
+        .iter()
+        .filter(|(_, v)| *v == SlotVerdict::Confirmed)
+        .count();
+    match summarize(&verdicts) {
+        None => println!(
+            "[ Ok  ] Configuration written and read back: {}/{} slot(s) confirmed.",
+            confirmed,
+            verdicts.len()
+        ),
+        Some(problem) => {
+            println!(
+                "[ Wrn ] Wrote {} slot(s); only {} read back as expected.",
+                verdicts.len(),
+                confirmed
+            );
+            println!("        {}", problem);
+            // Only a MISMATCH means the write went somewhere the firmware
+            // does not read. A slot the dump simply never showed says
+            // nothing about the write, and sending the user to check their
+            // layout over it would be advice about the wrong problem.
+            let wrong = verdicts.iter().any(|(_, v)| *v == SlotVerdict::Mismatched);
+            if wrong {
+                println!("        Check the device's button count: knob slots follow the");
+                println!("        buttons, and a wrong count writes to slots nothing reads.");
+            }
+        }
+    }
 }
 pub fn run_led(layer: u8, mode: Vec<String>) -> Result<()> {
     let mode_str = mode.join(" ");
@@ -299,14 +310,43 @@ pub fn run_show_keys() -> Result<()> {
     println!("  click, rclick, mclick, wheelup, wheeldown");
     Ok(())
 }
-pub fn run_bind_slots(layer: Option<u8>, dry_run: bool) -> Result<()> {
+/// How many buttons the target device has, from the layout rather than a
+/// constant. `--buttons` wins when given; otherwise the config file is the
+/// source of truth, and its absence is an error rather than a fallback --
+/// a guessed count is how knob bindings landed in slots nothing reads.
+fn resolve_button_count(config: Option<PathBuf>, buttons: Option<usize>) -> Result<usize> {
+    if let Some(n) = buttons {
+        return Ok(n);
+    }
+    let path = layout_path(config)?;
+    let cfg = config::DeviceConfig::load_from_file(&path).with_context(|| {
+        format!(
+            "cannot read the hardware layout from {} -- pass --config <file> or \
+             --buttons <n> so knob slots land where the firmware reads them",
+            path.display()
+        )
+    })?;
+    Ok(cfg.button_count())
+}
+
+pub fn run_bind_slots(
+    config: Option<PathBuf>,
+    buttons: Option<usize>,
+    layer: Option<u8>,
+    dry_run: bool,
+) -> Result<()> {
+    let buttons = resolve_button_count(config, buttons)?;
+    println!(
+        "[ ==> ] Layout has {} button(s); knob slots follow them.",
+        buttons
+    );
     let layers: Vec<u8> = match layer {
         Some(l) => vec![l],
         None => host::bind::BIND_LAYERS.to_vec(),
     };
     if dry_run {
         println!("[ ==> ] Slot binding plan (dry run, no hardware touched):");
-        for packet in host::bind::binding_packets(&layers)? {
+        for packet in host::bind::binding_packets(buttons, &layers)? {
             println!(
                 "        layer byte={} key_id={} kind={} mods=0x{:02x} code=0x{:02x}",
                 packet[3], packet[2], packet[4], packet[11], packet[12]
@@ -320,57 +360,14 @@ pub fn run_bind_slots(layer: Option<u8>, dry_run: bool) -> Result<()> {
         return Ok(());
     }
     println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
-    let sent = device::with_device(move |dev| host::bind::flash_slot_bindings(dev, &layers))?;
+    let sent =
+        device::with_device(move |dev| host::bind::flash_slot_bindings(dev, buttons, &layers))?;
     println!(
                 "[ Ok  ] Flashed {} slot binding(s): CCW=ctrl-alt-F16, Press=ctrl-alt-F17, CW=ctrl-alt-F18.",
                 sent
             );
     println!("        Hold+twist slots unchanged (key IDs unverified; use the vendor app).");
     println!("        Verify with: antiknob listen --timeout-secs 10");
-    Ok(())
-}
-pub fn run_listen(timeout_secs: u64) -> Result<()> {
-    use std::time::Instant;
-    println!("[ ==> ] Opening all knob interfaces for snooping (non-exclusive, no sudo)...");
-    // The whole snoop loop runs on the HID thread: `SnoopIface` holds live
-    // `HidDevice` handles, which must never cross a thread boundary.
-    device::with_hid(move |api| {
-        let ifaces = device::open_all_interfaces_on(api)?;
-        if ifaces.is_empty() {
-            println!("[ Wrn ] No supported devices detected on USB.");
-            return Ok(());
-        }
-        for iface in &ifaces {
-            println!("        watching {}", iface.label);
-        }
-        let deadline = Instant::now() + Duration::from_secs(timeout_secs);
-        println!(
-            "[ ==> ] Snooping for {}s: twist / press / hold the knob (mouse stays usable)...",
-            timeout_secs
-        );
-        let mut buf = [0u8; 64];
-        while Instant::now() < deadline {
-            for iface in &ifaces {
-                match iface.device.read_timeout(&mut buf, 20) {
-                    Ok(0) => {}
-                    Ok(n) => {
-                        if buf[..n].iter().any(|&b| b != 0) {
-                            let hex: Vec<String> =
-                                buf[..n].iter().map(|b| format!("{:02x}", b)).collect();
-                            print!("        [{}] +{}B: {}", iface.label, n, hex.join(" "));
-                            print!("   {}", decode_input(iface, &buf[..n]));
-                            println!();
-                        }
-                    }
-                    Err(e) => {
-                        println!("[ Wrn ] Read error on {}: {}", iface.label, e);
-                    }
-                }
-            }
-        }
-        Ok(())
-    })?;
-    println!("[ Ok  ] Listen window closed.");
     Ok(())
 }
 pub fn run_import_presets(out: Option<PathBuf>, force: bool) -> Result<()> {
@@ -426,66 +423,4 @@ pub fn run_list_apps() -> Result<()> {
         found.len()
     );
     Ok(())
-}
-pub fn run_read_slots(wide: bool) -> Result<()> {
-    println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
-    let groups: Vec<u8> = if wide {
-        (0x00u8..=0xFFu8).collect()
-    } else {
-        vec![0x0F, 0x19]
-    };
-    println!(
-        "[ ==> ] Reading slot table ({} groups, counters 1-3)...",
-        groups.len()
-    );
-    device::with_device(move |dev| {
-        for group in groups {
-            for counter in 1u8..=3 {
-                match device::read_slot(dev, group, counter) {
-                    Ok(bytes) => {
-                        let hex: Vec<String> = bytes.iter().map(|b| format!("{:02x}", b)).collect();
-                        println!(
-                            "        group=0x{:02x} counter={} ({}B): {}",
-                            group,
-                            counter,
-                            bytes.len(),
-                            hex.join(" ")
-                        );
-                    }
-                    Err(e) => {
-                        println!(
-                            "        group=0x{:02x} counter={}: READ FAILED: {}",
-                            group, counter, e
-                        );
-                    }
-                }
-                sleep(Duration::from_millis(50));
-            }
-        }
-        Ok(())
-    })?;
-    println!("[ Ok  ] Slot dump complete (device state unchanged).");
-    Ok(())
-}
-pub fn run_raw(bytes: Vec<String>) -> Result<()> {
-    let payload = parse_hex_bytes(&bytes)?;
-    let sent = payload.len();
-    println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
-    device::with_device(move |dev| device::send_report(dev, &payload))?;
-    println!("[ Ok  ] Raw {}-byte payload sent.", sent);
-    Ok(())
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn hex_bytes_parse_with_and_without_prefix() {
-        assert_eq!(
-            parse_hex_bytes(&["FC".to_string(), "0xfc".to_string(), "00".to_string()]).unwrap(),
-            vec![0xFC, 0xFC, 0x00]
-        );
-        assert!(parse_hex_bytes(&["zz".to_string()]).is_err());
-        assert!(parse_hex_bytes(&["123".to_string()]).is_err());
-    }
 }

@@ -102,10 +102,17 @@ impl Action {
                 packet[12] = *code;
             }
             Action::Media(code) => {
+                // Bytes 9-10, not 11-12. Keyboard actions put their mods and
+                // keycode at 11/12 and read back confirmed; media put its
+                // usage there too and never did. The device stores media
+                // codes at byte 9 -- every media slot read off real hardware
+                // has it there (`03 FA 04 03 02 01 01 00 00 E9` is volume up)
+                // -- so writes to 11/12 landed in fields the firmware does
+                // not consult, and the slot kept whatever it already held.
                 packet[4] = 2; // Kind = Media
                 let [low, high] = code.to_le_bytes();
-                packet[11] = low;
-                packet[12] = high;
+                packet[9] = low;
+                packet[10] = high;
             }
             Action::MouseClick { button } => {
                 packet[4] = 3; // Kind = Mouse
@@ -127,14 +134,29 @@ pub fn key_id_for_button(button_index: usize) -> u8 {
     (button_index + 1) as u8
 }
 
-pub fn key_id_for_knob(knob_index: usize, event: KnobEvent) -> u8 {
-    const BASE: u8 = 16;
+/// Slot key ID for one knob gesture.
+///
+/// Knob slots continue the 1-based key-ID space straight after the buttons,
+/// so the base is `button_count + 1` -- NOT a constant. It used to be a
+/// hardcoded 16, which is only right for a 15-key device; on this VK01
+/// (3 buttons, 1 knob) the knob reads slots 4/5/6, so every knob binding
+/// this tool ever flashed landed in 16/17/18, slots the firmware does not
+/// read. Nothing failed: the packets were accepted, the slot table really
+/// did change, and the knob went on doing whatever it did before. Read back
+/// from a real device, layer 3:
+///
+/// ```text
+/// key_id 1,2,3   ctrl-left, ctrl-up, ctrl-right   <- our buttons, live
+/// key_id 4,5,6   volume up, prev, next            <- what the knob reads
+/// key_id 16,17,18  cmd--, cmd-0, cmd-=            <- our knob writes, inert
+/// ```
+pub fn key_id_for_knob(button_count: usize, knob_index: usize, event: KnobEvent) -> u8 {
     let offset = match event {
         KnobEvent::RotateCCW => 0,
         KnobEvent::Press => 1,
         KnobEvent::RotateCW => 2,
     };
-    BASE + (knob_index as u8) * 3 + offset
+    (button_count as u8) + 1 + (knob_index as u8) * 3 + offset
 }
 
 pub fn build_led_packet(layer: u8, mode: &str) -> Result<Vec<u8>> {
@@ -394,13 +416,51 @@ mod tests {
     #[test]
     fn test_packet_structure() {
         let action = Action::parse("volumedown").unwrap();
-        let packet = action.to_packet(key_id_for_knob(0, KnobEvent::RotateCCW), 0);
+        let packet = action.to_packet(key_id_for_knob(15, 0, KnobEvent::RotateCCW), 0);
         assert_eq!(packet.len(), 64);
         assert_eq!(packet[0], 0x03);
         assert_eq!(packet[1], 0xFE);
-        assert_eq!(packet[2], 16); // Knob 0 CCW ID
+        assert_eq!(packet[2], 16); // Knob 0 CCW on a 15-key device
         assert_eq!(packet[3], 1); // Layer 0 + 1
         assert_eq!(packet[4], 2); // Media kind
+    }
+
+    /// The device that exposed the bug: 1 row of 3 buttons plus one knob.
+    /// Knob slots must follow the buttons, not sit at a fixed 16.
+    #[test]
+    fn knob_slots_follow_the_buttons_rather_than_a_fixed_base() {
+        let ids = |buttons: usize| {
+            [KnobEvent::RotateCCW, KnobEvent::Press, KnobEvent::RotateCW]
+                .map(|e| key_id_for_knob(buttons, 0, e))
+        };
+        // VK01: 3 buttons -> the knob reads 4/5/6 (read back from hardware).
+        assert_eq!(ids(3), [4, 5, 6]);
+        // A knob-only device has no buttons to follow.
+        assert_eq!(ids(0), [1, 2, 3]);
+        // 15-key macropad: the old hardcoded base was right only here.
+        assert_eq!(ids(15), [16, 17, 18]);
+    }
+
+    #[test]
+    fn a_second_knob_follows_the_first() {
+        assert_eq!(key_id_for_knob(3, 1, KnobEvent::RotateCCW), 7);
+        assert_eq!(key_id_for_knob(3, 1, KnobEvent::RotateCW), 9);
+    }
+
+    /// Buttons and knobs must never claim the same slot, whatever the layout.
+    #[test]
+    fn button_and_knob_slots_never_collide() {
+        for buttons in 0..20usize {
+            let last_button = (0..buttons).map(key_id_for_button).max();
+            let first_knob = key_id_for_knob(buttons, 0, KnobEvent::RotateCCW);
+            assert!(
+                last_button.is_none_or(|b| b < first_knob),
+                "{} buttons: last button {:?} collides with knob {}",
+                buttons,
+                last_button,
+                first_knob
+            );
+        }
     }
 
     #[test]

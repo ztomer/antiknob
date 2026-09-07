@@ -68,7 +68,8 @@ layers:
 
     // Verify knob packets
     let ccw_action = Action::parse(layer.knobs[0].ccw.as_ref().unwrap()).unwrap();
-    let ccw_id = key_id_for_knob(0, KnobEvent::RotateCCW);
+    let buttons: usize = layer.buttons.iter().map(Vec::len).sum();
+    let ccw_id = key_id_for_knob(buttons, 0, KnobEvent::RotateCCW);
     let ccw_pkt = ccw_action.to_packet(ccw_id, 0);
     assert_eq!(ccw_pkt[0], 0x03);
     assert_eq!(ccw_pkt[1], 0xFE);

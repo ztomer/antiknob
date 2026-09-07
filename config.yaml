@@ -19,10 +19,11 @@ layers:
   # ----------------------------------------------------------------------------
   # Layer 0: Default Media & Audio Controls
   # ----------------------------------------------------------------------------
-  # LED identity per layer, so the active layer is legible without looking
-  # at the menu bar. Mode 5 ("custom") is the multicoloured one the device
-  # ships in -- it takes no colour, the firmware drives its own palette.
-  - led: "backlight red"
+  # LED identity per layer. This knob has ONE colour -- setting three
+  # different colours was tried and every one came out red -- so layers are
+  # told apart by EFFECT, not colour. Mode 4 (rainbow) is the multicoloured
+  # effect the device ships in. Mode 5 crashes the firmware; never use it.
+  - led: "static"
     buttons:
       - ["play", "prev", "next"]
     knobs:
@@ -33,7 +34,7 @@ layers:
   # ----------------------------------------------------------------------------
   # Layer 1: Navigation & Productivity Shortcuts
   # ----------------------------------------------------------------------------
-  - led: "backlight green"
+  - led: "ripple"
     buttons:
       - ["cmd-c", "cmd-v", "cmd-z"]
     knobs:
@@ -44,7 +45,7 @@ layers:
   # ----------------------------------------------------------------------------
   # Layer 2: Workspace & Zoom Controls
   # ----------------------------------------------------------------------------
-  - led: "custom"
+  - led: "rainbow"
     buttons:
       - ["ctrl-left", "ctrl-up", "ctrl-right"]
     knobs:

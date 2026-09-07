@@ -10,7 +10,7 @@ mod virtual_layer_tests;
 pub use dispatch::{execute_command, ApiContext, TapHealth};
 pub use mcp::{handle_mcp_request, run_mcp_server};
 pub use socket::{call_daemon_socket, default_socket_path, SocketServer, TMP_SOCKET_PATH};
-pub use types::{all_tools, Command, ToolDef};
+pub use types::{all_tools, led_mode_name, Command, ToolDef};
 
 #[cfg(test)]
 mod tests {

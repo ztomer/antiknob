@@ -243,10 +243,7 @@ pub fn run_led(layer: u8, mode: Vec<String>) -> Result<()> {
         layer, mode_str
     );
     let packet = protocol::build_led_packet(layer, &mode_str)?;
-    device::with_device(move |dev| {
-        device::send_report(dev, &packet)?;
-        device::send_commit(dev)
-    })?;
+    device::with_device(move |dev| device::send_led(dev, &packet))?;
     println!("[ Ok  ] LED configuration sent to device.");
     Ok(())
 }
@@ -274,15 +271,11 @@ pub fn run_led_read(layer: u8, raw: bool) -> Result<()> {
 
     match mode {
         Ok(mode) => {
-            let label = match mode {
-                0 => "off",
-                1 => "backlight",
-                2 => "shock",
-                3 => "shock2",
-                4 => "press",
-                5 => "custom",
-                _ => "unknown",
-            };
+            // One definition. This used to carry its own copy of the mode
+            // table -- the 1189:884x names -- so `led-read` kept reporting
+            // "press" for mode 4 after the shared table was corrected to
+            // "rainbow" for this device.
+            let label = api::led_mode_name(mode);
             println!("[ Ok  ] Layer {} LED mode: {} ({})", layer, mode, label);
         }
         Err(e) => println!("[ Wrn ] LED read failed: {}", e),

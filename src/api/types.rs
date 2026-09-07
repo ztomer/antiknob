@@ -339,14 +339,21 @@ pub enum Command {
 }
 
 /// Format human-readable LED mode string.
+/// Mode names for the `514c:8850`, from hardware testing in
+/// kriomant/ch57x-keyboard-tool#173 and confirmed on this knob by watching
+/// each one. The old table came from the `1189:884x` family and named mode 4
+/// "press" -- it is the rainbow, which is the multicoloured effect this
+/// device ships in.
 pub fn led_mode_name(mode: u8) -> &'static str {
     match mode {
         0 => "off",
-        1 => "backlight",
-        2 => "shock",
-        3 => "shock2",
-        4 => "press",
-        5 => "custom",
+        1 => "static",
+        2 => "reactive",
+        3 => "ripple",
+        4 => "rainbow",
+        // Never sent by this build: it crashes the firmware, and doing so
+        // wedged a real device's LED renderer until it was power-cycled.
+        5 => "unsupported (crashes this firmware)",
         _ => "unknown",
     }
 }

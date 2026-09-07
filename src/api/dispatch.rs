@@ -239,11 +239,8 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                 _ => mode,
             };
             let packet = protocol::build_led_packet(layer, &spec)?;
-            device::with_device(move |dev| {
-                device::send_report(dev, &packet)?;
-                device::send_commit(dev)
-            })
-            .context("Cannot drive the Anticater USB device")?;
+            device::with_device(move |dev| device::send_led(dev, &packet))
+                .context("Cannot drive the Anticater USB device")?;
             Ok(json!({
                 "ok": true,
                 "layer": layer,

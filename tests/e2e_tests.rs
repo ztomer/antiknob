@@ -108,14 +108,17 @@ fn test_e2e_invalid_action_syntax_rejected() {
 #[test]
 fn test_e2e_invalid_led_syntax_rejected() {
     assert!(build_led_packet(0, "unknown_mode").is_err());
-    // `mode5` itself is real -- the vendor app validates a mode read back
-    // from the device with `cmpq $0x5`, and it is the multicoloured mode the
-    // knob ships in. What is still refused is passing it a colour: that mode
-    // drives its own palette, so a colour would be accepted and ignored.
-    assert!(build_led_packet(0, "mode5").is_ok());
-    assert!(build_led_packet(0, "mode5 red").is_err());
-    assert!(build_led_packet(0, "custom").is_ok());
-    assert!(build_led_packet(0, "custom blue").is_err());
+    // Mode 5 is REFUSED. The vendor app does send it, and it crashes this
+    // firmware: doing so wedged a real knob's LED renderer until the device
+    // was power-cycled, sitting lit on battery meanwhile. "The vendor sends
+    // it" is not "it is safe to send", and this test exists because an
+    // earlier version of this file argued the opposite twice.
+    for spec in ["mode5", "custom", "custom rainbow"] {
+        let err = build_led_packet(0, spec).expect_err(spec);
+        assert!(err.to_string().contains("crashes"), "{err}");
+    }
+    // The multicoloured effect is mode 4.
+    assert_eq!(build_led_packet(0, "rainbow").expect("rainbow")[4], 4);
     assert!(build_led_packet(0, "mode1 ultraviolet").is_err());
 }
 

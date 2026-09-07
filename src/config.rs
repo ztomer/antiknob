@@ -300,30 +300,28 @@ layers: []
     /// glance, so the starter has to actually carry them -- and carry the
     /// colours asked for, not whatever survived an edit.
     #[test]
-    fn the_starter_layout_gives_the_first_two_layers_their_colours() {
+    fn the_starter_layout_gives_each_layer_its_own_effect() {
         let cfg: DeviceConfig = serde_yaml::from_str(STARTER_CONFIG).expect("starter parses");
-        assert_eq!(cfg.layers[0].led.as_deref(), Some("backlight red"));
-        assert_eq!(cfg.layers[1].led.as_deref(), Some("backlight green"));
-
-        // And they render to the packets the device expects: mode 1, then
-        // the RGB triple.
-        let red = crate::protocol::build_led_packet(0, cfg.layers[0].led.as_ref().unwrap())
-            .expect("red packet");
-        assert_eq!(&red[2..8], &[0xB0, 0x00, 0x01, 255, 0, 0]);
-        let green = crate::protocol::build_led_packet(1, cfg.layers[1].led.as_ref().unwrap())
-            .expect("green packet");
-        assert_eq!(&green[2..8], &[0xB0, 0x01, 0x01, 0, 255, 0]);
+        // Layers are told apart by EFFECT: this knob has one colour, proven
+        // by setting three different ones and getting red every time.
+        assert_eq!(cfg.layers[0].led.as_deref(), Some("static"));
+        assert_eq!(cfg.layers[1].led.as_deref(), Some("ripple"));
+        let a = crate::protocol::build_led_packet(0, "static").expect("static");
+        assert_eq!(&a[2..5], &[0xB0, 0x00, 0x01]);
+        let b = crate::protocol::build_led_packet(1, "ripple").expect("ripple");
+        assert_eq!(&b[2..5], &[0xB0, 0x01, 0x03]);
     }
 
-    /// Mode 5 is the multicoloured one the device ships in, and the one
-    /// this build could not previously produce -- so an `upload` overwrote
-    /// it with a steady colour and had no way to put it back.
+    /// Mode 4 is the multicoloured effect the device ships in. Mode 5, which
+    /// an earlier version of this used for it, CRASHES the firmware -- doing
+    /// so wedged a real knob's LED until it was power-cycled.
     #[test]
-    fn the_third_layer_uses_the_multicoloured_mode() {
+    fn the_third_layer_uses_the_multicoloured_mode_and_never_mode_five() {
         let cfg: DeviceConfig = serde_yaml::from_str(STARTER_CONFIG).expect("starter parses");
-        assert_eq!(cfg.layers[2].led.as_deref(), Some("custom"));
-        let packet = crate::protocol::build_led_packet(2, "custom").expect("custom packet");
-        assert_eq!(&packet[2..5], &[0xB0, 0x02, 0x05]);
+        assert_eq!(cfg.layers[2].led.as_deref(), Some("rainbow"));
+        let packet = crate::protocol::build_led_packet(2, "rainbow").expect("rainbow packet");
+        assert_eq!(&packet[2..5], &[0xB0, 0x02, 0x04]);
+        assert!(crate::protocol::build_led_packet(2, "mode5").is_err());
     }
 
     #[test]

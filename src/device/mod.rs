@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 
 mod classify;
 pub mod mode;
+#[cfg(test)]
+mod slot_address_tests;
 pub mod snoop;
 mod thread;
 pub mod verify;
@@ -437,6 +439,27 @@ pub fn read_led_mode(dev: &HidDevice, layer: u8) -> Result<u8> {
 /// tail (`[FD FE FF]` + sleep): without it the firmware may ignore
 /// flashed packets. Call once after a batch of key writes, never for
 /// LED-only updates (uncharted; LED path untouched).
+/// Send an LED packet, preceded by the init this firmware requires.
+///
+/// Without `03 FB FB FB` first, a `514c:8850` ACCEPTS the LED write, stores
+/// the mode, reads it back correctly, and changes nothing. A read-back that
+/// confirms a write and says nothing about its effect is the worst kind of
+/// instrument, and it cost most of a debugging session before the vendor
+/// app's own traffic showed the init going out on connect.
+///
+/// Documented from hardware testing in kriomant/ch57x-keyboard-tool#173, and
+/// confirmed here: mode 0 turned this knob's light off only once the init
+/// preceded it, having done nothing for hours before.
+///
+/// No commit follows. The vendor app sends none after LED writes, and the
+/// keymap commit (`FD FE FF`) is a different instruction.
+pub fn send_led(dev: &HidDevice, packet: &[u8]) -> Result<()> {
+    send_report(dev, &crate::led::led_init_packet())?;
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    send_report(dev, packet)?;
+    Ok(())
+}
+
 pub fn send_commit(dev: &HidDevice) -> Result<()> {
     let mut payload = [0u8; 64];
     payload[0] = 0xFD;
@@ -445,40 +468,4 @@ pub fn send_commit(dev: &HidDevice) -> Result<()> {
     send_report(dev, &payload)?;
     std::thread::sleep(std::time::Duration::from_millis(50));
     Ok(())
-}
-
-#[cfg(test)]
-mod slot_address_tests {
-    use super::*;
-
-    /// Every slot exactly once: the walk that missed one confirmed 17 of 18
-    /// and reported the last as "not seen", which reads like a failed write
-    /// and was a truncated reader.
-    #[test]
-    fn the_addresses_cover_every_slot_once() {
-        let addrs = slot_table_addresses(6, DEVICE_LAYERS);
-        assert_eq!(addrs.len(), 18, "6 slots x 3 layers");
-        let counters: Vec<u8> = addrs.iter().map(|(_, c)| *c).collect();
-        assert_eq!(counters, (1..=18).collect::<Vec<u8>>());
-        assert!(
-            addrs.iter().all(|(g, _)| *g == 6),
-            "the group parameter is the layer width, constant across the walk"
-        );
-    }
-
-    /// A knob-only device is narrower, and a macropad wider; neither should
-    /// need the caller to know anything but its own layout.
-    #[test]
-    fn the_walk_scales_with_the_layer_width() {
-        assert_eq!(slot_table_addresses(3, 3).len(), 9);
-        assert_eq!(slot_table_addresses(18, 3).len(), 54);
-    }
-
-    /// A layout wide enough to overflow the counter must not wrap around and
-    /// silently read a handful of slots instead of refusing.
-    #[test]
-    fn an_unaddressable_width_saturates_rather_than_wrapping() {
-        let addrs = slot_table_addresses(200, 3);
-        assert_eq!(addrs.len(), usize::from(u8::MAX));
-    }
 }

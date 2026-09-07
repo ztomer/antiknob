@@ -265,7 +265,13 @@ not stored in this table and that is recorded with evidence.
 
 ## Phase 4 — land it
 
-### 4.1 Commits — TODO
+### 4.1 Commits — DONE
+
+> Four commits, each gated in isolation with the rest stashed. `listen` could
+> not be split from the protocol work as planned: the two share
+> `device/mod.rs`, `cmds.rs` and `main.rs`, and hunk-level staging is not
+> available here, so forcing the split would have produced a commit that did
+> not build. Merged rather than faked.
 
 Four, in dependency order, each green on `tools/gate.sh --full`:
 

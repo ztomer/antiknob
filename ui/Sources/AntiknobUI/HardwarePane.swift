@@ -81,7 +81,7 @@ struct HardwarePane: View {
     @State private var yamlText: String = KeymapTemplate.media.defaultYaml
     @State private var targetLayer: Int = 0
     @State private var isFlashingKeymap: Bool = false
-    @State private var flashStatus: String? = nil
+    @State private var flashStatus: String?
     @State private var flashSuccess: Bool = true
     @State private var selectedSlotLayer: Int = -1 // -1 = All layers
 
@@ -116,7 +116,7 @@ struct HardwarePane: View {
 
             LabeledContent("Power Supply") {
                 HStack(spacing: 6) {
-                    Image(systemName: store.hardwareConnected ? (store.transport == "usb" ? "bolt.fill" : "battery.100") : "battery.0")
+                    Image(systemName: store.powerIcon)
                         .foregroundStyle(store.hardwareConnected ? Color.accentColor : Color.secondary)
                     Text(store.hardwareConnected ? store.powerDescription : "Disconnected")
                         .foregroundStyle(.primary)
@@ -157,7 +157,10 @@ struct HardwarePane: View {
     private var slotBindingSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Bind the knob's onboard slots to chords (⌃⌥F16..F20) so the host daemon translates all twists, clicks, and sequences cleanly.")
+                Text("""
+                    Bind the knob's onboard slots to chords (⌃⌥F16..F20) so the host \
+                    daemon translates all twists, clicks, and sequences cleanly.
+                    """)
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -193,14 +196,20 @@ struct HardwarePane: View {
         } header: {
             Text("Host Translation Chords (Recommended)")
         } footer: {
-            Text("Flashing binds CCW=⌃⌥F16, Press=⌃⌥F17, CW=⌃⌥F18. Run once to prepare hardware for daemon translation.")
+            Text("""
+                Flashing binds CCW=⌃⌥F16, Press=⌃⌥F17, CW=⌃⌥F18. Run once to prepare \
+                hardware for daemon translation.
+                """)
         }
     }
 
     private var standaloneKeymapSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Flash standalone actions directly to on-chip EEPROM. The knob operates without any background app or daemon on any macOS, Windows, or Linux system.")
+                Text("""
+                    Flash standalone actions directly to on-chip EEPROM. The knob operates \
+                    without any background app or daemon on any macOS, Windows, or Linux system.
+                    """)
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -253,7 +262,10 @@ struct HardwarePane: View {
         } header: {
             Text("Standalone On-Chip Keymap Flashing")
         } footer: {
-            Text("Directly writes 64-byte USB HID report packets (report ID 0x03) and sends commit marker 0xFD 0xFE 0xFF.")
+            Text("""
+                Directly writes 64-byte USB HID report packets (report ID 0x03) and sends \
+                commit marker 0xFD 0xFE 0xFF.
+                """)
         }
     }
 

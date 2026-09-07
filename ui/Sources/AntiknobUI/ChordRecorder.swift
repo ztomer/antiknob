@@ -14,7 +14,9 @@ struct ChordRecorder: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Button(action: { recording ? stop() : start() }) {
+            Button {
+                if recording { stop() } else { start() }
+            } label: {
                 Text(recording ? "Type shortcut…" : (chord?.display ?? "Record Shortcut"))
                     .font(.system(.body, design: .rounded))
                     .frame(minWidth: 108)

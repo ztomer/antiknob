@@ -28,10 +28,10 @@ struct InspectorPane: View {
     @State private var isReadingSlots: Bool = false
     @State private var slotGroup: UInt8 = 0x0F
     @State private var slotRecords: [SlotDumpRecord] = []
-    @State private var slotError: String? = nil
+    @State private var slotError: String?
 
     @State private var rawPacketInput: String = "FD FE FF"
-    @State private var rawPacketStatus: String? = nil
+    @State private var rawPacketStatus: String?
 
     var body: some View {
         Form {
@@ -45,7 +45,10 @@ struct InspectorPane: View {
     private var trafficSnooperSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Non-exclusive packet monitor. Snoops keyboard, mouse, and vendor endpoints while the OS continues receiving inputs.")
+                Text("""
+                    Non-exclusive packet monitor. Snoops keyboard, mouse, and vendor \
+                    endpoints while the OS continues receiving inputs.
+                    """)
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -123,7 +126,10 @@ struct InspectorPane: View {
     private var slotMemorySection: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Inspect on-chip slot table records. Reads raw 64-byte responses via vendor query [0xFA group 0x00 counter].")
+                Text("""
+                    Inspect on-chip slot table records. Reads raw 64-byte responses via \
+                    vendor query [0xFA group 0x00 counter].
+                    """)
                     .font(.caption)
                     .foregroundStyle(.secondary)
 

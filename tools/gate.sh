@@ -21,7 +21,8 @@ case "${1:-}" in
     # Add per-language layers for what this repo actually contains:
     "$GOH/gates/rust_gate.sh"  .
     #   "$GOH/gates/py_gate.sh"    .
-    #   "$GOH/gates/swift_gate.sh" .
+    # The Swift half is its own SPM package under ui/, with its own .gatesrc.
+    "$GOH/gates/swift_gate.sh" ./ui
     # Layer 3: genuinely local checks (cargo test + cargo audit).
     ./tools/repo_gates.sh
     ;;

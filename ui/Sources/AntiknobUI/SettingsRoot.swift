@@ -13,11 +13,13 @@ enum TabSelection: Hashable {
     case services
 }
 
-struct SettingsRoot: View {
+public struct SettingsRoot: View {
+    public init() {}
+
     @ObservedObject var store = ConfigStore.shared
     @State private var sel: TabSelection = .switching
 
-    var body: some View {
+    public var body: some View {
         TabView(selection: $sel) {
             Tab("Switching", systemImage: "arrow.triangle.2.circlepath",
                 value: TabSelection.switching) {

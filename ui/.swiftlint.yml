@@ -1,0 +1,48 @@
+# SwiftLint configuration for Antiknob.app.
+#
+# Rule choices here are deliberate, not blanket relaxations. Where a default
+# fights something this codebase does on purpose, the reason is stated; where
+# a default caught something real, it is left alone and the code was fixed.
+
+excluded:
+  - .build          # SwiftPM's generated test runner is not our source
+
+line_length:
+  warning: 120
+  error: 120
+  ignores_urls: true
+  ignores_comments: false
+
+file_length:
+  # Matches GOH_MAX_LINES in ../.gatesrc. Two gates measuring the same
+  # property must agree on the number, or one of them is noise.
+  warning: 500
+  error: 500
+
+identifier_name:
+  # Swift's own API guidelines endorse short names in narrow scopes, and this
+  # codebase leans on them heavily in closures and `for` bodies (`for g in
+  # Gesture.allCases`). Enforcing three characters there is churn that
+  # prevents no defect, so only the upper bound is enforced.
+  min_length:
+    warning: 1
+    error: 1
+  max_length:
+    warning: 50
+    error: 60
+  excluded:
+    # Wire-format names. These are `CodingKeys` cases that mirror the
+    # daemon's snake_case JSON, so they are not free to be renamed --
+    # `host.json` would stop decoding. Adding one is a deliberate act, which
+    # is why this list is explicit rather than a blanket snake_case allowance.
+    - bundle_id
+    - delay_ms
+    - double_tap_switch
+    - double_tap_window
+    - hold_twist_l
+    - hold_twist_r
+    - layer_hotkey
+    - layer_hotkey_back
+    - scroll_lines_per_detent
+    - twist_l
+    - twist_r

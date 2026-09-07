@@ -1,0 +1,12 @@
+# Swift-half gate config. Read by gates/swift_gate.sh, which cd's here.
+GOH_SWIFT_MODE=spm
+GOH_SWIFT_LINT_BASELINE=.swiftlint-baseline.json
+
+# Coverage floor. READ THIS BEFORE TRUSTING THE NUMBER: 4% is the honest
+# measured figure, not a quality bar. The package is ~6,900 lines of which
+# ~6,000 are SwiftUI view bodies that no unit test executes; Models.swift,
+# the part with testable logic, sits at 64%. So this floor is a ratchet
+# against DELETING tests, and nothing more. Raising it means either testing
+# more logic or splitting the views into their own target so the floor can
+# apply where coverage means something -- see PLAN.md.
+GOH_SWIFT_COV_MIN=4

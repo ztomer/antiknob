@@ -3,6 +3,22 @@
 
 import SwiftUI
 
+/// One selectable LED mode. A named type rather than a 4-tuple: every use
+/// site read positionally before, and `id`/`name`/`desc` are all Strings.
+struct LedMode: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let desc: String
+    let icon: String
+}
+
+/// One swatch in the colour row. `hex` is the wire name sent to `set_led`.
+struct LedColorPreset: Hashable {
+    let name: String
+    let hex: String
+    let color: Color
+}
+
 struct LedSection: View {
     @ObservedObject var store: ConfigStore
 
@@ -12,27 +28,32 @@ struct LedSection: View {
     @State private var customColor: Color = .white
     @State private var liveApply: Bool = true
 
-    let modes: [(id: String, name: String, desc: String, icon: String)] = [
-        ("backlight", "Backlight", "Steady solid illumination", "lightbulb.fill"),
-        ("shock", "Shock (Breathe)", "Gentle pulsing breath", "waveform.path"),
-        ("shock2", "Shock 2 (Rapid)", "Faster pulse cycle", "waveform.path.ecg"),
-        ("press", "Press (Reactive)", "Lights up on knob press", "hand.tap.fill"),
-        ("off", "Off", "Disable LEDs to conserve power", "power"),
+    let modes: [LedMode] = [
+        LedMode(id: "backlight", name: "Backlight",
+                desc: "Steady solid illumination", icon: "lightbulb.fill"),
+        LedMode(id: "shock", name: "Shock (Breathe)",
+                desc: "Gentle pulsing breath", icon: "waveform.path"),
+        LedMode(id: "shock2", name: "Shock 2 (Rapid)",
+                desc: "Faster pulse cycle", icon: "waveform.path.ecg"),
+        LedMode(id: "press", name: "Press (Reactive)",
+                desc: "Lights up on knob press", icon: "hand.tap.fill"),
+        LedMode(id: "off", name: "Off",
+                desc: "Disable LEDs to conserve power", icon: "power")
     ]
 
-    let colorPresets: [(name: String, hex: String, color: Color)] = [
-        ("White", "white", .white),
-        ("Red", "red", .red),
-        ("Orange", "orange", .orange),
-        ("Yellow", "yellow", .yellow),
-        ("Green", "green", .green),
-        ("Cyan", "cyan", Color(red: 0, green: 0.9, blue: 0.9)),
-        ("Blue", "blue", .blue),
-        ("Purple", "purple", .purple),
+    let colorPresets: [LedColorPreset] = [
+        LedColorPreset(name: "White", hex: "white", color: .white),
+        LedColorPreset(name: "Red", hex: "red", color: .red),
+        LedColorPreset(name: "Orange", hex: "orange", color: .orange),
+        LedColorPreset(name: "Yellow", hex: "yellow", color: .yellow),
+        LedColorPreset(name: "Green", hex: "green", color: .green),
+        LedColorPreset(name: "Cyan", hex: "cyan", color: Color(red: 0, green: 0.9, blue: 0.9)),
+        LedColorPreset(name: "Blue", hex: "blue", color: .blue),
+        LedColorPreset(name: "Purple", hex: "purple", color: .purple)
     ]
 
     @State private var beadColors: [Color] = Array(repeating: .white, count: 16)
-    @State private var hardwareReadMode: String? = nil
+    @State private var hardwareReadMode: String?
     @State private var isReadingMode: Bool = false
 
     var body: some View {
@@ -223,7 +244,10 @@ struct LedSection: View {
                 }
             }
         } footer: {
-            Text("Anticater VK01 supports steady backlight, breath cycles, and press-reactive lighting per hardware layer.")
+            Text("""
+                Anticater VK01 supports steady backlight, breath cycles, and \
+                press-reactive lighting per hardware layer.
+                """)
         }
     }
 
@@ -260,7 +284,7 @@ struct LedSection: View {
         store.getHardwareLedMode(layer: selectedLayer) { mode in
             isReadingMode = false
             if let m = mode {
-                let name = (m == 0 ? "Off" : (m == 1 ? "Backlight" : (m == 2 ? "Shock (Breathe)" : (m == 3 ? "Shock2" : "Press"))))
+                let name = ledModeNames[Int(m)] ?? "Unknown"
                 hardwareReadMode = "Mode \(m): \(name)"
             } else {
                 hardwareReadMode = "Could not read mode"

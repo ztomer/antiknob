@@ -16,22 +16,36 @@ file carries only what is still open. `git log --oneline` and
 * All hidapi calls are marshalled onto one dedicated thread by
   `device::with_hid` / `device::with_device`; nothing outside `src/device/`
   may reach the `hidapi` crate. See `tests/hid_thread_affinity.rs` for why.
+* The Swift app is an SPM package (`ui/Package.swift`): `AntiknobUI` holds the
+  views, models and store; `Antiknob` holds only `@main`, because `@main`
+  cannot live in a library. Tests reach the library with `@testable import`,
+  so nothing needs a `public` annotation it would not otherwise have.
 
 ## Open
 
-### 1. The Swift half of the repo has no gates at all
+### 1. Swift coverage is a ratchet, not a bar
 
-`tools/gate.sh --full` covers Rust thoroughly -- fmt, clippy, manifest lints,
-no-`#[allow]`, tests, `cargo audit` -- and covers the ~2,900 lines under `ui/`
-with nothing. No lint, no tests, no coverage floor, no file-length enforcement
-beyond the structural gate. The suite still prints all-green, because it never
-claimed to cover that half.
+The Swift half is now under the house gate (`ui/` is an SPM package; see
+`ui/.gatesrc`), but the coverage floor it enforces is 4%, which is the honest
+measured figure rather than a quality bar. Of ~6,900 lines, ~6,000 are SwiftUI
+view bodies no unit test executes; `Models.swift` -- the part with testable
+logic -- sits at 64% and everything else at 0%.
 
-The blocker is that `ui/` is built by a hand-rolled `swiftc` invocation in
-`ui/build.sh` with no SPM package or Xcode project, and `swift_gate.sh` needs
-one (`GOH_SWIFT_MODE=xcode|spm`). Wrapping `ui/` in a `Package.swift` with a
-test target is the real task; wiring the gate is the easy half that follows.
-Until then, every Swift regression is caught by eye or not at all.
+Two ways to make the number mean something, in order of value:
+
+* Split the package into a logic target and a views target so the floor can
+  apply where coverage is meaningful. `StatusPresentation` and `ledModeNames`
+  were already pulled out of `ConfigStore` for exactly this reason and are the
+  start of that target.
+* Put a seam under `SocketClient` (247 lines, 0%) so its JSON-RPC framing and
+  error paths can be tested without a live daemon.
+
+`ui/.swiftlint-baseline.json` is the companion ratchet: 12 entries, all
+`cyclomatic_complexity` / `function_body_length` / `type_body_length` on view
+bodies and the two exhaustive `Action` coding switches. It is shrink-only --
+new violations fail, and a listed one that grows fails too, because the match
+key includes the count in the reason string. Delete entries as the bodies get
+split; do not re-record it to make a failure go away.
 
 ### 2. `rdev` drags in a crate a future rustc will reject
 

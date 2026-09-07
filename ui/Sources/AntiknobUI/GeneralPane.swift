@@ -90,7 +90,10 @@ struct GeneralPane: View {
                 get: { store.startOnLogin },
                 set: { store.toggleStartOnLogin(enabled: $0) }
             ))
-            Text("Automatically launches the Antiknob daemon at user login to maintain knob gestures, layer switching, and lighting control.")
+            Text("""
+                Automatically launches the Antiknob daemon at user login to maintain \
+                knob gestures, layer switching, and lighting control.
+                """)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

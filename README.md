@@ -135,18 +135,36 @@ antiknob-daemon --uninstall-login-item
 cargo test --all-targets --all-features
 ```
 
-Quality gates -- structural checks, `fmt`, `clippy -D warnings`, cargo manifest
-lints, the no-`#[allow]` rule, **the test suite**, and `cargo audit`:
+The Swift half is an SPM package and has its own suite:
+
+```bash
+swift test --package-path ui
+```
+
+Quality gates cover both halves:
 
 ```bash
 ./tools/gate.sh --full
 ```
 
+| Layer | What it runs |
+| --- | --- |
+| structural | emoji, conflict markers, file length, shell lint, secrets |
+| rust | `fmt`, `clippy -D warnings`, cargo manifest lints, no-`#[allow]` |
+| swift | `swiftlint --strict` against a shrink-only baseline, a **cold** warnings-as-errors build, `swift test`, coverage floor |
+| repo | the Rust test suite, `cargo audit` |
+
 `--staged` is the fast pre-commit scope; `--full` is the pre-push scope and is
-what CI runs. The dependency-audit ignore list lives in
-[.cargo/audit.toml](.cargo/audit.toml) as a ratchet: every entry states why it
-may stand, and an entry whose advisory stops firing is deleted rather than left
-to rot.
+what CI runs.
+
+Two ratchets keep the debt shrink-only. [.cargo/audit.toml](.cargo/audit.toml)
+holds the dependency-advisory ignores -- every entry states why it may stand,
+and one whose advisory stops firing is deleted rather than left to rot.
+[ui/.swiftlint-baseline.json](ui/.swiftlint-baseline.json) holds today's lint
+debt: a new violation fails, and so does a listed one that grows, because the
+match key includes the measured count. Neither is re-recorded to silence a
+failure. Swift gate config lives in [ui/.gatesrc](ui/.gatesrc), which explains
+what its 4% coverage floor does and does not mean.
 
 ---
 
@@ -160,6 +178,8 @@ to rot.
 | [FINDINGS.md](FINDINGS.md) | Reverse-engineering record for `/Applications/ANTICATER.app` and the VK01 wire protocol. |
 | [BATTERY_RESEARCH.md](BATTERY_RESEARCH.md) | Research notes on radio-mode drain and power reporting. No code depends on it. |
 | [.cargo/audit.toml](.cargo/audit.toml) | `cargo audit` deny list and the advisory-ignore ratchet. |
+| [ui/Package.swift](ui/Package.swift) | The SwiftUI app as an SPM package, so the house Swift gate can reach it. |
+| [ui/.swiftlint.yml](ui/.swiftlint.yml) | Lint rules, with the reason for each deviation from the defaults. |
 
 ---
 

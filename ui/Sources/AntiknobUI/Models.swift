@@ -7,11 +7,11 @@ import Foundation
 // MARK: - Enums & Gestures
 
 enum Gesture: String, CaseIterable, Identifiable, Hashable, Sendable {
-    case twistL = "twistL"
-    case twistR = "twistR"
-    case holdTwistL = "holdTwistL"
-    case holdTwistR = "holdTwistR"
-    case press = "press"
+    case twistL
+    case twistR
+    case holdTwistL
+    case holdTwistR
+    case press
 
     var id: String { rawValue }
 }
@@ -21,20 +21,20 @@ let gestureTitles: [Gesture: String] = [
     .twistR: "Twist Right",
     .holdTwistL: "Hold + Twist Left",
     .holdTwistR: "Hold + Twist Right",
-    .press: "Press",
+    .press: "Press"
 ]
 
 enum AuxKey: String, Codable, CaseIterable, Hashable, Sendable {
-    case volumeUp = "volumeUp"
-    case volumeDown = "volumeDown"
-    case mute = "mute"
-    case playPause = "playPause"
-    case next = "next"
-    case previous = "previous"
-    case brightnessUp = "brightnessUp"
-    case brightnessDown = "brightnessDown"
-    case brightnessUpExternal = "brightnessUpExternal"
-    case brightnessDownExternal = "brightnessDownExternal"
+    case volumeUp
+    case volumeDown
+    case mute
+    case playPause
+    case next
+    case previous
+    case brightnessUp
+    case brightnessDown
+    case brightnessUpExternal
+    case brightnessDownExternal
 
     var unified: AuxKey {
         switch self {
@@ -53,16 +53,68 @@ let auxTitles: [AuxKey: String] = [
     .next: "Next Track",
     .previous: "Previous Track",
     .brightnessUp: "Brightness Up",
-    .brightnessDown: "Brightness Down",
+    .brightnessDown: "Brightness Down"
 ]
 
 enum MouseButton: String, Codable, CaseIterable, Hashable, Sendable {
-    case left = "left"
-    case right = "right"
-    case middle = "middle"
+    case left
+    case right
+    case middle
 }
 
 // MARK: - Key Chords & Sequences
+
+/// Hardware LED modes, as the firmware reports them back through `get_led`.
+///
+/// Mirrors `led_mode_name` on the Rust side; the Inspector prints the number
+/// beside the name so a drift between the two is visible rather than silent.
+/// The previous inline ternary chain fell through to "Press" for anything
+/// above 3, which mislabelled mode 5 (custom).
+let ledModeNames: [Int: String] = [
+    0: "Off",
+    1: "Backlight",
+    2: "Shock (Breathe)",
+    3: "Shock 2 (Rapid)",
+    4: "Press (Reactive)",
+    5: "Custom"
+]
+
+/// The status bar's read of the device, as a pure value.
+///
+/// Transport and power render as SF Symbol glyphs with the words in the
+/// tooltip, so glyph and tooltip must come from one place or they drift.
+/// `powerIcon` is derived from the daemon's own `powerDescription` for
+/// exactly that reason -- it cannot disagree with the text beside it.
+struct StatusPresentation: Equatable, Sendable {
+    let transport: String
+    let powerDescription: String
+    let connected: Bool
+
+    var transportDisplay: String {
+        switch transport {
+        case "wireless_2_4g": return "2.4GHz Wireless"
+        case "bluetooth": return "Bluetooth Wireless"
+        case "usb": return "USB (Wired)"
+        default: return "Disconnected"
+        }
+    }
+
+    var transportIcon: String {
+        switch transport {
+        case "wireless_2_4g": return "antenna.radiowaves.left.and.right"
+        case "bluetooth": return "wave.3.right"
+        case "usb": return "cable.connector"
+        default: return "circle.slash"
+        }
+    }
+
+    var powerIcon: String {
+        guard connected else { return "powerplug.slash" }
+        return powerDescription.localizedCaseInsensitiveContains("battery")
+            ? "battery.100"
+            : "powerplug.fill"
+    }
+}
 
 struct KeyChordSpec: Codable, Equatable, Hashable, Sendable {
     var key: UInt16
@@ -88,8 +140,8 @@ struct SeqStep: Codable, Equatable, Hashable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case key, mods, label
-        case delayMs = "delayMs"
-        case delay_ms = "delay_ms"
+        case delayMs
+        case delay_ms
     }
 
     init(key: UInt16? = nil, mods: [String]? = nil, label: String? = nil, delayMs: Int? = nil) {
@@ -396,12 +448,12 @@ let specialKeyNames: [UInt16: String] = [
     123: "←", 124: "→", 125: "↓", 126: "↑",
     122: "F1", 120: "F2", 99: "F3", 118: "F4", 96: "F5", 97: "F6", 98: "F7",
     100: "F8", 101: "F9", 109: "F10", 103: "F11", 111: "F12", 105: "F13",
-    107: "F14", 113: "F15", 106: "F16", 64: "F17", 79: "F18", 80: "F19", 90: "F20",
+    107: "F14", 113: "F15", 106: "F16", 64: "F17", 79: "F18", 80: "F19", 90: "F20"
 ]
 
 let fallbackKeyNames: [UInt16: String] = [
     29: "0", 18: "1", 19: "2", 20: "3", 21: "4",
-    23: "5", 22: "6", 26: "7", 28: "8", 25: "9",
+    23: "5", 22: "6", 26: "7", 28: "8", 25: "9"
 ]
 
 func keyLabel(_ e: NSEvent) -> String {

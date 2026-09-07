@@ -55,30 +55,18 @@ if [[ -f "${ROOT_DIR}/assets/ak12-1024.png" ]]; then
 fi
 
 echo "[ ==> ] Compiling Swift sources into Antiknob.app (v${VERSION} build ${BUILD})..."
-SWIFT_FILES=(
-    "${SCRIPT_DIR}/Models.swift"
-    "${SCRIPT_DIR}/SocketClient.swift"
-    "${SCRIPT_DIR}/ConfigStore.swift"
-    "${SCRIPT_DIR}/KnobHeader.swift"
-    "${SCRIPT_DIR}/ChordRecorder.swift"
-    "${SCRIPT_DIR}/SequenceEditor.swift"
-    "${SCRIPT_DIR}/LayerDetail.swift"
-    "${SCRIPT_DIR}/GeneralPane.swift"
-    "${SCRIPT_DIR}/LedSection.swift"
-    "${SCRIPT_DIR}/HardwarePane.swift"
-    "${SCRIPT_DIR}/InspectorPane.swift"
-    "${SCRIPT_DIR}/ServicesPane.swift"
-    "${SCRIPT_DIR}/SettingsRoot.swift"
-    "${SCRIPT_DIR}/App.swift"
-)
 
-swiftc -O -parse-as-library \
-    -swift-version 6 \
-    -strict-concurrency=complete \
-    -target arm64-apple-macosx26.0 \
-    -warnings-as-errors \
-    "${SWIFT_FILES[@]}" \
-    -o "${MACOS_DIR}/Antiknob"
+# Built through SwiftPM rather than a hand-rolled swiftc line, so this script
+# and `./tools/gate.sh --full` compile exactly the same thing. The package
+# pins the Swift 6 language mode and the macOS 26 platform (see ui/Package.swift);
+# only the flags SwiftPM has no manifest setting for are passed here.
+swift build --package-path "${SCRIPT_DIR}" -c release \
+    --product Antiknob \
+    -Xswiftc -warnings-as-errors
+
+BIN_PATH="$(swift build --package-path "${SCRIPT_DIR}" -c release \
+    --product Antiknob --show-bin-path)"
+install -m 755 "${BIN_PATH}/Antiknob" "${MACOS_DIR}/Antiknob"
 
 echo "[ ==> ] Codesigning Antiknob.app..."
 IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple Development/ && !/CSSMERR/ {print $2; exit}' || true)

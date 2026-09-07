@@ -21,8 +21,8 @@ private struct SlotDumpBox: @unchecked Sendable {
 }
 
 @MainActor
-final class ConfigStore: ObservableObject {
-    static let shared = ConfigStore()
+public final class ConfigStore: ObservableObject {
+    public static let shared = ConfigStore()
 
     @Published var cfg: Config = Config.defaultPOC {
         didSet {
@@ -40,40 +40,30 @@ final class ConfigStore: ObservableObject {
     @Published var powerDescription: String = "Wired (USB Bus Powered)"
     @Published var devices: [[String: Any]] = []
     @Published var tapActive: Bool = false
-    @Published var tapError: String? = nil
+    @Published var tapError: String?
     @Published var lastSaved: Date?
     @Published var activeLayerIdx: Int = 0
     @Published var statusMessage: String?
     @Published var isBindingSlots: Bool = false
     @Published var startOnLogin: Bool = false
 
-    var transportDisplay: String {
-        switch transport {
-        case "wireless_2_4g": return "2.4GHz Wireless"
-        case "bluetooth": return "Bluetooth Wireless"
-        case "usb": return "USB (Wired)"
-        default: return "Disconnected"
-        }
+    /// Everything the status bar renders, as a pure value. Lives in
+    /// `StatusPresentation` rather than here so it can be tested without
+    /// standing up a store -- `init()` loads config and starts a poll timer.
+    var status: StatusPresentation {
+        StatusPresentation(
+            transport: transport,
+            powerDescription: powerDescription,
+            connected: hardwareConnected
+        )
     }
 
-    var transportIcon: String {
-        switch transport {
-        case "wireless_2_4g": return "antenna.radiowaves.left.and.right"
-        case "bluetooth": return "wave.3.right"
-        case "usb": return "cable.connector"
-        default: return "circle.slash"
-        }
-    }
+    var transportDisplay: String { status.transportDisplay }
+    var transportIcon: String { status.transportIcon }
+    var powerIcon: String { status.powerIcon }
 
-    /// Power source as a glyph. Derived from the same `powerDescription` the
-    /// daemon reports, so the icon can never disagree with the tooltip.
-    var powerIcon: String {
-        guard hardwareConnected else { return "powerplug.slash" }
-        return powerDescription.localizedCaseInsensitiveContains("battery")
-            ? "battery.100"
-            : "powerplug.fill"
-    }
-
+    /// Colour stays here: `Color` is SwiftUI, and `StatusPresentation` is
+    /// deliberately free of it so the mapping tests need no view stack.
     var transportColor: Color {
         switch transport {
         case "wireless_2_4g": return .cyan
@@ -144,7 +134,7 @@ final class ConfigStore: ObservableObject {
             var detectedTransport = "disconnected"
             var detectedDevices: [[String: Any]] = []
             var tapIsActive = false
-            var tapErrStr: String? = nil
+            var tapErrStr: String?
             var powerDesc = "Wired (USB Bus Powered)"
 
             if connected {
@@ -347,7 +337,7 @@ final class ConfigStore: ObservableObject {
         }
     }
 
-    func reloadFromSource() {
+    public func reloadFromSource() {
         syncing = true
         defer { syncing = false }
         if let config = try? client.getConfig() {
@@ -376,7 +366,7 @@ final class ConfigStore: ObservableObject {
         }
     }
 
-    func bindSlots(layer: Int? = nil) {
+    public func bindSlots(layer: Int? = nil) {
         isBindingSlots = true
         Task.detached(priority: .userInitiated) {
             do {
@@ -394,7 +384,11 @@ final class ConfigStore: ObservableObject {
         }
     }
 
-    func uploadKeymap(yaml: String, layer: Int? = nil, completion: @escaping @MainActor @Sendable (Result<String, Error>) -> Void) {
+    func uploadKeymap(
+        yaml: String,
+        layer: Int? = nil,
+        completion: @escaping @MainActor @Sendable (Result<String, Error>) -> Void
+    ) {
         Task.detached(priority: .userInitiated) {
             do {
                 let msg = try SocketClient.shared.uploadKeymap(yaml: yaml, layer: layer)
@@ -411,7 +405,11 @@ final class ConfigStore: ObservableObject {
         }
     }
 
-    func readSlots(group: UInt8? = nil, counters: [UInt8]? = nil, completion: @escaping @MainActor @Sendable (Result<[[String: Any]], Error>) -> Void) {
+    func readSlots(
+        group: UInt8? = nil,
+        counters: [UInt8]? = nil,
+        completion: @escaping @MainActor @Sendable (Result<[[String: Any]], Error>) -> Void
+    ) {
         Task.detached(priority: .userInitiated) {
             do {
                 let res = try SocketClient.shared.readSlots(group: group, counters: counters)

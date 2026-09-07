@@ -1,12 +1,16 @@
-// App.swift — Main application entry point for Antiknob.
-// Configures the native macOS window, menu items, MenuBarExtra (AK12), and app lifecycle.
+// MenuBar.swift — App lifecycle delegate and the MenuBarExtra (AK12) content.
+//
+// Lives in the library rather than beside `@main` so it is reachable from
+// `@testable import AntiknobUI`; the executable target holds the scene only.
 
 import AppKit
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_ notification: Notification) {
+public final class AppDelegate: NSObject, NSApplicationDelegate {
+    public override init() { super.init() }
+
+    public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
@@ -21,14 +25,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+    public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
 }
 
 // MARK: - Menu Bar Icon & Menu
 
-struct MenuBarIcon: View {
+public struct MenuBarIcon: View {
+    public init() {}
+
     private var iconImage: NSImage {
         if let url = Bundle.main.url(forResource: "ak12-tray@2x", withExtension: "png"),
            let img = NSImage(contentsOf: url) {
@@ -50,16 +56,18 @@ struct MenuBarIcon: View {
         return fallback
     }
 
-    var body: some View {
+    public var body: some View {
         Image(nsImage: iconImage)
     }
 }
 
-struct MenuBarView: View {
+public struct MenuBarView: View {
+    public init() {}
+
     @ObservedObject var store = ConfigStore.shared
     @Environment(\.openWindow) private var openWindow
 
-    var body: some View {
+    public var body: some View {
         Text("Antiknob")
             .font(.headline)
 
@@ -90,7 +98,10 @@ struct MenuBarView: View {
 
         Button("Settings…") {
             NSApp.activate(ignoringOtherApps: true)
-            if let window = NSApp.windows.first(where: { $0.title == "Antiknob Settings" || $0.identifier?.rawValue == "main" }) {
+            let isSettings: (NSWindow) -> Bool = { window in
+                window.title == "Antiknob Settings" || window.identifier?.rawValue == "main"
+            }
+            if let window = NSApp.windows.first(where: isSettings) {
                 window.makeKeyAndOrderFront(nil)
             } else {
                 openWindow(id: "main")
@@ -109,40 +120,5 @@ struct MenuBarView: View {
             NSApp.terminate(nil)
         }
         .keyboardShortcut("q", modifiers: .command)
-    }
-}
-
-// MARK: - App Scene
-
-@main
-struct AntiknobApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-
-    var body: some Scene {
-        Window("Antiknob Settings", id: "main") {
-            SettingsRoot()
-        }
-        .windowResizability(.contentMinSize)
-        .commands {
-            CommandGroup(after: .appInfo) {
-                Button("Reload Configuration") {
-                    ConfigStore.shared.reloadFromSource()
-                }
-                .keyboardShortcut("r", modifiers: .command)
-
-                Divider()
-
-                Button("Bind Slots to Firmware") {
-                    ConfigStore.shared.bindSlots()
-                }
-            }
-        }
-
-        MenuBarExtra {
-            MenuBarView()
-        } label: {
-            MenuBarIcon()
-        }
-        .menuBarExtraStyle(.menu)
     }
 }

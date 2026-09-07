@@ -78,14 +78,14 @@ let daemonTools: [ApiToolInfo] = [
         name: "send_raw",
         description: "Send raw 64-byte HID report payload to device.",
         params: ["bytes: [string]"]
-    ),
+    )
 ]
 
 struct ServicesPane: View {
     @ObservedObject var store: ConfigStore
     @State private var copiedClaude: Bool = false
     @State private var copiedAntigravity: Bool = false
-    @State private var copiedToolId: String? = nil
+    @State private var copiedToolId: String?
     @State private var capabilitiesExpanded: Bool = false
 
     var body: some View {
@@ -159,8 +159,11 @@ struct ServicesPane: View {
 
             if !store.tapActive {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("macOS requires Accessibility and Input Monitoring permissions to swallow and translate slot chords. "
-                       + "Hardware USB flashing and LED control remain fully functional without this permission.")
+                    Text("""
+                        macOS requires Accessibility and Input Monitoring permissions to \
+                        swallow and translate slot chords. Hardware USB flashing and LED \
+                        control remain fully functional without this permission.
+                        """)
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -221,7 +224,10 @@ struct ServicesPane: View {
         } header: {
             Text("Model Context Protocol (MCP) Server")
         } footer: {
-            Text("Run antiknob-daemon with --mcp to connect LLM assistants directly to the knob hardware and host configuration.")
+            Text("""
+                Run antiknob-daemon with --mcp to connect LLM assistants directly to the \
+                knob hardware and host configuration.
+                """)
         }
     }
 

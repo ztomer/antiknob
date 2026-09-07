@@ -185,7 +185,14 @@ the previous bindings afterwards and says so.
 
 ---
 
-### 6.2 The device's active layer — TODO
+### 6.2 The device's active layer — DONE (bounded negative)
+
+> Found: nothing reports it. 512 read-only queries (`FA <cmd> 00 00` and
+> `FA <cmd> 00 01`, every `cmd`) return exactly two answering commands: the
+> LED mode read and the slot table. The sweep is calibrated -- `FA B0`
+> answers, so a positive IS detectable -- and its bounds are recorded in
+> `PLAN.md` so nobody repeats it. Going further needs the vendor app under
+> Rosetta with a USB capture.
 
 **Problem.** Unsolved, and it gates the roadmap item: nothing found reads or
 sets which device layer the firmware is on, and this knob has no spare button
@@ -206,7 +213,10 @@ repeats it blindly.
 
 ## Phase 7 — hand back
 
-### 7.1 Instructions for the live checks — TODO
+### 7.1 Instructions for the live checks — DONE
+
+> `LIVE_CHECKS.md`: four checks, each one command with expected output and
+> what the answer decides, plus a restore section for an interrupted probe.
 
 One file listing every parked check as a command with its expected result,
 ordered so a single session at the knob clears them all.

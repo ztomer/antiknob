@@ -136,11 +136,36 @@ Open questions before this is buildable:
   -- which needs a way to switch device layers on a knob with no spare
   button -- or the whole device goes host-translate and Media/Navigate are
   re-implemented host-side, losing their no-daemon property.
-* Layer switching on this VK01 is unsolved: `double_tap_switch` switches the
-  HOST layer, which is a different thing from the device layer the firmware
-  is on. Nothing found so far reads or sets the device's active layer.
+* Layer switching on this VK01 is unsolved, and now bounded. The HOST layer
+  `double_tap_switch` moves is a different thing from the device layer the
+  firmware is on. A read-only sweep of 512 queries -- `FA <cmd> 00 00` and
+  `FA <cmd> 00 01` for every `cmd` -- found exactly two that answer:
 
-Neither is a blocker for design work; both need answering before flashing.
+      FA B0 <layer>          the layer's LED mode
+      FA <width> 00 <ctr>    the slot table (see item 2)
+
+  Nothing reports the active device layer. The sweep is calibrated rather
+  than merely negative: `FA B0` answers, so an answering command IS
+  detectable by it. It does NOT cover a query whose argument lives outside
+  bytes 3-4, or one outside the `FA` prefix. Going further means capturing
+  the vendor app under Rosetta over USB -- a larger job than anything else
+  here.
+
+  The practical consequence: a knob with no spare button cannot switch device
+  layers, so the virtual layer either lives on whichever layer the device is
+  already on, or Media/Navigate move host-side and lose their no-daemon
+  property. That is a design decision, not a discovery.
+
+Progress 2026-09-07: the host side is built and covered. `virtual_layer`
+resolves a variant from the frontmost app or an explicit pin,
+`host::frontmost` is the OS seam, and `get_virtual_layer` /
+`set_virtual_variant` expose it over the socket and MCP. LED identity is set
+for Media (steady red) and Navigate (steady green); the third is unset on
+purpose, because this firmware has no breathing mode among off / backlight /
+shock / shock2 / press, and `led-probe` exists to find out whether the
+unmapped mode 5 is one. `probe-gestures` makes hold+twist a one-command
+question -- slots 7 and 8 exist and carry only a factory placeholder, so the
+old "needs the vendor app" note was wrong.
 
 ### 4. Bluetooth transport is inferred, and cannot be confirmed here
 

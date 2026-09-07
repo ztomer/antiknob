@@ -12,11 +12,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Task { @MainActor in
             if let window = NSApp.windows.first {
-                window.title = "Antiknob Settings"
-                window.titleVisibility = .hidden
-                window.titlebarAppearsTransparent = true
-                window.styleMask.insert(.fullSizeContentView)
-                window.isMovableByWindowBackground = true
                 if let zoom = window.standardWindowButton(.zoomButton) {
                     zoom.isHidden = true
                     zoom.isEnabled = false

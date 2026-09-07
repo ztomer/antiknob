@@ -9,9 +9,9 @@
 //! the UI states this explicitly instead of flashing blind packets.
 
 use crate::device::send_report;
+use crate::device::HidDevice;
 use crate::protocol::{key_id_for_knob, Action, KnobEvent};
 use anyhow::Result;
-use hidapi::HidDevice;
 
 /// Device layers that carry the slot bindings (3-layer firmware model).
 pub const BIND_LAYERS: [u8; 3] = [0, 1, 2];

@@ -1,5 +1,7 @@
-use crate::config::KnobConfig;
-use crate::gui::state::GuiState;
+//! The six built-in workflow presets.
+//!
+//! Consumed by `host::migrate` to seed a daemon host config, and pinned by
+//! `tests/unit_tests.rs` (every action string must parse).
 
 #[derive(Debug, Clone)]
 pub struct Preset {
@@ -103,40 +105,3 @@ pub const ALL_PRESETS: &[Preset] = &[
         led_color: "yellow",
     },
 ];
-
-pub fn apply_preset(preset: &Preset, state: &mut GuiState) {
-    if state.active_layer >= state.config.layers.len() {
-        return;
-    }
-    let layer = &mut state.config.layers[state.active_layer];
-
-    if layer.knobs.is_empty() {
-        layer.knobs.push(KnobConfig {
-            ccw: None,
-            press: None,
-            cw: None,
-        });
-    }
-
-    layer.knobs[0].ccw = Some(preset.ccw.to_string());
-    layer.knobs[0].press = Some(preset.press.to_string());
-    layer.knobs[0].cw = Some(preset.cw.to_string());
-
-    if layer.buttons.is_empty() {
-        layer.buttons.push(vec![preset.button.to_string()]);
-    } else if layer.buttons[0].is_empty() {
-        layer.buttons[0].push(preset.button.to_string());
-    } else {
-        layer.buttons[0][0] = preset.button.to_string();
-    }
-
-    state.led_mode = preset.led_mode;
-    state.led_color = preset.led_color.to_string();
-    layer.led = Some(format!("mode{} {}", preset.led_mode, preset.led_color));
-
-    state.status_message = format!(
-        "Applied '{}' preset to Layer {}",
-        preset.name, state.active_layer
-    );
-    state.status_is_ok = true;
-}

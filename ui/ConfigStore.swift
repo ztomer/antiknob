@@ -60,18 +60,18 @@ final class ConfigStore: ObservableObject {
         switch transport {
         case "wireless_2_4g": return "antenna.radiowaves.left.and.right"
         case "bluetooth": return "wave.3.right"
-        case "usb": return "bolt.fill"
+        case "usb": return "cable.connector"
         default: return "circle.slash"
         }
     }
 
-    var transportBadgeLabel: String {
-        switch transport {
-        case "wireless_2_4g": return "2.4G"
-        case "bluetooth": return "BT"
-        case "usb": return "USB"
-        default: return "Offline"
-        }
+    /// Power source as a glyph. Derived from the same `powerDescription` the
+    /// daemon reports, so the icon can never disagree with the tooltip.
+    var powerIcon: String {
+        guard hardwareConnected else { return "powerplug.slash" }
+        return powerDescription.localizedCaseInsensitiveContains("battery")
+            ? "battery.100"
+            : "powerplug.fill"
     }
 
     var transportColor: Color {

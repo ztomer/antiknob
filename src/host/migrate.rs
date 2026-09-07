@@ -11,7 +11,7 @@
 //! then translate to CG keycodes via the explicit table below.
 
 use super::{HostAction, HostConfig, HostLayer, MouseButton};
-use crate::gui::presets::{Preset, ALL_PRESETS};
+use crate::presets::{Preset, ALL_PRESETS};
 use crate::protocol::Action;
 
 /// Note printed by every migration run: press+twist never worked on the

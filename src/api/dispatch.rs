@@ -65,11 +65,9 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
             let mut led_mode = None;
             let mut led_mode_str = None;
             if connected {
-                if let Ok(dev) = device::open_device() {
-                    if let Ok(m) = device::read_led_mode(&dev, 0) {
-                        led_mode = Some(m);
-                        led_mode_str = Some(led_mode_name(m).to_string());
-                    }
+                if let Ok(m) = device::with_device(|dev| device::read_led_mode(dev, 0)) {
+                    led_mode = Some(m);
+                    led_mode_str = Some(led_mode_name(m).to_string());
                 }
             }
 
@@ -165,9 +163,11 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                 _ => mode,
             };
             let packet = protocol::build_led_packet(layer, &spec)?;
-            let dev = device::open_device().context("Cannot open Anticater USB device")?;
-            device::send_report(&dev, &packet)?;
-            device::send_commit(&dev)?;
+            device::with_device(move |dev| {
+                device::send_report(dev, &packet)?;
+                device::send_commit(dev)
+            })
+            .context("Cannot drive the Anticater USB device")?;
             Ok(json!({
                 "ok": true,
                 "layer": layer,
@@ -176,8 +176,8 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
         }
 
         Command::GetLed { layer } => {
-            let dev = device::open_device().context("Cannot open Anticater USB device")?;
-            let mode = device::read_led_mode(&dev, layer)?;
+            let mode = device::with_device(move |dev| device::read_led_mode(dev, layer))
+                .context("Cannot read LED state from the Anticater USB device")?;
             Ok(json!({
                 "layer": layer,
                 "mode": mode,
@@ -187,8 +187,9 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
 
         Command::BindSlots { layers } => {
             let target_layers = layers.unwrap_or_else(|| BIND_LAYERS.to_vec());
-            let dev = device::open_device().context("Cannot open Anticater USB device")?;
-            let count = flash_slot_bindings(&dev, &target_layers)?;
+            let flash_layers = target_layers.clone();
+            let count = device::with_device(move |dev| flash_slot_bindings(dev, &flash_layers))
+                .context("Cannot flash slot bindings to the Anticater USB device")?;
             Ok(json!({
                 "ok": true,
                 "flashed_slots": count,
@@ -204,28 +205,29 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                 serde_yaml::from_str(&yaml).context("Invalid keymap YAML configuration")?;
             cfg.validate()?;
 
-            let dev = device::open_device().context("Cannot open Anticater USB device")?;
-            let target_layers: Vec<(usize, &crate::config::LayerConfig)> = match layer {
+            // Every packet is built up front so the HID job owns plain bytes
+            // and borrows nothing from `cfg`.
+            let selected: Vec<usize> = match layer {
                 Some(l) => {
                     let idx = l as usize;
                     if idx >= cfg.layers.len() {
                         anyhow::bail!("Layer {} out of range", idx);
                     }
-                    vec![(idx, &cfg.layers[idx])]
+                    vec![idx]
                 }
-                None => cfg.layers.iter().enumerate().collect(),
+                None => (0..cfg.layers.len()).collect(),
             };
 
-            for (layer_idx, lcfg) in target_layers {
+            let mut packets: Vec<Vec<u8>> = Vec::new();
+            for layer_idx in selected {
+                let lcfg = &cfg.layers[layer_idx];
                 let layer_u8 = layer_idx as u8;
                 let mut button_count = 0;
                 for row in &lcfg.buttons {
                     for key_str in row {
                         let action = Action::parse(key_str)?;
                         let key_id = protocol::key_id_for_button(button_count);
-                        let packet = action.to_packet(key_id, layer_u8);
-                        device::send_report(&dev, &packet)?;
-                        sleep(Duration::from_millis(10));
+                        packets.push(action.to_packet(key_id, layer_u8));
                         button_count += 1;
                     }
                 }
@@ -234,34 +236,34 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                         let action = Action::parse(ccw_str)?;
                         let key_id =
                             protocol::key_id_for_knob(knob_idx, protocol::KnobEvent::RotateCCW);
-                        let packet = action.to_packet(key_id, layer_u8);
-                        device::send_report(&dev, &packet)?;
-                        sleep(Duration::from_millis(10));
+                        packets.push(action.to_packet(key_id, layer_u8));
                     }
                     if let Some(ref press_str) = knob.press {
                         let action = Action::parse(press_str)?;
                         let key_id =
                             protocol::key_id_for_knob(knob_idx, protocol::KnobEvent::Press);
-                        let packet = action.to_packet(key_id, layer_u8);
-                        device::send_report(&dev, &packet)?;
-                        sleep(Duration::from_millis(10));
+                        packets.push(action.to_packet(key_id, layer_u8));
                     }
                     if let Some(ref cw_str) = knob.cw {
                         let action = Action::parse(cw_str)?;
                         let key_id =
                             protocol::key_id_for_knob(knob_idx, protocol::KnobEvent::RotateCW);
-                        let packet = action.to_packet(key_id, layer_u8);
-                        device::send_report(&dev, &packet)?;
-                        sleep(Duration::from_millis(10));
+                        packets.push(action.to_packet(key_id, layer_u8));
                     }
                 }
                 if let Some(ref led_mode) = lcfg.led {
-                    let packet = protocol::build_led_packet(layer_u8, led_mode)?;
-                    device::send_report(&dev, &packet)?;
-                    sleep(Duration::from_millis(10));
+                    packets.push(protocol::build_led_packet(layer_u8, led_mode)?);
                 }
             }
-            device::send_commit(&dev)?;
+
+            device::with_device(move |dev| {
+                for packet in &packets {
+                    device::send_report(dev, packet)?;
+                    sleep(Duration::from_millis(10));
+                }
+                device::send_commit(dev)
+            })
+            .context("Cannot flash the keymap to the Anticater USB device")?;
             Ok(json!({
                 "ok": true,
                 "message": "Keymap flashed to hardware successfully"
@@ -282,33 +284,36 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
             if ctrs.len() > 16 {
                 anyhow::bail!("Slot counters query exceeds limit of 16 entries");
             }
-            let dev = device::open_device().context("Cannot open Anticater USB device")?;
             let grp = group.unwrap_or(0x0F);
-            let mut results = Vec::new();
-
-            for c in ctrs {
-                match device::read_slot(&dev, grp, c) {
-                    Ok(bytes) => {
-                        let hex: Vec<String> = bytes.iter().map(|b| format!("{:02x}", b)).collect();
-                        results.push(json!({
-                            "group": grp,
-                            "counter": c,
-                            "length": bytes.len(),
-                            "hex": hex.join(" "),
-                            "ok": true
-                        }));
+            let results = device::with_device(move |dev| {
+                let mut results = Vec::new();
+                for c in ctrs {
+                    match device::read_slot(dev, grp, c) {
+                        Ok(bytes) => {
+                            let hex: Vec<String> =
+                                bytes.iter().map(|b| format!("{:02x}", b)).collect();
+                            results.push(json!({
+                                "group": grp,
+                                "counter": c,
+                                "length": bytes.len(),
+                                "hex": hex.join(" "),
+                                "ok": true
+                            }));
+                        }
+                        Err(e) => {
+                            results.push(json!({
+                                "group": grp,
+                                "counter": c,
+                                "error": e.to_string(),
+                                "ok": false
+                            }));
+                        }
                     }
-                    Err(e) => {
-                        results.push(json!({
-                            "group": grp,
-                            "counter": c,
-                            "error": e.to_string(),
-                            "ok": false
-                        }));
-                    }
+                    sleep(Duration::from_millis(30));
                 }
-                sleep(Duration::from_millis(30));
-            }
+                Ok(results)
+            })
+            .context("Cannot read slots from the Anticater USB device")?;
 
             Ok(json!({
                 "group": grp,
@@ -334,11 +339,12 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                 })
                 .collect();
             let payload = payload?;
-            let dev = device::open_device().context("Cannot open Anticater USB device")?;
-            device::send_report(&dev, &payload)?;
+            let sent = payload.len();
+            device::with_device(move |dev| device::send_report(dev, &payload))
+                .context("Cannot write to the Anticater USB device")?;
             Ok(json!({
                 "ok": true,
-                "bytes_sent": payload.len()
+                "bytes_sent": sent
             }))
         }
     }

@@ -1,0 +1,34 @@
+# cargo-audit configuration.
+#
+# The [output] block is what makes the gate BITE: cargo-audit exits 0 on
+# `unmaintained` / `unsound` findings by default, so without this deny list a
+# gate would pass over precisely the class it was added to police. `quiet` is
+# required alongside it or cargo-audit dies with a parse error.
+
+[output]
+quiet = true
+deny = ["warnings", "unmaintained", "unsound", "yanked"]
+
+[advisories]
+# RATCHET. Seeded 2026-09-07 with exactly the advisories firing that day, each
+# with the reason it may stand. An entry whose advisory stops firing must be
+# DELETED, not left to rot -- cargo-audit reports unused ignores, and a stale
+# entry is how an ignore list becomes decorative.
+#
+# All nine below are the GTK3 stack reached through tray-icon / muda
+# (`cargo tree -i gtk --target all`). GTK is a Linux-only dependency of those
+# crates: it is absent from the host-target tree entirely, and Antiknob builds
+# only for aarch64-apple-darwin (macOS 26+). None of this code is compiled,
+# linked, or shipped. They come off this list when tray-icon/muda move to
+# gtk4 upstream, not by our action.
+ignore = [
+    "RUSTSEC-2024-0413", # atk           unmaintained -- GTK3 bindings, Linux-only
+    "RUSTSEC-2024-0416", # atk-sys       unmaintained -- GTK3 bindings, Linux-only
+    "RUSTSEC-2024-0412", # gdk           unmaintained -- GTK3 bindings, Linux-only
+    "RUSTSEC-2024-0418", # gdk-sys       unmaintained -- GTK3 bindings, Linux-only
+    "RUSTSEC-2024-0415", # gtk           unmaintained -- GTK3 bindings, Linux-only
+    "RUSTSEC-2024-0420", # gtk-sys       unmaintained -- GTK3 bindings, Linux-only
+    "RUSTSEC-2024-0419", # gtk3-macros   unmaintained -- GTK3 bindings, Linux-only
+    "RUSTSEC-2024-0370", # proc-macro-error unmaintained -- via glib-macros, Linux-only
+    "RUSTSEC-2024-0429", # glib          unsound VariantStrIter -- Linux-only, unused
+]

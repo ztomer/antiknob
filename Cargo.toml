@@ -1,6 +1,6 @@
 [package]
 name = "antiknob"
-version = "0.3.0"
+version = "0.5.0"
 edition = "2021"
 authors = ["Tomer Zaidentein <ztomer@gmail.com>"]
 description = "Native macOS Apple Silicon configuration utility for the Anticater VK01 Knob"
@@ -24,17 +24,12 @@ tray-icon = "0.21"
 muda = "0.17"
 clap = { version = "4.5", features = ["derive"] }
 anyhow = "1.0"
-eframe = { version = "0.29", features = ["default_fonts"] }
-egui_extras = { version = "0.29", features = ["image"] }
+# Tray icon decoding for antiknob-daemon (src/bin/antiknob-daemon/tray.rs).
 image = { version = "0.25", default-features = false, features = ["png"] }
 
 [[bin]]
 name = "antiknob"
 path = "src/bin/antiknob/main.rs"
-
-[[bin]]
-name = "antiknob-gui"
-path = "src/bin/antiknob_gui.rs"
 
 [[bin]]
 name = "antiknob-daemon"

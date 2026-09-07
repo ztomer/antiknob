@@ -21,10 +21,12 @@ enum ActionPreset: Hashable {
 struct LayerDetail: View {
     @ObservedObject var store: ConfigStore
     let idx: Int
+    @Binding var sel: TabSelection
 
     @State private var selected: Gesture?
     @State private var pendingKeystroke: Set<Gesture> = []
     @State private var editingSequence: Gesture?
+    @State private var confirmingDelete = false
 
     var body: some View {
         if idx < store.cfg.layers.count {
@@ -35,9 +37,7 @@ struct LayerDetail: View {
                         .listRowBackground(Color.clear)
                 }
 
-                Section("Layer Name") {
-                    TextField("Name", text: $store.cfg.layers[idx].name)
-                }
+                layerSection
 
                 Section("Knob Gestures") {
                     ForEach(Gesture.allCases) { g in
@@ -52,6 +52,75 @@ struct LayerDetail: View {
                     steps: stepsBinding(g)
                 )
             }
+        }
+    }
+
+    // MARK: - Layer Name, Order, and Removal
+
+    private var layerSection: some View {
+        Section("Layer") {
+            TextField("Name", text: $store.cfg.layers[idx].name)
+
+            LabeledContent("Order") {
+                HStack(spacing: 6) {
+                    Button { move(by: -1) } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                    .disabled(idx == 0)
+                    .help("Move this layer left")
+
+                    Button { move(by: 1) } label: {
+                        Image(systemName: "chevron.right")
+                    }
+                    .disabled(idx >= store.cfg.layers.count - 1)
+                    .help("Move this layer right")
+
+                    Text("\(idx + 1) of \(store.cfg.layers.count)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 4)
+                }
+            }
+
+            Button("Delete Layer…", role: .destructive) { confirmingDelete = true }
+                .disabled(store.cfg.layers.count <= 1)
+                .help(store.cfg.layers.count <= 1
+                      ? "The last layer cannot be deleted"
+                      : "Delete this layer and its gesture bindings")
+                .confirmationDialog(
+                    "Delete \(layerLabel)?",
+                    isPresented: $confirmingDelete
+                ) {
+                    Button("Delete Layer", role: .destructive) { delete() }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Its gesture bindings are removed. This cannot be undone.")
+                }
+        }
+    }
+
+    private var layerLabel: String {
+        let name = store.cfg.layers[idx].name
+        return name.isEmpty ? "Layer \(idx + 1)" : name
+    }
+
+    /// Swaps this layer with its neighbour and keeps the tab selection on it.
+    private func move(by delta: Int) {
+        let dest = idx + delta
+        guard store.cfg.layers.indices.contains(dest) else { return }
+        withAnimation {
+            store.cfg.layers.swapAt(idx, dest)
+            sel = .layer(dest)
+        }
+    }
+
+    /// Removes this layer and lands the selection on a still-valid tab.
+    private func delete() {
+        guard store.cfg.layers.count > 1,
+              store.cfg.layers.indices.contains(idx) else { return }
+        withAnimation {
+            store.cfg.layers.remove(at: idx)
+            sel = .layer(min(idx, store.cfg.layers.count - 1))
         }
     }
 

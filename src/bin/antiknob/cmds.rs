@@ -124,8 +124,8 @@ pub fn run_status(json: bool) -> Result<()> {
     println!("[ Ok  ] Power: {}", power.description);
 
     // Test unprivileged access to the vendor configuration interface
-    match device::open_device() {
-        Ok(_) => {
+    match device::with_device(|_| Ok(())) {
+        Ok(()) => {
             println!(
                 "[ Ok  ] Unprivileged access verified: Device can be configured WITHOUT sudo!"
             );
@@ -151,10 +151,7 @@ pub fn run_upload(file: PathBuf, layer: Option<u8>) -> Result<()> {
     let cfg = config::DeviceConfig::load_from_file(&file)?;
     cfg.validate()?;
 
-    println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
-    let dev = device::open_device()?;
-
-    let layers: Vec<(usize, &config::LayerConfig)> = match layer {
+    let selected: Vec<usize> = match layer {
         Some(l) => {
             let idx = l as usize;
             if idx >= cfg.layers.len() {
@@ -164,16 +161,21 @@ pub fn run_upload(file: PathBuf, layer: Option<u8>) -> Result<()> {
                     cfg.layers.len()
                 );
             }
-            vec![(idx, &cfg.layers[idx])]
+            vec![idx]
         }
-        None => cfg.layers.iter().enumerate().collect(),
+        None => (0..cfg.layers.len()).collect(),
     };
     println!(
         "[ ==> ] Flashing keymaps across {} layer(s)...",
-        layers.len()
+        selected.len()
     );
 
-    for (layer_idx, layer) in layers {
+    // Packets are built before the device is touched: parse errors abort
+    // without leaving the firmware half-programmed, and the HID job owns
+    // plain bytes rather than borrowing `cfg`.
+    let mut packets: Vec<Vec<u8>> = Vec::new();
+    for layer_idx in selected {
+        let layer = &cfg.layers[layer_idx];
         let layer_u8 = layer_idx as u8;
 
         // 1. Program buttons
@@ -182,9 +184,7 @@ pub fn run_upload(file: PathBuf, layer: Option<u8>) -> Result<()> {
             for key_str in row {
                 let action = protocol::Action::parse(key_str)?;
                 let key_id = protocol::key_id_for_button(button_count);
-                let packet = action.to_packet(key_id, layer_u8);
-                device::send_report(&dev, &packet)?;
-                sleep(Duration::from_millis(10));
+                packets.push(action.to_packet(key_id, layer_u8));
                 button_count += 1;
             }
         }
@@ -194,35 +194,34 @@ pub fn run_upload(file: PathBuf, layer: Option<u8>) -> Result<()> {
             if let Some(ref ccw_str) = knob.ccw {
                 let action = protocol::Action::parse(ccw_str)?;
                 let key_id = protocol::key_id_for_knob(knob_idx, protocol::KnobEvent::RotateCCW);
-                let packet = action.to_packet(key_id, layer_u8);
-                device::send_report(&dev, &packet)?;
-                sleep(Duration::from_millis(10));
+                packets.push(action.to_packet(key_id, layer_u8));
             }
             if let Some(ref press_str) = knob.press {
                 let action = protocol::Action::parse(press_str)?;
                 let key_id = protocol::key_id_for_knob(knob_idx, protocol::KnobEvent::Press);
-                let packet = action.to_packet(key_id, layer_u8);
-                device::send_report(&dev, &packet)?;
-                sleep(Duration::from_millis(10));
+                packets.push(action.to_packet(key_id, layer_u8));
             }
             if let Some(ref cw_str) = knob.cw {
                 let action = protocol::Action::parse(cw_str)?;
                 let key_id = protocol::key_id_for_knob(knob_idx, protocol::KnobEvent::RotateCW);
-                let packet = action.to_packet(key_id, layer_u8);
-                device::send_report(&dev, &packet)?;
-                sleep(Duration::from_millis(10));
+                packets.push(action.to_packet(key_id, layer_u8));
             }
         }
 
         // 3. Program layer LED if specified in config
         if let Some(ref led_mode) = layer.led {
-            let packet = protocol::build_led_packet(layer_u8, led_mode)?;
-            device::send_report(&dev, &packet)?;
-            sleep(Duration::from_millis(10));
+            packets.push(protocol::build_led_packet(layer_u8, led_mode)?);
         }
     }
 
-    device::send_commit(&dev)?;
+    println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
+    device::with_device(move |dev| {
+        for packet in &packets {
+            device::send_report(dev, packet)?;
+            sleep(Duration::from_millis(10));
+        }
+        device::send_commit(dev)
+    })?;
     println!("[ Ok  ] Configuration successfully written to Anticater VK01!");
     Ok(())
 }
@@ -233,16 +232,36 @@ pub fn run_led(layer: u8, mode: Vec<String>) -> Result<()> {
         layer, mode_str
     );
     let packet = protocol::build_led_packet(layer, &mode_str)?;
-    let dev = device::open_device()?;
-    device::send_report(&dev, &packet)?;
-    device::send_commit(&dev)?;
+    device::with_device(move |dev| {
+        device::send_report(dev, &packet)?;
+        device::send_commit(dev)
+    })?;
     println!("[ Ok  ] LED configuration sent to device.");
     Ok(())
 }
 pub fn run_led_read(layer: u8, raw: bool) -> Result<()> {
     println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
-    let dev = device::open_device()?;
-    match device::read_led_mode(&dev, layer) {
+    let (mode, dump) = device::with_device(move |dev| {
+        let mode = device::read_led_mode(dev, layer);
+        let dump = if raw {
+            let mut payload = [0u8; 64];
+            payload[0] = 0xFA;
+            payload[1] = 0xB0;
+            payload[2] = layer;
+            let mut buf = [0u8; 64];
+            match device::send_report(dev, &payload)
+                .and_then(|()| dev.read_timeout(&mut buf, 500).map_err(anyhow::Error::from))
+            {
+                Ok(n) => Some(buf[..n].to_vec()),
+                Err(_) => None,
+            }
+        } else {
+            None
+        };
+        Ok((mode, dump))
+    })?;
+
+    match mode {
         Ok(mode) => {
             let label = match mode {
                 0 => "off",
@@ -257,18 +276,9 @@ pub fn run_led_read(layer: u8, raw: bool) -> Result<()> {
         }
         Err(e) => println!("[ Wrn ] LED read failed: {}", e),
     }
-    if raw {
-        let mut payload = [0u8; 64];
-        payload[0] = 0xFA;
-        payload[1] = 0xB0;
-        payload[2] = layer;
-        if device::send_report(&dev, &payload).is_ok() {
-            let mut buf = [0u8; 64];
-            if let Ok(n) = dev.read_timeout(&mut buf, 500) {
-                let hex: Vec<String> = buf[..n].iter().map(|b| format!("{:02x}", b)).collect();
-                println!("        raw ({}B): {}", n, hex.join(" "));
-            }
-        }
+    if let Some(bytes) = dump {
+        let hex: Vec<String> = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+        println!("        raw ({}B): {}", bytes.len(), hex.join(" "));
     }
     Ok(())
 }
@@ -310,8 +320,7 @@ pub fn run_bind_slots(layer: Option<u8>, dry_run: bool) -> Result<()> {
         return Ok(());
     }
     println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
-    let dev = device::open_device()?;
-    let sent = host::bind::flash_slot_bindings(&dev, &layers)?;
+    let sent = device::with_device(move |dev| host::bind::flash_slot_bindings(dev, &layers))?;
     println!(
                 "[ Ok  ] Flashed {} slot binding(s): CCW=ctrl-alt-F16, Press=ctrl-alt-F17, CW=ctrl-alt-F18.",
                 sent
@@ -323,39 +332,44 @@ pub fn run_bind_slots(layer: Option<u8>, dry_run: bool) -> Result<()> {
 pub fn run_listen(timeout_secs: u64) -> Result<()> {
     use std::time::Instant;
     println!("[ ==> ] Opening all knob interfaces for snooping (non-exclusive, no sudo)...");
-    let ifaces = device::open_all_interfaces()?;
-    if ifaces.is_empty() {
-        println!("[ Wrn ] No supported devices detected on USB.");
-        return Ok(());
-    }
-    for iface in &ifaces {
-        println!("        watching {}", iface.label);
-    }
-    let deadline = Instant::now() + Duration::from_secs(timeout_secs);
-    println!(
-        "[ ==> ] Snooping for {}s: twist / press / hold the knob (mouse stays usable)...",
-        timeout_secs
-    );
-    let mut buf = [0u8; 64];
-    while Instant::now() < deadline {
+    // The whole snoop loop runs on the HID thread: `SnoopIface` holds live
+    // `HidDevice` handles, which must never cross a thread boundary.
+    device::with_hid(move |api| {
+        let ifaces = device::open_all_interfaces_on(api)?;
+        if ifaces.is_empty() {
+            println!("[ Wrn ] No supported devices detected on USB.");
+            return Ok(());
+        }
         for iface in &ifaces {
-            match iface.device.read_timeout(&mut buf, 20) {
-                Ok(0) => {}
-                Ok(n) => {
-                    if buf[..n].iter().any(|&b| b != 0) {
-                        let hex: Vec<String> =
-                            buf[..n].iter().map(|b| format!("{:02x}", b)).collect();
-                        print!("        [{}] +{}B: {}", iface.label, n, hex.join(" "));
-                        print!("   {}", decode_input(iface, &buf[..n]));
-                        println!();
+            println!("        watching {}", iface.label);
+        }
+        let deadline = Instant::now() + Duration::from_secs(timeout_secs);
+        println!(
+            "[ ==> ] Snooping for {}s: twist / press / hold the knob (mouse stays usable)...",
+            timeout_secs
+        );
+        let mut buf = [0u8; 64];
+        while Instant::now() < deadline {
+            for iface in &ifaces {
+                match iface.device.read_timeout(&mut buf, 20) {
+                    Ok(0) => {}
+                    Ok(n) => {
+                        if buf[..n].iter().any(|&b| b != 0) {
+                            let hex: Vec<String> =
+                                buf[..n].iter().map(|b| format!("{:02x}", b)).collect();
+                            print!("        [{}] +{}B: {}", iface.label, n, hex.join(" "));
+                            print!("   {}", decode_input(iface, &buf[..n]));
+                            println!();
+                        }
                     }
-                }
-                Err(e) => {
-                    println!("[ Wrn ] Read error on {}: {}", iface.label, e);
+                    Err(e) => {
+                        println!("[ Wrn ] Read error on {}: {}", iface.label, e);
+                    }
                 }
             }
         }
-    }
+        Ok(())
+    })?;
     println!("[ Ok  ] Listen window closed.");
     Ok(())
 }
@@ -415,7 +429,6 @@ pub fn run_list_apps() -> Result<()> {
 }
 pub fn run_read_slots(wide: bool) -> Result<()> {
     println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
-    let dev = device::open_device()?;
     let groups: Vec<u8> = if wide {
         (0x00u8..=0xFFu8).collect()
     } else {
@@ -425,38 +438,41 @@ pub fn run_read_slots(wide: bool) -> Result<()> {
         "[ ==> ] Reading slot table ({} groups, counters 1-3)...",
         groups.len()
     );
-    for group in groups {
-        for counter in 1u8..=3 {
-            match device::read_slot(&dev, group, counter) {
-                Ok(bytes) => {
-                    let hex: Vec<String> = bytes.iter().map(|b| format!("{:02x}", b)).collect();
-                    println!(
-                        "        group=0x{:02x} counter={} ({}B): {}",
-                        group,
-                        counter,
-                        bytes.len(),
-                        hex.join(" ")
-                    );
+    device::with_device(move |dev| {
+        for group in groups {
+            for counter in 1u8..=3 {
+                match device::read_slot(dev, group, counter) {
+                    Ok(bytes) => {
+                        let hex: Vec<String> = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+                        println!(
+                            "        group=0x{:02x} counter={} ({}B): {}",
+                            group,
+                            counter,
+                            bytes.len(),
+                            hex.join(" ")
+                        );
+                    }
+                    Err(e) => {
+                        println!(
+                            "        group=0x{:02x} counter={}: READ FAILED: {}",
+                            group, counter, e
+                        );
+                    }
                 }
-                Err(e) => {
-                    println!(
-                        "        group=0x{:02x} counter={}: READ FAILED: {}",
-                        group, counter, e
-                    );
-                }
+                sleep(Duration::from_millis(50));
             }
-            sleep(Duration::from_millis(50));
         }
-    }
+        Ok(())
+    })?;
     println!("[ Ok  ] Slot dump complete (device state unchanged).");
     Ok(())
 }
 pub fn run_raw(bytes: Vec<String>) -> Result<()> {
     let payload = parse_hex_bytes(&bytes)?;
+    let sent = payload.len();
     println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
-    let dev = device::open_device()?;
-    device::send_report(&dev, &payload)?;
-    println!("[ Ok  ] Raw {}-byte payload sent.", payload.len());
+    device::with_device(move |dev| device::send_report(dev, &payload))?;
+    println!("[ Ok  ] Raw {}-byte payload sent.", sent);
     Ok(())
 }
 #[cfg(test)]

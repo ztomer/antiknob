@@ -1,9 +1,9 @@
 use anyhow::{anyhow, Context, Result};
-use hidapi::{HidApi, HidDevice};
+use hidapi::HidApi;
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
 
-static HID_LOCK: Mutex<()> = Mutex::new(());
+mod thread;
+pub use thread::{with_device, with_hid, HidDevice};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TransportType {
@@ -145,18 +145,6 @@ pub const SUPPORTED_DEVICES: &[(u16, u16, &str, TransportType)] = &[
 pub const VENDOR_USAGE_PAGE: u16 = 0xFF00;
 pub const REPORT_ID: u8 = 0x03;
 
-/// Thread-affinity contract (macOS): every function in this module drives
-/// hidapi's IOHIDManager backend, which must run on the main thread of a
-/// process whose CFRunLoop is NOT currently dispatching: hid_enumerate
-/// pumps the runloop reentrantly, which aborts inside a running GUI event
-/// loop (SIGTRAP off-main-thread, SIGABRT reentrantly on it; both observed
-/// on macOS 26).
-///
-/// Consequences: the CLI (plain main thread, no runloop) calls these
-/// directly. The GUI must NEVER call them in-process; it shells out to the
-/// CLI binary instead (see `gui::clihid`). Pinned structurally by
-/// `tests/hid_main_thread.rs`.
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceMatch {
     pub vendor_id: u16,
@@ -199,9 +187,13 @@ pub fn primary_transport(matches: &[DeviceMatch]) -> Option<TransportType> {
     }
 }
 
+/// Enumerates every attached Anticater/CH57x interface, across transports.
 pub fn list_devices() -> Result<Vec<DeviceMatch>> {
-    let _guard = HID_LOCK.lock().unwrap();
-    let api = HidApi::new().context("Failed to initialize HIDAPI")?;
+    with_hid(list_devices_on)
+}
+
+/// Enumeration proper. Runs on the HID thread; see `with_hid`.
+pub fn list_devices_on(api: &HidApi) -> Result<Vec<DeviceMatch>> {
     let mut matches = Vec::new();
 
     for dev in api.device_list() {
@@ -256,10 +248,9 @@ pub fn list_devices() -> Result<Vec<DeviceMatch>> {
     Ok(matches)
 }
 
-pub fn open_device() -> Result<HidDevice> {
-    let _guard = HID_LOCK.lock().unwrap();
-    let api = HidApi::new().context("Failed to initialize HIDAPI")?;
-
+/// Opens the vendor configuration interface. Private: the returned handle
+/// is only valid on the HID thread, so callers go through `with_device`.
+fn open_device_on(api: &HidApi) -> Result<HidDevice> {
     // On macOS, the vendor configuration endpoint has UsagePage 0xFF00
     // This interface does NOT require sudo or root privileges.
     let target = api
@@ -280,7 +271,7 @@ pub fn open_device() -> Result<HidDevice> {
         })
         .ok_or_else(|| anyhow!("No supported Anticater/CH57x device found. Please ensure device or receiver is connected."))?;
 
-    let dev = target.open_device(&api).context(
+    let dev = target.open_device(api).context(
         "Failed to open device interface. If permission is denied, ensure you have access to USB HID devices."
     )?;
 
@@ -316,9 +307,8 @@ pub struct SnoopIface {
     pub device: HidDevice,
 }
 
-pub fn open_all_interfaces() -> Result<Vec<SnoopIface>> {
-    let _guard = HID_LOCK.lock().unwrap();
-    let api = HidApi::new().context("Failed to initialize HIDAPI")?;
+/// Runs on the HID thread; the handles must not outlive the job.
+pub fn open_all_interfaces_on(api: &HidApi) -> Result<Vec<SnoopIface>> {
     #[cfg(target_os = "macos")]
     api.set_open_exclusive(false);
     let mut out = Vec::new();
@@ -337,7 +327,7 @@ pub fn open_all_interfaces() -> Result<Vec<SnoopIface>> {
             "{:04x}:{:04x} up={:#06x} use={:#04x}",
             vid, pid, usage_page, usage
         );
-        match dev.open_device(&api) {
+        match dev.open_device(api) {
             Ok(handle) => {
                 if let Err(e) = handle.set_blocking_mode(false) {
                     eprintln!("note: nonblocking failed for {}: {}", label, e);

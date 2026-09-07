@@ -1,112 +1,69 @@
 # Antiknob Plan (forward-looking)
 
+Shipped work lives in git history and in the release notes on each tag; this
+file carries only what is still open. `git log --oneline` and
+`git show <tag>` are the record of what landed when.
+
 ## Context
 
 * Hardware: Anticater VK01 knob, VID `0x514C` (LQKJ), PID `0x8850`
   (serial `EB60121120051103`); vendor usage page `0xFF00`, report `0x03`.
-* Zero-sudo IOHIDManager access. MIT OR Apache-2.0, native arm64.
-* Architecture: GUI + CLI stay TCC-free (device flashing, presets, LED,
-  YAML). The daemon alone needs Accessibility / Input Monitoring
-  (host-side translation). `host.json` is the contract between them.
+  2.4GHz receivers and Bluetooth are detected too (see `SUPPORTED_DEVICES`).
+* Zero-sudo IOHIDManager access. MIT OR Apache-2.0, native arm64, macOS 26+.
+* Architecture: the GUI and CLI stay TCC-free (device flashing, presets, LED,
+  YAML). The daemon alone needs Accessibility / Input Monitoring for host-side
+  translation. `host.json` is the contract between them.
+* All hidapi calls are marshalled onto one dedicated thread by
+  `device::with_hid` / `device::with_device`; nothing outside `src/device/`
+  may reach the `hidapi` crate. See `tests/hid_thread_affinity.rs` for why.
 
-## Shipped in 0.2.0
+## Open
 
-* Crash fixes: worker-thread SIGTRAP closed by moving HID to the main
-  thread; then a launch-time SIGABRT (hid_enumerate pumping the running
-  event loop reentrantly) closed architecturally — the GUI process never
-  calls hidapi and shells out to the CLI (`gui::clihid`: resolution,
-  `status --json`, `upload --layer`, `led`, `bind-slots`). Pinned by a
-  structural test asserting zero in-process HID under `src/gui`.
-* Host engine (`src/host/`): JSON layers, rolodex, double-tap window,
-  hotkey-switch alternation, chord matching, output plans, preset
-  migration, app discovery, login-item plist, tap glue.
-* Daemon (`antiknob-daemon`, `AntiknobDaemon.app`): observe/active modes,
-  full synthesis (keys, scroll, fn-brightness, NX media, mouse incl.
-  middle, launch/open/quit), tray with layer title + menu, login item,
-  instant-apply with last-good rule.
-* CLI: `status validate upload led show-keys bind-slots listen
-  import-presets list-apps`.
-* GUI: presets, recorder, palettes, Slots tab, Host Layers tab with full
-  gesture editor (None/Scroll/Media/Key/Sequence/launch/quit/open/mouse),
-  preset export, layer-switch LED sync.
+### 1. The Swift half of the repo has no gates at all
 
-## Shipped in 0.2.1
+`tools/gate.sh --full` covers Rust thoroughly -- fmt, clippy, manifest lints,
+no-`#[allow]`, tests, `cargo audit` -- and covers the ~2,900 lines under `ui/`
+with nothing. No lint, no tests, no coverage floor, no file-length enforcement
+beyond the structural gate. The suite still prints all-green, because it never
+claimed to cover that half.
 
-* LED lighting & hardware protocol fully verified:
-  - Reverse-engineered `Widget::HID_write` and `Widget::Read_RgbLed_DataDsp` from
-    vendor binary (`/Applications/ANTICATER.app`).
-  - Resolved double report ID bug in `device::send_report`: stripped redundant
-    `0x03` prefix so command bytes land at wire index 1.
-  - Added 16-color RGB palette population (`fill_palette`) in `protocol::build_led_packet`
-    so single-color modes illuminate all 16 ring LEDs.
-  - Live hardware verification: modes 0 (off), 1 (backlight), 2 (shock/reactive),
-    3 (shock2/ripple), 4 (press) successfully written, committed (`[FD FE FF]`),
-    persisted, and verified via `antiknob led-read`.
-  - Added CLI `led-read` command with human-readable mode decoding and `--raw` dump.
-  - Added CLI `read-slots` command and `raw` packet dispatch for diagnostics.
-* Codebase architecture & gates:
-  - Refactored `src/bin/antiknob.rs` into `src/bin/antiknob/main.rs` and `cmds.rs`.
-  - Strictly enforced `.gatesrc` file length gate (`GOH_MAX_LINES=500` across all files).
-  - 100% test pass rate across all 79 unit, integration, and E2E tests.
-  - Fully passing `./tools/gate.sh --full` (structural, fmt, clippy, cargo lints).
+The blocker is that `ui/` is built by a hand-rolled `swiftc` invocation in
+`ui/build.sh` with no SPM package or Xcode project, and `swift_gate.sh` needs
+one (`GOH_SWIFT_MODE=xcode|spm`). Wrapping `ui/` in a `Package.swift` with a
+test target is the real task; wiring the gate is the easy half that follows.
+Until then, every Swift regression is caught by eye or not at all.
 
-## Shipped in 0.3.0
+### 2. `rdev` drags in a crate a future rustc will reject
 
-* Native macOS SwiftUI Configurator (`Antiknob.app` in `ui/`):
-  - Native `.formStyle(.grouped)` layout with Liquid Glass and system vibrancy.
-  - Interactive rotary knob centerpiece with clickable gesture zones (twist, hold+twist, press) highlighting matching form rows.
-  - Horizontal layer tab strip with drag-to-reorder, right-click context menus, and `+` to add layers.
-  - System Settings capsule shortcut recorder capturing macOS native modifier glyphs.
-  - Sequence editor sheet modal for multi-step macros with delay steps and reordering.
-  - Dynamic hardware lighting controls (`LedSection.swift`) with mode selection and color swatches sending live `set_led` commands to hardware.
-  - Transient autosave badge providing visual confirmation without manual save buttons.
-* Single Source of Truth (`src/api/`):
-  - Unified tool schemas and command dispatch (`get_status`, `get_config`, `set_config`, `set_layer`, `set_led`, `get_led`, `bind_slots`, `upload_keymap`, `list_apps`).
-* Unix Domain Socket Interface (`/tmp/antiknob.sock`):
-  - Non-blocking JSON-RPC 2.0 socket listener in `antiknob-daemon`.
-  - Dynamic in-memory tap engine hot-reloading.
-* Model Context Protocol (MCP) Server:
-  - Standard stdio MCP server (`2024-11-05`) in `antiknob-daemon --mcp` and `antiknob mcp`.
-* Automated E2E & Quality Verification:
-  - Added `tests/api_e2e.rs` testing socket server round-trip and MCP protocol flows.
-  - 100% test pass rate (85 tests) and strict `./tools/gate.sh --full` compliance.
+`cargo build` warns: `block v0.1.6` "contains code that will be rejected by a
+future version of Rust". The chain is `antiknob -> rdev 0.5.3 -> cocoa 0.22 ->
+block 0.1.6`. `rdev` is the input-tap engine, so this is not a version bump --
+it is either an upstream fix, a fork, or replacing the tap with `objc2`
++ `CGEventTap` directly (the crate is already a dependency). Standing rule:
+never build on APIs that are on a removal path. Track the warning with
+`cargo report future-incompatibilities`.
 
-## Shipped in 0.3.1
+### 3. No coverage floor on the Rust side
 
-* Power & Battery Telemetry:
-  - Reverse-engineered Anticater VK01 USB HID protocol; confirmed device operates bus-powered (VBUS 5V) without vendor battery query commands.
-  - Exposed `PowerStatus` across CLI (`antiknob status`), Unix socket, MCP server, and native UI badges (`Wired (USB Bus Powered)`).
-* Daemon Protocol Hardening:
-  - Applied `daemon-liveness-design` and security patterns.
-  - Enforced `0600` permissions on socket and `0700` on Application Support.
-  - Bounded request line reader (64KB cap) preventing memory exhaustion DoS.
-  - 5-second socket read/write timeouts and 16-client concurrency budget with typed `-32000` refusal.
-  - Panic isolation via `catch_unwind` returning `-32603 Internal Error`.
-  - Application-level `ping` method for non-destructive liveness probes.
-  - Input validation bounds across raw bytes, keymaps, and slot queries.
-  - 100% test pass rate (88 tests passing).
+`tools/gate.sh --full` prints `no coverage floor -- set GOH_COV_FLOOR_RUST in
+.gatesrc`. Measure the current figure first, set the floor just under it, then
+ratchet; do not pick a round number and grind toward it.
 
-## Shipped in 0.4.0
+### 4. Hold+twist firmware slots stay unbound
 
-* SOTA Unified Appbar Titlebar (`Antiknob.app`):
-  - Replaced traditional macOS window titlebar with a unified Appbar.
-  - Configured `.fullSizeContentView`, `.titlebarAppearsTransparent`, and `.titleVisibility = .hidden`.
-  - Moved the layer tab strip, switching tab, and `+` layer button directly into the titlebar/appbar area with 76pt traffic-light clearance.
-  - Placed trailing status cluster (Power/battery pill, transient autosave confirmation, and quick refresh) on the right side of the appbar.
-  - Maximized vertical canvas space for knob centerpiece and gesture configuration forms.
+`bind-slots` binds three slots per layer (CCW / Press / CW) to
+`ctrl-alt-F16..F18`. The hold+twist key IDs were never verified against the
+vendor app, so they are deliberately left alone rather than guessed at --
+a wrong ID writes a binding the firmware then reports back as something else.
+Recover them with `antiknob read-slots --wide` against a vendor-app-configured
+device, then extend `host::bind::binding_packets`.
 
-## Shipped in 0.4.1
+### 5. Bluetooth transport detection is inferred, not confirmed
 
-* Seamless Multi-Transport Detection (USB, 2.4GHz Wireless, Bluetooth):
-  - Added `TransportType` model (`Usb`, `Wireless24G`, `Bluetooth`) and per-device transport tags to `DeviceMatch`.
-  - Extended hardware discovery to detect 2.4GHz wireless dongles (`0x8851`, `0x8830..=0x8833`, `0x25a7:0xfa11`, `0x514c:0x4155`) and Bluetooth Anticater devices (`dev.bus_type() == Bluetooth` or `ANTICATER_MINI` per manual).
-  - Implemented dynamic power & transport telemetry (`Wired (USB Bus Powered)`, `2.4GHz Wireless (Battery Powered)`, `Bluetooth Wireless (Battery Powered)`).
-  - Updated native UI Appbar trailing pill with reactive SF Symbols and colors:
-    - USB: Green dot, `bolt.fill`, "USB"
-    - 2.4GHz: Cyan dot, `antenna.radiowaves.left.and.right`, "2.4G"
-    - Bluetooth: Blue dot, `wave.3.right`, "BT"
-    - Offline: Gray dot, `circle.slash`, "Offline"
-  - Added automatic background polling (every 2.0s) and immediate focus refresh (`NSApplication.didBecomeActiveNotification`) — zero daemon or UI restarts required.
-  - 100% test pass rate (88 tests passing) and passed `./tools/gate.sh --full`.
-
-
+`device::list_devices` classifies a device as Bluetooth from
+`dev.bus_type() == Bluetooth` or a product string containing
+`anticater`/`vk01`/`vk-01`. That path has never run against real Bluetooth
+hardware -- only USB and the 2.4GHz receiver are verified. The power
+description it drives (`Bluetooth Wireless (Battery Powered)`) is likewise
+unverified, and no vendor battery-level query has been found in the protocol
+(the device reports bus power over USB). Probe before trusting either.

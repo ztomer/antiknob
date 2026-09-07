@@ -15,10 +15,11 @@ cargo build --release
 
 echo "[ ==> ] Installing to ${DEST_DIR}..."
 mkdir -p "${DEST_DIR}/bin"
+# The egui GUI was removed in 0.5.0; sweep it out of an earlier install.
+rm -f "${DEST_DIR}/bin/antiknob-gui"
 cp "${TARGET_DIR}/release/antiknob" "${DEST_DIR}/bin/antiknob"
-cp "${TARGET_DIR}/release/antiknob-gui" "${DEST_DIR}/bin/antiknob-gui"
 cp "${TARGET_DIR}/release/antiknob-daemon" "${DEST_DIR}/bin/antiknob-daemon"
-codesign -s - --force "${DEST_DIR}/bin/antiknob" "${DEST_DIR}/bin/antiknob-gui" "${DEST_DIR}/bin/antiknob-daemon"
+codesign -s - --force "${DEST_DIR}/bin/antiknob" "${DEST_DIR}/bin/antiknob-daemon"
 # Never overwrite a live config: install the starter only when missing.
 if [[ ! -f "${DEST_DIR}/config.yaml" ]]; then
     cp config.yaml "${DEST_DIR}/config.yaml"

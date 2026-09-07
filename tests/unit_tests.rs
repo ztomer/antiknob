@@ -1,8 +1,6 @@
 use antiknob::config::DeviceConfig;
-use antiknob::gui::presets::ALL_PRESETS;
-use antiknob::gui::recorder::{format_key, format_shortcut};
+use antiknob::presets::ALL_PRESETS;
 use antiknob::protocol::{build_led_packet, key_id_for_button, key_id_for_knob, Action, KnobEvent};
-use eframe::egui::{Key, Modifiers};
 
 #[test]
 fn test_key_action_parsing() {
@@ -120,29 +118,6 @@ fn test_all_workflow_presets_valid() {
         let led_pkt = build_led_packet(0, &led_spec);
         assert!(led_pkt.is_ok(), "Preset {} led spec invalid", preset.id);
     }
-}
-
-#[test]
-fn test_shortcut_recorder_formatting() {
-    let mods = Modifiers {
-        command: true,
-        shift: true,
-        ..Default::default()
-    };
-    let formatted = format_shortcut(&mods, Key::Z);
-    assert_eq!(formatted, Some("shift+cmd+z".to_string()));
-
-    let ctrl_c = format_shortcut(
-        &Modifiers {
-            ctrl: true,
-            ..Default::default()
-        },
-        Key::C,
-    );
-    assert_eq!(ctrl_c, Some("ctrl+c".to_string()));
-
-    assert_eq!(format_key(Key::Space), Some("space"));
-    assert_eq!(format_key(Key::F11), Some("f11"));
 }
 
 #[test]

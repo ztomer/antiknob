@@ -10,12 +10,13 @@ Antiknob is written in 100% pure Rust and native SwiftUI, permissively licensed 
 
 * **Native macOS SwiftUI Configurator (`Antiknob.app`)**:
   * **System Settings Aesthetic**: Native `.formStyle(.grouped)` layout with Liquid Glass materials and SF Symbols.
+  * **System-Managed Tab Bar**: A native `TabView` renders the tab strip into the window titlebar, alongside the traffic lights. One tab per layer, plus Switching, Lighting, Hardware, Inspector and Services.
   * **Interactive Knob Centerpiece**: Rendered knob header with clickable gesture zones (Twist Left/Right, Hold + Twist Left/Right, Press) that highlight and select the corresponding gesture row.
-  * **Horizontal Layer Tabs**: Drag-and-drop layer reordering, context menus (Move Left/Right, Delete Layer), and `+` button to add layers.
+  * **Layer Management**: Each layer's pane carries its name, its position (`Move Left` / `Move Right`, with a `n of m` readout) and a confirmed `Delete Layer`; `+` in the toolbar adds one.
   * **System Settings Capsule Chord Recorder**: One-click shortcut capture displaying macOS native glyphs (`⌃`, `⌥`, `⇧`, `⌘`).
   * **Macro Sequence Editor**: Sheet modal supporting multi-step macros, millisecond wait steps, and drag-to-reorder.
   * **Dynamic Hardware Lighting**: Real-time LED mode controls (Off, Backlight, Shock/Breathe, Shock 2, Press Reactive, Custom) with color swatches sending instant updates to hardware.
-  * **Transient Autosave Badge**: Seamless background saving with instant apply over the daemon socket.
+  * **Bottom Status Bar**: Connection, transport and power source read as SF Symbol glyphs in the lower-right corner (words in the tooltip), next to a manual refresh and the transient autosave badge.
 * **Single Source of Truth (`src/api/`)**:
   * Unified schema and tool definitions shared across the Unix socket interface and the MCP server.
 * **Unix Domain Socket Interface (`/tmp/antiknob.sock`)**:
@@ -28,6 +29,7 @@ Antiknob is written in 100% pure Rust and native SwiftUI, permissively licensed 
   * One-time firmware slot binding (`ctrl-alt-F16..F18`) plus a macOS daemon that swallows those chords and runs unlimited layered actions (scroll, keystrokes, sequences, media, brightness, launch/open/quit, mouse) with double-tap and hotkey layer switching.
 * **Unprivileged USB HID (`no sudo`)**:
   * Targets vendor usage page (`0xFF00`), avoiding macOS kernel driver collisions and running cleanly as a regular user.
+  * All hidapi work is marshalled onto one dedicated, event-loop-free thread (`device::with_hid` / `device::with_device`). hidapi's macOS backend binds its IOHIDManager sources to the CFRunLoop of the thread that first initialised it, so a call from any other thread traps inside CoreFoundation. The single-thread rule makes that unrepresentable and is enforced by `tests/hid_thread_affinity.rs`.
 
 ---
 
@@ -133,10 +135,31 @@ antiknob-daemon --uninstall-login-item
 cargo test --all-targets --all-features
 ```
 
-Quality gates:
+Quality gates -- structural checks, `fmt`, `clippy -D warnings`, cargo manifest
+lints, the no-`#[allow]` rule, **the test suite**, and `cargo audit`:
+
 ```bash
 ./tools/gate.sh --full
 ```
+
+`--staged` is the fast pre-commit scope; `--full` is the pre-push scope and is
+what CI runs. The dependency-audit ignore list lives in
+[.cargo/audit.toml](.cargo/audit.toml) as a ratchet: every entry states why it
+may stand, and an entry whose advisory stops firing is deleted rather than left
+to rot.
+
+---
+
+## Repository Map
+
+| Path | What it is |
+| --- | --- |
+| [config.yaml](config.yaml) | Full three-layer starter config, installed to `/Applications/Antiknob/config.yaml` on first install (never overwritten afterwards). |
+| [config_knob_only.yaml](config_knob_only.yaml) | Minimal template for a knob with no keypad -- a starting point for `antiknob upload`. |
+| [PLAN.md](PLAN.md) | Forward-looking backlog. Shipped work lives in git history, not here. |
+| [FINDINGS.md](FINDINGS.md) | Reverse-engineering record for `/Applications/ANTICATER.app` and the VK01 wire protocol. |
+| [BATTERY_RESEARCH.md](BATTERY_RESEARCH.md) | Research notes on radio-mode drain and power reporting. No code depends on it. |
+| [.cargo/audit.toml](.cargo/audit.toml) | `cargo audit` deny list and the advisory-ignore ratchet. |
 
 ---
 

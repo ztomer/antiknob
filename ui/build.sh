@@ -10,7 +10,13 @@ RESOURCES_DIR="${APP_DIR}/Contents/Resources"
 
 mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}"
 
-cat > "${APP_DIR}/Contents/Info.plist" <<'EOF'
+# Cargo.toml is the single source of truth for the version. This script used
+# to carry its own copy, which drifted three releases behind the tag.
+VERSION="$(awk -F\" '/^version = /{print $2; exit}' "${ROOT_DIR}/Cargo.toml")"
+[[ -n "${VERSION}" ]] || { echo "[ Err ] Cannot read version from Cargo.toml" >&2; exit 1; }
+BUILD="$(git -C "${ROOT_DIR}" rev-list --count HEAD 2>/dev/null || echo 0)"
+
+cat > "${APP_DIR}/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -26,7 +32,9 @@ cat > "${APP_DIR}/Contents/Info.plist" <<'EOF'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.3.0</string>
+    <string>${VERSION}</string>
+    <key>CFBundleVersion</key>
+    <string>${BUILD}</string>
     <key>CFBundleIconFile</key>
     <string>Antiknob.icns</string>
     <key>LSMinimumSystemVersion</key>
@@ -46,7 +54,7 @@ if [[ -f "${ROOT_DIR}/assets/ak12-1024.png" ]]; then
     sips -z 36 36 "${ROOT_DIR}/assets/ak12-1024.png" --out "${RESOURCES_DIR}/ak12-tray@2x.png" >/dev/null 2>&1 || true
 fi
 
-echo "[ ==> ] Compiling Swift sources into Antiknob.app..."
+echo "[ ==> ] Compiling Swift sources into Antiknob.app (v${VERSION} build ${BUILD})..."
 SWIFT_FILES=(
     "${SCRIPT_DIR}/Models.swift"
     "${SCRIPT_DIR}/SocketClient.swift"

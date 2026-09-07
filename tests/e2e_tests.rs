@@ -1,13 +1,16 @@
 use antiknob::config::DeviceConfig;
-use antiknob::gui::profiles::{load_profile_file, save_profile_file};
 use antiknob::protocol::{build_led_packet, key_id_for_button, key_id_for_knob, Action, KnobEvent};
 use std::fs;
 use std::path::Path;
 
+/// The YAML round trip that `antiknob upload` depends on: a config written
+/// out and read back must survive unchanged. Previously routed through the
+/// egui GUI's profile helpers; now exercised against the shipping loader.
 #[test]
 fn test_e2e_config_roundtrip_profile() {
     let temp_dir = std::env::temp_dir().join("antiknob_test_profiles");
     let test_file = temp_dir.join("profile_test.yaml");
+    fs::create_dir_all(&temp_dir).unwrap();
 
     let original_yaml = r#"
 model: Anticater VK01
@@ -32,9 +35,9 @@ layers:
     led: "mode2 red"
 "#;
     let original: DeviceConfig = serde_yaml::from_str(original_yaml).unwrap();
-    save_profile_file(&original, &test_file).unwrap();
+    fs::write(&test_file, serde_yaml::to_string(&original).unwrap()).unwrap();
 
-    let loaded = load_profile_file(&test_file).unwrap();
+    let loaded = DeviceConfig::load_from_file(&test_file).unwrap();
     assert_eq!(loaded.model, original.model);
     assert_eq!(loaded.layers.len(), 2);
     assert_eq!(loaded.layers[1].buttons[0][0], "cmd+b");

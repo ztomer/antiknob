@@ -11,6 +11,10 @@
 //! Pure matching lives here so the comparison is testable without hardware;
 //! the read loop that feeds it lives in the CLI.
 
+/// The largest key id any supported layout reaches: a 4x4 grid plus four
+/// knobs. Anything above it in byte 2 is a subcommand, not a slot.
+const MAX_KEY_ID: u8 = 40;
+
 /// One slot as the device reports it: `03 FA <key_id> <layer> <kind> ...`.
 ///
 /// `layer` is the wire value, which is 1-based -- the same convention
@@ -46,7 +50,11 @@ pub fn parse_record(record: &[u8]) -> Option<(SlotAddr, SlotAction)> {
         return None;
     }
     let (key_id, layer, kind) = (record[2], record[3], record[4]);
-    if key_id == 0 || key_id == 0xFF || layer == 0 || layer > 3 {
+    // Byte 2 is a key id only for keymap packets. `0xB0` there is the LED
+    // subcommand (`03 FE B0 <layer> <mode>`), and reading it as key 176
+    // made a flash with per-layer LEDs report "20 slots, 2 unconfirmed" --
+    // counting writes the slot table was never going to contain.
+    if key_id == 0 || key_id > MAX_KEY_ID || layer == 0 || layer > 3 {
         return None;
     }
     Some((
@@ -213,6 +221,20 @@ mod tests {
         // Padding and end-of-table markers.
         assert_eq!(parse_record(&record(0xFA, 0xFF, 1, 2, 0, 0, 0)), None);
         assert_eq!(parse_record(&record(0xFA, 4, 9, 2, 0, 0, 0)), None);
+    }
+
+    /// An LED packet shares the `03 FE` framing and is not a slot. Counting
+    /// it as one makes a flash report unconfirmed writes for rows the slot
+    /// table never contained.
+    #[test]
+    fn led_packets_are_not_slot_records() {
+        // 03 FE B0 <layer> <mode> -- the LED subcommand.
+        let led = record(0xFE, 0xB0, 1, 5, 0, 0, 0);
+        assert_eq!(parse_record(&led), None);
+        // And they drop out of a verification rather than showing as unseen.
+        let verdicts = verify(&[led, written(4, 0xEA)], &[observed(4, 0xEA)]);
+        assert_eq!(verdicts.len(), 1, "only the real slot is verified");
+        assert_eq!(summarize(&verdicts), None);
     }
 
     #[test]

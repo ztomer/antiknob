@@ -188,7 +188,6 @@ pub fn run_led_probe(layer: u8, dwell_secs: u64, color: &str) -> Result<()> {
         layer, before
     );
     println!("        Watch the knob. Report which mode, if any, BREATHES.");
-
     for (idx, name) in LED_MODE_NAMES.iter().enumerate() {
         let spec = if *name == "off" {
             (*name).to_string()

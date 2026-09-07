@@ -108,7 +108,14 @@ fn test_e2e_invalid_action_syntax_rejected() {
 #[test]
 fn test_e2e_invalid_led_syntax_rejected() {
     assert!(build_led_packet(0, "unknown_mode").is_err());
+    // `mode5` itself is real -- the vendor app validates a mode read back
+    // from the device with `cmpq $0x5`, and it is the multicoloured mode the
+    // knob ships in. What is still refused is passing it a colour: that mode
+    // drives its own palette, so a colour would be accepted and ignored.
+    assert!(build_led_packet(0, "mode5").is_ok());
     assert!(build_led_packet(0, "mode5 red").is_err());
+    assert!(build_led_packet(0, "custom").is_ok());
+    assert!(build_led_packet(0, "custom blue").is_err());
     assert!(build_led_packet(0, "mode1 ultraviolet").is_err());
 }
 

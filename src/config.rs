@@ -315,18 +315,15 @@ layers: []
         assert_eq!(&green[2..8], &[0xB0, 0x01, 0x01, 0, 255, 0]);
     }
 
-    /// The third layer is deliberately UNSET. The request was a
-    /// multicoloured breathe, and this firmware's mapped modes are
-    /// off/backlight/shock/shock2/press -- none of them a breathe. Writing
-    /// a steady colour here and calling it done would be the same defect as
-    /// a flash reporting success it never earned.
+    /// Mode 5 is the multicoloured one the device ships in, and the one
+    /// this build could not previously produce -- so an `upload` overwrote
+    /// it with a steady colour and had no way to put it back.
     #[test]
-    fn the_third_layer_has_no_led_until_a_breathing_mode_is_identified() {
+    fn the_third_layer_uses_the_multicoloured_mode() {
         let cfg: DeviceConfig = serde_yaml::from_str(STARTER_CONFIG).expect("starter parses");
-        assert_eq!(
-            cfg.layers[2].led, None,
-            "layer 3's LED must stay unset until `led-probe` finds a breathe"
-        );
+        assert_eq!(cfg.layers[2].led.as_deref(), Some("custom"));
+        let packet = crate::protocol::build_led_packet(2, "custom").expect("custom packet");
+        assert_eq!(&packet[2..5], &[0xB0, 0x02, 0x05]);
     }
 
     #[test]

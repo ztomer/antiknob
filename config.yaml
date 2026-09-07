@@ -20,10 +20,8 @@ layers:
   # Layer 0: Default Media & Audio Controls
   # ----------------------------------------------------------------------------
   # LED identity per layer, so the active layer is legible without looking
-  # at the menu bar. NOT the requested "breathing": this firmware's mapped
-  # modes are off / backlight / shock / shock2 / press, none of which is a
-  # breathe. `backlight` is steady. `antiknob led-probe` walks the modes so
-  # the real one can be identified -- see PLAN.md item 3.
+  # at the menu bar. Mode 5 ("custom") is the multicoloured one the device
+  # ships in -- it takes no colour, the firmware drives its own palette.
   - led: "backlight red"
     buttons:
       - ["play", "prev", "next"]
@@ -46,7 +44,8 @@ layers:
   # ----------------------------------------------------------------------------
   # Layer 2: Workspace & Zoom Controls
   # ----------------------------------------------------------------------------
-  - buttons:
+  - led: "custom"
+    buttons:
       - ["ctrl-left", "ctrl-up", "ctrl-right"]
     knobs:
       - ccw: "cmd-minus"

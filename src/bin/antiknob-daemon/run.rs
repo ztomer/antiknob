@@ -204,6 +204,7 @@ pub(crate) fn run_observe(
     timeout_secs: u64,
     config_path: &Path,
     with_tray: bool,
+    verbose: bool,
 ) -> ! {
     let (tx, rx) = channel();
     std::thread::spawn(move || {
@@ -247,6 +248,14 @@ pub(crate) fn run_observe(
                 };
                 if let Some((code, pressed)) = code {
                     if let Ok(mut t) = tap.lock() {
+                        if verbose {
+                            println!(
+                                "[key] code={} {} mods={:?}",
+                                code,
+                                if pressed { "down" } else { "up" },
+                                t.held_mods()
+                            );
+                        }
                         let out = if pressed {
                             t.key(code, true, now_ms)
                         } else {

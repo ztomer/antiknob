@@ -70,6 +70,11 @@ impl TapEngine {
         self.engine.layer_idx()
     }
 
+    /// Currently held modifiers, sorted. Powers verbose tap logging.
+    pub fn held_mods(&self) -> Vec<String> {
+        self.mods.iter().cloned().collect()
+    }
+
     pub fn layer_names(&self) -> Vec<String> {
         self.engine.layer_names()
     }

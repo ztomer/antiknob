@@ -43,6 +43,11 @@ struct Cli {
     #[arg(long)]
     active: bool,
 
+    /// Log every key event (code + modifiers), not just slot chords.
+    /// Diagnoses silent taps: type or twist anything and watch.
+    #[arg(long)]
+    verbose: bool,
+
     /// Run without the menu-bar icon (headless use)
     #[arg(long)]
     no_tray: bool,
@@ -142,6 +147,12 @@ fn main() -> Result<()> {
         run_active(cfg, cli.timeout_secs, &config_path, !cli.no_tray);
     } else {
         println!("[ ==> ] OBSERVE mode: chords pass through, actions are only logged.");
-        run_observe(cfg, cli.timeout_secs, &config_path, !cli.no_tray);
+        run_observe(
+            cfg,
+            cli.timeout_secs,
+            &config_path,
+            !cli.no_tray,
+            cli.verbose,
+        );
     }
 }

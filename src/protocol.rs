@@ -152,45 +152,46 @@ pub fn build_led_packet(layer: u8, mode: &str) -> Result<Vec<u8>> {
     }
 
     match parts[0] {
-        "off" => {
+        "off" | "mode0" => {
             packet[4] = 0;
         }
         "backlight" | "steady" | "mode1" => {
             let color = parts.get(1).copied().unwrap_or("white");
             let (r, g, b) = parse_color(color)?;
             packet[4] = 1;
-            packet[5] = r;
-            packet[6] = g;
-            packet[7] = b;
+            fill_palette(&mut packet, r, g, b);
         }
         "shock" | "reactive" | "mode2" => {
             let color = parts.get(1).copied().unwrap_or("red");
             let (r, g, b) = parse_color(color)?;
             packet[4] = 2;
-            packet[5] = r;
-            packet[6] = g;
-            packet[7] = b;
+            fill_palette(&mut packet, r, g, b);
         }
         "shock2" | "ripple" | "mode3" => {
             let color = parts.get(1).copied().unwrap_or("blue");
             let (r, g, b) = parse_color(color)?;
             packet[4] = 3;
-            packet[5] = r;
-            packet[6] = g;
-            packet[7] = b;
+            fill_palette(&mut packet, r, g, b);
         }
         "press" | "mode4" => {
             let color = parts.get(1).copied().unwrap_or("green");
             let (r, g, b) = parse_color(color)?;
             packet[4] = 4;
-            packet[5] = r;
-            packet[6] = g;
-            packet[7] = b;
+            fill_palette(&mut packet, r, g, b);
         }
         other => return Err(anyhow!("Unknown LED mode '{}'. Available: off, backlight <color>, shock <color>, shock2 <color>, press <color>, mode1..mode4", other)),
     }
 
     Ok(packet)
+}
+
+fn fill_palette(packet: &mut [u8], r: u8, g: u8, b: u8) {
+    for i in 0..16 {
+        let off = 5 + i * 3;
+        packet[off] = r;
+        packet[off + 1] = g;
+        packet[off + 2] = b;
+    }
 }
 
 fn parse_color(s: &str) -> Result<(u8, u8, u8)> {

@@ -30,7 +30,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 
 [[bin]]
 name = "antiknob"
-path = "src/bin/antiknob.rs"
+path = "src/bin/antiknob/main.rs"
 
 [[bin]]
 name = "antiknob-gui"

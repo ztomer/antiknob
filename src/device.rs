@@ -35,6 +35,14 @@ pub struct DeviceMatch {
     pub path: String,
     pub usage_page: u16,
     pub usage: u16,
+    /// USB interface number (-1 when the backend does not report one).
+    /// Defaults for forward compatibility with older status JSON.
+    #[serde(default = "default_iface_no")]
+    pub interface_number: i32,
+}
+
+fn default_iface_no() -> i32 {
+    -1
 }
 
 pub fn list_devices() -> Result<Vec<DeviceMatch>> {
@@ -57,6 +65,7 @@ pub fn list_devices() -> Result<Vec<DeviceMatch>> {
                 path: dev.path().to_string_lossy().to_string(),
                 usage_page: dev.usage_page(),
                 usage: dev.usage(),
+                interface_number: dev.interface_number(),
             });
         }
     }
@@ -94,8 +103,15 @@ pub fn open_device() -> Result<HidDevice> {
     Ok(dev)
 }
 
-/// Send a 64-byte payload to the device using Report ID 0x03
+/// Send a 64-byte payload to the device using Report ID 0x03.
+/// If the passed payload already starts with Report ID 0x03 (e.g. legacy 64B or 65B packets),
+/// the redundant prefix is stripped so the command byte lands at wire byte 1.
 pub fn send_report(dev: &HidDevice, payload: &[u8]) -> Result<()> {
+    let payload = if !payload.is_empty() && payload[0] == REPORT_ID {
+        &payload[1..]
+    } else {
+        payload
+    };
     let mut buf = [0u8; 65];
     buf[0] = REPORT_ID;
     let len = payload.len().min(64);
@@ -175,6 +191,26 @@ pub fn read_slot(dev: &HidDevice, group: u8, counter: u8) -> Result<Vec<u8>> {
         .read_timeout(&mut buf, 500)
         .context("Timed out reading slot dump from device")?;
     Ok(buf[..n].to_vec())
+}
+
+/// LED state read-back, mirroring the vendor app's
+/// `Widget::Read_RgbLed_DataDsp`: query `[FA B0 layer]` (report 0x03);
+/// the reply's byte 2 is the layer's current LED mode. Read-only.
+pub fn read_led_mode(dev: &HidDevice, layer: u8) -> Result<u8> {
+    let mut payload = [0u8; 64];
+    payload[0] = 0xFA;
+    payload[1] = 0xB0;
+    payload[2] = layer;
+    send_report(dev, &payload)?;
+
+    let mut buf = [0u8; 64];
+    let n = dev
+        .read_timeout(&mut buf, 500)
+        .context("Timed out reading LED state from device")?;
+    if n < 3 {
+        anyhow::bail!("Short LED reply ({} bytes)", n);
+    }
+    Ok(buf[2])
 }
 
 /// Commit staged key writes, mirroring the vendor app's `HID_write`

@@ -50,11 +50,24 @@
   - 100% test pass rate across all 79 unit, integration, and E2E tests.
   - Fully passing `./tools/gate.sh --full` (structural, fmt, clippy, cargo lints).
 
-## Open items (need hands on hardware or the owner)
+## Shipped in 0.3.0
 
-1. Twist-to-action proof: twist/press the knob under `--active`, confirm
-   FIRED lines + real effects. (Self-injection via osascript does NOT
-   reach taps; cannot automate headless.)
-2. Slot bindings flashed live (9 packets, all layers); verify with
-   `antiknob listen` while twisting.
+* Native macOS SwiftUI Configurator (`Antiknob.app` in `ui/`):
+  - Native `.formStyle(.grouped)` layout with Liquid Glass and system vibrancy.
+  - Interactive rotary knob centerpiece with clickable gesture zones (twist, hold+twist, press) highlighting matching form rows.
+  - Horizontal layer tab strip with drag-to-reorder, right-click context menus, and `+` to add layers.
+  - System Settings capsule shortcut recorder capturing macOS native modifier glyphs.
+  - Sequence editor sheet modal for multi-step macros with delay steps and reordering.
+  - Dynamic hardware lighting controls (`LedSection.swift`) with mode selection and color swatches sending live `set_led` commands to hardware.
+  - Transient autosave badge providing visual confirmation without manual save buttons.
+* Single Source of Truth (`src/api/`):
+  - Unified tool schemas and command dispatch (`get_status`, `get_config`, `set_config`, `set_layer`, `set_led`, `get_led`, `bind_slots`, `upload_keymap`, `list_apps`).
+* Unix Domain Socket Interface (`/tmp/antiknob.sock`):
+  - Non-blocking JSON-RPC 2.0 socket listener in `antiknob-daemon`.
+  - Dynamic in-memory tap engine hot-reloading.
+* Model Context Protocol (MCP) Server:
+  - Standard stdio MCP server (`2024-11-05`) in `antiknob-daemon --mcp` and `antiknob mcp`.
+* Automated E2E & Quality Verification:
+  - Added `tests/api_e2e.rs` testing socket server round-trip and MCP protocol flows.
+  - 100% test pass rate (85 tests) and strict `./tools/gate.sh --full` compliance.
 

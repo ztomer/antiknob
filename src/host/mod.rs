@@ -173,15 +173,16 @@ pub enum HostAction {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HostLayer {
     pub name: String,
-    #[serde(default)]
+    #[serde(default, alias = "twist_l")]
     pub twist_l: HostAction,
-    #[serde(default)]
+    #[serde(default, alias = "twist_r")]
     pub twist_r: HostAction,
-    #[serde(default)]
+    #[serde(default, alias = "hold_twist_l")]
     pub hold_twist_l: HostAction,
-    #[serde(default)]
+    #[serde(default, alias = "hold_twist_r")]
     pub hold_twist_r: HostAction,
     #[serde(default)]
     pub press: HostAction,

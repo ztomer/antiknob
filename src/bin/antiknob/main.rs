@@ -101,6 +101,13 @@ enum Commands {
         #[arg(trailing_var_arg = true)]
         bytes: Vec<String>,
     },
+
+    /// Run as an MCP (Model Context Protocol) server over stdio
+    Mcp {
+        /// Host config JSON path (created with defaults if missing)
+        #[arg(long)]
+        config: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -119,6 +126,14 @@ fn main() -> Result<()> {
         Commands::ListApps => cmds::run_list_apps()?,
         Commands::ReadSlots { wide } => cmds::run_read_slots(wide)?,
         Commands::Raw { bytes } => cmds::run_raw(bytes)?,
+        Commands::Mcp { config } => {
+            let config_path = match config {
+                Some(p) => p,
+                None => antiknob::host::default_config_path()?,
+            };
+            let ctx = antiknob::api::ApiContext::new(config_path, None);
+            antiknob::api::run_mcp_server(ctx)?;
+        }
     }
 
     Ok(())

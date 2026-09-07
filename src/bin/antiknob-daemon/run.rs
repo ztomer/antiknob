@@ -222,7 +222,7 @@ pub(crate) fn log_raw_event(ev: &Event) {
 }
 
 pub(crate) fn run_observe(
-    cfg: HostConfig,
+    tap: Arc<Mutex<TapEngine>>,
     timeout_secs: u64,
     config_path: &Path,
     with_tray: bool,
@@ -239,7 +239,6 @@ pub(crate) fn run_observe(
         }
     });
 
-    let tap = Arc::new(Mutex::new(TapEngine::new(cfg)));
     let mut watch = ConfigWatch::new(config_path);
     let mut tray = if with_tray {
         match TrayUi::new(&tap) {
@@ -313,13 +312,11 @@ pub(crate) fn run_observe(
 }
 
 pub(crate) fn run_active(
-    cfg: HostConfig,
+    tap: Arc<Mutex<TapEngine>>,
     timeout_secs: u64,
     config_path: &Path,
     with_tray: bool,
 ) -> ! {
-    let tap = Arc::new(Mutex::new(TapEngine::new(cfg)));
-
     if timeout_secs > 0 {
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_secs(timeout_secs));

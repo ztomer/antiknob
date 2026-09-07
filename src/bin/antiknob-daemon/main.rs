@@ -52,6 +52,18 @@ struct Cli {
     #[arg(long)]
     no_tray: bool,
 
+    /// Run as an MCP (Model Context Protocol) server over stdio
+    #[arg(long)]
+    mcp: bool,
+
+    /// Custom path for the Unix domain socket
+    #[arg(long)]
+    socket_path: Option<PathBuf>,
+
+    /// Disable Unix domain socket listener
+    #[arg(long)]
+    no_socket: bool,
+
     /// Install the per-user LaunchAgent (start at login) and load it now
     #[arg(long)]
     install_login_item: bool,
@@ -127,6 +139,12 @@ fn main() -> Result<()> {
         Some(p) => p,
         None => default_config_path()?,
     };
+
+    if cli.mcp {
+        let ctx = antiknob::api::ApiContext::new(config_path, None);
+        return antiknob::api::run_mcp_server(ctx);
+    }
+
     if cli.uninstall_login_item {
         uninstall_login_item()?;
         return Ok(());
@@ -142,13 +160,44 @@ fn main() -> Result<()> {
         cfg.double_tap_switch
     );
 
+    let tap = std::sync::Arc::new(std::sync::Mutex::new(antiknob::host::tap::TapEngine::new(
+        cfg,
+    )));
+
+    let _socket_server = if !cli.no_socket {
+        let sock_path = match cli.socket_path {
+            Some(p) => p,
+            None => antiknob::api::default_socket_path()?,
+        };
+        let api_ctx = antiknob::api::ApiContext::new(config_path.clone(), Some(tap.clone()));
+        match antiknob::api::SocketServer::start(sock_path.clone(), api_ctx) {
+            Ok(server) => {
+                println!(
+                    "[ ==> ] Unix domain socket listening at {}",
+                    sock_path.display()
+                );
+                Some(server)
+            }
+            Err(e) => {
+                println!(
+                    "[ Wrn ] Could not start Unix socket at {}: {}",
+                    sock_path.display(),
+                    e
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     if cli.active {
         println!("[ ==> ] ACTIVE mode: slot chords are swallowed and synthesized.");
-        run_active(cfg, cli.timeout_secs, &config_path, !cli.no_tray);
+        run_active(tap, cli.timeout_secs, &config_path, !cli.no_tray);
     } else {
         println!("[ ==> ] OBSERVE mode: chords pass through, actions are only logged.");
         run_observe(
-            cfg,
+            tap,
             cli.timeout_secs,
             &config_path,
             !cli.no_tray,

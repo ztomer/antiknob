@@ -25,52 +25,12 @@ else
     echo "[ --- ] Keeping existing ${DEST_DIR}/config.yaml (repo copy differs; diff to review)."
 fi
 
-# Assemble macOS Application Bundle (clean rebuild: stale nested content
-# breaks codesigning with "unsealed contents present in the bundle root")
+# Build native macOS SwiftUI Application Bundle
+echo "[ ==> ] Building native SwiftUI Antiknob.app..."
+"${SCRIPT_DIR}/ui/build.sh"
 APP_BUNDLE="${DEST_DIR}/Antiknob.app"
-echo "[ ==> ] Creating macOS App Bundle at ${APP_BUNDLE}..."
 rm -rf "${APP_BUNDLE}"
-mkdir -p "${APP_BUNDLE}/Contents/MacOS"
-mkdir -p "${APP_BUNDLE}/Contents/Resources"
-
-cp "${DEST_DIR}/bin/antiknob-gui" "${APP_BUNDLE}/Contents/MacOS/Antiknob"
-chmod +x "${APP_BUNDLE}/Contents/MacOS/Antiknob"
-
-# Original cartoon AK-12 app icon (assets/Antiknob.icns, generated from
-# assets/ak12-1024.png — original artwork, no vendor assets).
-if [[ -f "assets/Antiknob.icns" ]]; then
-    cp "assets/Antiknob.icns" "${APP_BUNDLE}/Contents/Resources/Antiknob.icns"
-fi
-
-cat << PLIST > "${APP_BUNDLE}/Contents/Info.plist"
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>CFBundleExecutable</key>
-	<string>Antiknob</string>
-	<key>CFBundleIconFile</key>
-	<string>Antiknob.icns</string>
-	<key>CFBundleIdentifier</key>
-	<string>com.antiknob.app</string>
-	<key>CFBundleName</key>
-	<string>Antiknob</string>
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
-	<key>CFBundleShortVersionString</key>
-	<string>${PKG_VERSION}</string>
-	<key>CFBundleVersion</key>
-	<string>${PKG_BUILD}</string>
-	<key>LSMinimumSystemVersion</key>
-	<string>12.0</string>
-	<key>NSHighResolutionCapable</key>
-	<true/>
-</dict>
-</plist>
-PLIST
-
-echo "[ ==> ] Ad-hoc codesigning App Bundle..."
-codesign -s - --force --deep "${APP_BUNDLE}"
+cp -R "${SCRIPT_DIR}/Antiknob.app" "${APP_BUNDLE}"
 
 # Assemble menu-bar daemon bundle (LSUIElement: tray icon, no dock icon)
 DAEMON_BUNDLE="${DEST_DIR}/AntiknobDaemon.app"

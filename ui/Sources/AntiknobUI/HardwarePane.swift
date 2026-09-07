@@ -5,6 +5,29 @@
 import AppKit
 import SwiftUI
 
+/// Which device layer a slot-binding flash targets.
+///
+/// An enum rather than bare `-1 / 0 / 1 / 2` tags so the labels can be
+/// enumerated -- `LayoutTests` renders every one and fails if it would not
+/// fit `Layout.dropdown`.
+enum SlotTarget: Int, CaseIterable, Identifiable {
+    case allLayers = -1
+    case layer1 = 0
+    case layer2 = 1
+    case layer3 = 2
+
+    var id: Int { rawValue }
+
+    var label: String {
+        switch self {
+        case .allLayers: return "All Layers (0..2)"
+        case .layer1: return "Layer 1 (0)"
+        case .layer2: return "Layer 2 (1)"
+        case .layer3: return "Layer 3 (2)"
+        }
+    }
+}
+
 enum KeymapTemplate: String, CaseIterable, Identifiable {
     case media = "Media Controller"
     case mouseWheel = "Native Mouse Wheel"
@@ -174,31 +197,38 @@ struct HardwarePane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                HStack {
-                    Picker("Target Layer", selection: $selectedSlotLayer) {
-                        Text("All Layers (0..2)").tag(-1)
-                        Text("Layer 1 (0)").tag(0)
-                        Text("Layer 2 (1)").tag(1)
-                        Text("Layer 3 (2)").tag(2)
-                    }
-                    .frame(maxWidth: 220)
-
-                    Spacer()
-
-                    Button {
-                        let l = selectedSlotLayer >= 0 ? selectedSlotLayer : nil
-                        store.bindSlots(layer: l)
-                    } label: {
-                        if store.isBindingSlots {
-                            HStack(spacing: 6) {
-                                ProgressView().controlSize(.small)
-                                Text("Flashing slots…")
+                PropertyGrid {
+                    GridRow {
+                        Text("Target Layer")
+                            .foregroundStyle(.secondary)
+                            .frame(width: Layout.controlLabel, alignment: .leading)
+                            .gridColumnAlignment(.leading)
+                        Dropdown(title: SlotTarget(rawValue: selectedSlotLayer)?.label ?? "") {
+                            Picker("", selection: $selectedSlotLayer) {
+                                ForEach(SlotTarget.allCases) { t in
+                                    Text(t.label).tag(t.rawValue)
+                                }
                             }
-                        } else {
-                            Label("Flash Slot Bindings", systemImage: "bolt.fill")
+                            .pickerStyle(.inline).labelsHidden()
                         }
+                        .gridColumnAlignment(.leading)
+
+                        Button {
+                            let l = selectedSlotLayer >= 0 ? selectedSlotLayer : nil
+                            store.bindSlots(layer: l)
+                        } label: {
+                            if store.isBindingSlots {
+                                HStack(spacing: 6) {
+                                    ProgressView().controlSize(.small)
+                                    Text("Flashing slots…")
+                                }
+                            } else {
+                                Label("Flash Slot Bindings", systemImage: "bolt.fill")
+                            }
+                        }
+                        .disabled(store.isBindingSlots || !store.hardwareConnected)
+                        .gridColumnAlignment(.leading)
                     }
-                    .disabled(store.isBindingSlots || !store.hardwareConnected)
                 }
                 .padding(.top, 4)
             }
@@ -223,32 +253,40 @@ struct HardwarePane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                HStack {
-                    Picker("Template", selection: $selectedTemplate) {
-                        ForEach(KeymapTemplate.allCases) { t in
-                            Text(t.rawValue).tag(t)
-                        }
-                    }
-                    .onChange(of: selectedTemplate) { _, newT in
-                        yamlText = newT.defaultYaml
-                    }
-                    .frame(maxWidth: 240)
-
-                    Spacer()
-
-                    Button {
-                        flashKeymap()
-                    } label: {
-                        if isFlashingKeymap {
-                            HStack(spacing: 6) {
-                                ProgressView().controlSize(.small)
-                                Text("Writing to flash…")
+                PropertyGrid {
+                    GridRow {
+                        Text("Template")
+                            .foregroundStyle(.secondary)
+                            .frame(width: Layout.controlLabel, alignment: .leading)
+                            .gridColumnAlignment(.leading)
+                        Dropdown(title: selectedTemplate.rawValue) {
+                            Picker("", selection: $selectedTemplate) {
+                                ForEach(KeymapTemplate.allCases) { t in
+                                    Text(t.rawValue).tag(t)
+                                }
                             }
-                        } else {
-                            Label("Flash Keymap to Hardware", systemImage: "arrow.up.doc.fill")
+                            .pickerStyle(.inline).labelsHidden()
                         }
+                        .onChange(of: selectedTemplate) { _, newT in
+                            yamlText = newT.defaultYaml
+                        }
+                        .gridColumnAlignment(.leading)
+
+                        Button {
+                            flashKeymap()
+                        } label: {
+                            if isFlashingKeymap {
+                                HStack(spacing: 6) {
+                                    ProgressView().controlSize(.small)
+                                    Text("Writing to flash…")
+                                }
+                            } else {
+                                Label("Flash Keymap to Hardware", systemImage: "arrow.up.doc.fill")
+                            }
+                        }
+                        .disabled(isFlashingKeymap || !store.hardwareConnected)
+                        .gridColumnAlignment(.leading)
                     }
-                    .disabled(isFlashingKeymap || !store.hardwareConnected)
                 }
 
                 TextEditor(text: $yamlText)

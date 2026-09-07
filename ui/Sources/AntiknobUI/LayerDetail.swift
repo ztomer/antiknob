@@ -170,71 +170,90 @@ struct LayerDetail: View {
     // MARK: - Categorized Action Menu
 
     private func actionMenu(_ g: Gesture) -> some View {
-        Menu {
+        Dropdown(title: currentTitle(g)) {
+            actionMenuItems(g)
+        }
+    }
+
+    /// The menu's contents, split from `actionMenu` only because the two
+    /// together crossed the function-body cap.
+    @ViewBuilder
+    private func actionMenuItems(_ g: Gesture) -> some View {
+        Group {
+            builtInActions(g)
+            appAndCustomActions(g)
+        }
+    }
+
+    /// Actions the knob can perform on its own: nothing, scrolling, media
+    /// transport, display brightness.
+    @ViewBuilder
+    private func builtInActions(_ g: Gesture) -> some View {
+        Picker("", selection: presetBinding(g)) {
+            Text("None").tag(ActionPreset.none)
+        }
+        .pickerStyle(.inline).labelsHidden()
+
+        Menu("Scroll") {
             Picker("", selection: presetBinding(g)) {
-                Text("None").tag(ActionPreset.none)
+                Text("Scroll Up").tag(ActionPreset.scrollUp)
+                Text("Scroll Down").tag(ActionPreset.scrollDown)
             }
             .pickerStyle(.inline).labelsHidden()
-
-            Menu("Scroll") {
-                Picker("", selection: presetBinding(g)) {
-                    Text("Scroll Up").tag(ActionPreset.scrollUp)
-                    Text("Scroll Down").tag(ActionPreset.scrollDown)
-                }
-                .pickerStyle(.inline).labelsHidden()
-            }
-
-            Menu("Media") {
-                Picker("", selection: presetBinding(g)) {
-                    Text("Volume Up").tag(ActionPreset.aux(.volumeUp))
-                    Text("Volume Down").tag(ActionPreset.aux(.volumeDown))
-                    Text("Mute").tag(ActionPreset.aux(.mute))
-                    Text("Play / Pause").tag(ActionPreset.aux(.playPause))
-                    Text("Next Track").tag(ActionPreset.aux(.next))
-                    Text("Previous Track").tag(ActionPreset.aux(.previous))
-                }
-                .pickerStyle(.inline).labelsHidden()
-            }
-
-            Menu("Display") {
-                Picker("", selection: presetBinding(g)) {
-                    Text("Brightness Up").tag(ActionPreset.aux(.brightnessUp))
-                    Text("Brightness Down").tag(ActionPreset.aux(.brightnessDown))
-                }
-                .pickerStyle(.inline).labelsHidden()
-            }
-
-            Menu("Web") {
-                Button("Back  ⌘[") { setChord(g, key: 33, label: "[") }
-                Button("Forward  ⌘]") { setChord(g, key: 30, label: "]") }
-                Button("Refresh  ⌘R") { setChord(g, key: 15, label: "R") }
-                Divider()
-                Button("Open Website…") { setAction(g, .openURL(url: "https://")) }
-            }
-
-            Menu("Open") {
-                Button("Calculator") { setLaunch(g, "com.apple.calculator") }
-                Button("Mail") { setLaunch(g, "com.apple.mail") }
-                Button("Finder") { setLaunch(g, "com.apple.finder") }
-                Divider()
-                Button("Other App…") { chooseApp(g) }
-                Button("File or Folder…") { choosePath(g) }
-                Divider()
-                Button("Quit App…") { chooseApp(g) { .quitApp(bundleId: $0, force: nil) } }
-            }
-
-            Menu("Custom") {
-                Picker("", selection: presetBinding(g)) {
-                    Text("Keystroke…").tag(ActionPreset.keystroke)
-                    Text("Hotkey Switch…").tag(ActionPreset.hotkeySwitch)
-                    Text("Sequence…").tag(ActionPreset.sequence)
-                }
-                .pickerStyle(.inline).labelsHidden()
-            }
-        } label: {
-            Text(currentTitle(g))
         }
-        .fixedSize()
+
+        Menu("Media") {
+            Picker("", selection: presetBinding(g)) {
+                Text("Volume Up").tag(ActionPreset.aux(.volumeUp))
+                Text("Volume Down").tag(ActionPreset.aux(.volumeDown))
+                Text("Mute").tag(ActionPreset.aux(.mute))
+                Text("Play / Pause").tag(ActionPreset.aux(.playPause))
+                Text("Next Track").tag(ActionPreset.aux(.next))
+                Text("Previous Track").tag(ActionPreset.aux(.previous))
+            }
+            .pickerStyle(.inline).labelsHidden()
+        }
+
+        Menu("Display") {
+            Picker("", selection: presetBinding(g)) {
+                Text("Brightness Up").tag(ActionPreset.aux(.brightnessUp))
+                Text("Brightness Down").tag(ActionPreset.aux(.brightnessDown))
+            }
+            .pickerStyle(.inline).labelsHidden()
+        }
+    }
+
+    /// Actions that reach outside the knob: the browser, other apps, and the
+    /// custom keystroke / hotkey / sequence editors.
+    @ViewBuilder
+    private func appAndCustomActions(_ g: Gesture) -> some View {
+        Menu("Web") {
+            Button("Back  ⌘[") { setChord(g, key: 33, label: "[") }
+            Button("Forward  ⌘]") { setChord(g, key: 30, label: "]") }
+            Button("Refresh  ⌘R") { setChord(g, key: 15, label: "R") }
+            Divider()
+            Button("Open Website…") { setAction(g, .openURL(url: "https://")) }
+        }
+
+        Menu("Open") {
+            Button("Calculator") { setLaunch(g, "com.apple.calculator") }
+            Button("Mail") { setLaunch(g, "com.apple.mail") }
+            Button("Finder") { setLaunch(g, "com.apple.finder") }
+            Divider()
+            Button("Other App…") { chooseApp(g) }
+            Button("File or Folder…") { choosePath(g) }
+            Divider()
+            Button("Quit App…") { chooseApp(g) { .quitApp(bundleId: $0, force: nil) } }
+        }
+
+        Menu("Custom") {
+            Picker("", selection: presetBinding(g)) {
+                Text("Keystroke…").tag(ActionPreset.keystroke)
+                Text("Hotkey Switch…").tag(ActionPreset.hotkeySwitch)
+                Text("Sequence…").tag(ActionPreset.sequence)
+            }
+            .pickerStyle(.inline).labelsHidden()
+        }
     }
 
     // MARK: - Parameter Controls
@@ -251,6 +270,7 @@ struct LayerDetail: View {
             paramControls(g)
         }
         .fixedSize()
+        .frame(width: Layout.gestureParams, alignment: .leading)
     }
 
     @ViewBuilder

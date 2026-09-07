@@ -167,6 +167,10 @@ enum Commands {
 
     /// Send a raw payload (hex bytes, report 0x03 prepended) for RE work
     Raw {
+        /// Print the device's reply. Safe for queries (0xFA); a write
+        /// (0xFE) has no reply and will simply time out.
+        #[arg(long)]
+        read: bool,
         /// Hex bytes, e.g. FC FC 02 00
         #[arg(trailing_var_arg = true)]
         bytes: Vec<String>,
@@ -228,7 +232,7 @@ fn main() -> Result<()> {
             dwell_secs,
             color,
         } => diag::run_led_probe(layer, dwell_secs, &color)?,
-        Commands::Raw { bytes } => diag::run_raw(bytes)?,
+        Commands::Raw { read, bytes } => diag::run_raw(bytes, read)?,
         Commands::Mcp { config } => {
             let config_path = match config {
                 Some(p) => p,

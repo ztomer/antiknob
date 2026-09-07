@@ -138,12 +138,32 @@ pub fn run_read_slots(slots_per_layer: u8, wide: bool) -> Result<()> {
     println!("[ Ok  ] Slot dump complete (device state unchanged).");
     Ok(())
 }
-pub fn run_raw(bytes: Vec<String>) -> Result<()> {
+pub fn run_raw(bytes: Vec<String>, read: bool) -> Result<()> {
     let payload = parse_hex_bytes(&bytes)?;
     let sent = payload.len();
     println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
-    device::with_device(move |dev| device::send_report(dev, &payload))?;
-    println!("[ Ok  ] Raw {}-byte payload sent.", sent);
+    let reply = device::with_device(move |dev| {
+        device::send_report(dev, &payload)?;
+        if !read {
+            return Ok(None);
+        }
+        let mut buf = [0u8; 64];
+        // A query that does not answer is a normal outcome when sweeping
+        // for one that does, so a timeout is None rather than an error.
+        Ok(match dev.read_timeout(&mut buf, 250) {
+            Ok(n) if n > 0 => Some(buf[..n].to_vec()),
+            _ => None,
+        })
+    })?;
+    println!("[ Ok  ] Raw {sent}-byte payload sent.");
+    match reply {
+        Some(r) => {
+            let hex: Vec<String> = r.iter().map(|b| format!("{b:02x}")).collect();
+            println!("        reply ({}B): {}", r.len(), hex.join(" "));
+        }
+        None if read => println!("        no reply within 250ms"),
+        None => {}
+    }
     Ok(())
 }
 

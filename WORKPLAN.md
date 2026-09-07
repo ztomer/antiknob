@@ -123,7 +123,16 @@ override. Both in `all_tools`, described by what they do.
 
 ---
 
-### 5.5 LED identity per layer — TODO
+### 5.5 LED identity per layer — DONE (third colour PARKED)
+
+> Found: **there is no breathing mode.** The firmware's mapped modes are
+> off / backlight / shock / shock2 / press, and `led_mode_name` reports a
+> mode 5 ("custom") that `build_led_packet` cannot produce. Media is steady
+> red and Navigate steady green; the third layer's LED is deliberately left
+> unset, with a test that fails if anyone sets it, because writing a steady
+> colour and calling it "breathing" would be the same unearned claim this
+> session keeps removing. `antiknob led-probe` walks the modes so the
+> question can be answered by looking.
 
 **Problem.** Requested: Media breathing red, Navigate breathing green,
 virtual multicoloured breathing. `config.yaml` already has an optional
@@ -146,7 +155,18 @@ command plus a look.
 
 ## Phase 6 — prepare the hardware questions
 
-### 6.1 Make the hold+twist probe one command — TODO
+### 6.1 Make the hold+twist probe one command — DONE (running it PARKED)
+
+> Found: slots 7 and 8 exist on every layer, answer the read, and carry only
+> a factory placeholder (kind 1, byte 9 = key_id + 3, no keycode). So
+> `PLAN.md`'s "needs the vendor app to diff against" was wrong -- the
+> question is answerable by experiment. `antiknob probe-gestures` arms
+> distinct markers, confirms they landed *before* asking for a gesture, and
+> restores afterwards. The dry run found two defects in my own code: the
+> first restore after a capture always fails (macOS still holding the
+> snoop's handles), and restore claimed success on a write returning Ok
+> without reading anything back. Both fixed; slots verified byte-identical
+> to a pre-probe dump.
 
 **Fix.** `antiknob probe-gestures` writes a distinctive media usage to each
 candidate key ID beyond the six known ones, verifies each landed via the

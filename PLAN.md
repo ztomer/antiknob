@@ -33,8 +33,7 @@
 ## Open items (need hands on hardware or the owner)
 
 1. Twist-to-action proof: twist/press the knob under `--active`, confirm
-   FIRED lines + real effects. (Self-injection via osascript does not
+   FIRED lines + real effects. (Self-injection via osascript does NOT
    reach taps; cannot automate headless.)
-2. Live slot flash: `antiknob bind-slots` overwrites the knob's bindings;
-   verify with `antiknob listen`.
-3. Production reinstall after this release: `./install.sh`.
+2. Slot bindings flashed live 2026-09-07 (9 packets, all layers); verify
+   with `antiknob listen` while twisting.

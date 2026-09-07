@@ -20,7 +20,11 @@ step, with a stated expected result. `PARKED` means exactly that, never
 
 ## Phase 5 — the virtual layer, host side
 
-### 5.1 A layer can be virtual, and say what drives it — TODO
+### 5.1 A layer can be virtual, and say what drives it — DONE
+
+> `HostLayer.variants`, skipped when empty so a config written before this
+> serialises identically. Pinned against the real `host.json` from this
+> machine rather than a fixture.
 
 **Problem.** `HostLayer` has a name and five gestures. A virtual layer needs
 more: a set of named binding-sets it can swap between, and a rule for which
@@ -44,7 +48,12 @@ loads byte-identically.
 
 ---
 
-### 5.2 Resolve the active variant from the frontmost app — TODO
+### 5.2 Resolve the active variant from the frontmost app — DONE
+
+> `host::frontmost` is the seam (one trait, a fixed fake and a settable
+> fake); `virtual_layer::resolve` is pure. Override beats app, app beats
+> base, and an override naming nothing resolves to base rather than to a
+> neighbouring variant.
 
 **Problem.** The obvious driver is the frontmost application, but the
 mechanism must not be hard-wired to it -- `PLAN.md` says so, and an agent
@@ -66,7 +75,12 @@ fake, so the resolver tests need no AppKit.
 
 ---
 
-### 5.3 Wire the resolver into the daemon — TODO
+### 5.3 Wire the resolver into the daemon — DONE
+
+> Four call sites indexed the layer directly; they now funnel through
+> `Engine::action_for`, so a fifth added later cannot forget variants. The
+> app is read at fire time, with a test that fails if the read is hoisted.
+> `engine.rs` hit the 500-line cap and its virtual-layer tests moved out.
 
 **Problem.** Resolution has to happen at gesture time. Reading the frontmost
 app when the knob turns is one call; polling for it is a standing cost for a
@@ -88,7 +102,11 @@ at fire time.
 
 ---
 
-### 5.4 Expose the swap over the socket and MCP — TODO
+### 5.4 Expose the swap over the socket and MCP — DONE
+
+> `get_virtual_layer` / `set_virtual_variant`, both in `all_tools`. The
+> report carries the resolution *reason*; an unknown pin is refused naming
+> the real variants. Verified against the running daemon.
 
 **Fix.** `get_virtual_layer` reports the variants, which is active, and *why*
 (override / matched app / base). `set_virtual_variant` sets or clears the

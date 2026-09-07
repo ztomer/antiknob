@@ -2,11 +2,15 @@
 GOH_SWIFT_MODE=spm
 GOH_SWIFT_LINT_BASELINE=.swiftlint-baseline.json
 
-# Coverage floor. READ THIS BEFORE TRUSTING THE NUMBER: 4% is the honest
-# measured figure, not a quality bar. The package is ~6,900 lines of which
-# ~6,000 are SwiftUI view bodies that no unit test executes; Models.swift,
-# the part with testable logic, sits at 64%. So this floor is a ratchet
-# against DELETING tests, and nothing more. Raising it means either testing
-# more logic or splitting the views into their own target so the floor can
-# apply where coverage means something -- see PLAN.md.
-GOH_SWIFT_COV_MIN=4
+# Coverage floor. READ THIS BEFORE TRUSTING THE NUMBER: 6% is the honest
+# measured figure, not a quality bar. Most of the package is SwiftUI view
+# bodies that no unit test executes; the logic that IS reachable sits far
+# higher (Models.swift 64%, SocketWire near total). So this floor is a
+# ratchet against DELETING tests. It moves up as logic gains a seam and tests.
+#
+# The number is over SOURCES only: the house checker stopped counting Tests/
+# on 2026-09-07, which is why this reads 3 and not 6 -- the old figure was
+# inflated by the test files, which are ~100% covered by definition. A floor
+# on that could be met by writing tests that assert nothing. See PLAN.md for
+# what would make it mean more.
+GOH_SWIFT_COV_MIN=3

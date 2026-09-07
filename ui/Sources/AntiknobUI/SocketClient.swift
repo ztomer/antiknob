@@ -24,6 +24,61 @@ enum SocketError: LocalizedError {
     }
 }
 
+/// The JSON-RPC wire format, with no socket attached.
+///
+/// `SocketClient` is 250 lines that a unit test could not reach, because every
+/// path ran through a live `/tmp/antiknob.sock`. The framing and the parsing
+/// are pure functions of their inputs, though, and they are where the format
+/// bugs live -- a mis-shaped request or an error reply read as a result is
+/// silent, and only shows up as the UI quietly doing nothing. Splitting them
+/// out is the whole seam: the socket keeps the I/O, this keeps the contract.
+enum SocketWire {
+    /// One JSON-RPC request, newline-terminated as the daemon's line reader
+    /// expects.
+    static func encodeRequest(
+        id: Int,
+        method: String,
+        params: [String: Any]
+    ) throws -> String {
+        let payload: [String: Any] = [
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params
+        ]
+        // `isValidJSONObject` FIRST, and not for tidiness: `data(withJSONObject:)`
+        // raises an ObjC NSException on an unencodable value rather than
+        // throwing a Swift error, so `try?` does not catch it and the app dies
+        // instead of reporting a failed call. Found by the test below, which
+        // crashed the whole test process before this guard existed.
+        guard JSONSerialization.isValidJSONObject(payload) else {
+            throw SocketError.parseError("Request parameters are not JSON-encodable.")
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              var text = String(data: data, encoding: .utf8) else {
+            throw SocketError.parseError("Failed to serialize JSON-RPC request.")
+        }
+        text.append("\n")
+        return text
+    }
+
+    /// The `result` of a reply, or a thrown `SocketError`.
+    ///
+    /// An `error` object is thrown rather than returned: a caller that reads
+    /// the reply as a result would treat a refusal as success.
+    static func decodeResponse(_ data: Data) throws -> Any {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            let text = String(data: data, encoding: .utf8) ?? "<binary>"
+            throw SocketError.parseError("Invalid JSON from server: \(text)")
+        }
+        if let errObj = json["error"] as? [String: Any] {
+            let msg = errObj["message"] as? String ?? "Unknown error"
+            throw SocketError.serverError(msg)
+        }
+        return json["result"] ?? [:]
+    }
+}
+
 final class SocketClient: @unchecked Sendable {
     static let shared = SocketClient()
 
@@ -50,18 +105,7 @@ final class SocketClient: @unchecked Sendable {
             return id
         }
 
-        let payload: [String: Any] = [
-            "jsonrpc": "2.0",
-            "id": reqId,
-            "method": method,
-            "params": params
-        ]
-
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload),
-              var jsonString = String(data: jsonData, encoding: .utf8) else {
-            throw SocketError.parseError("Failed to serialize JSON-RPC request.")
-        }
-        jsonString.append("\n")
+        let jsonString = try SocketWire.encodeRequest(id: reqId, method: method, params: params)
 
         // Try primary path then fallback path
         var lastErr: SocketError = .cannotConnect(primaryPath)
@@ -139,17 +183,7 @@ final class SocketClient: @unchecked Sendable {
             }
         }
 
-        guard let json = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any] else {
-            let respStr = String(data: responseData, encoding: .utf8) ?? "<binary>"
-            throw SocketError.parseError("Invalid JSON from server: \(respStr)")
-        }
-
-        if let errObj = json["error"] as? [String: Any] {
-            let msg = errObj["message"] as? String ?? "Unknown error"
-            throw SocketError.serverError(msg)
-        }
-
-        return json["result"] ?? [:]
+        return try SocketWire.decodeResponse(responseData)
     }
 
     // MARK: - High Level Typed Operations

@@ -143,7 +143,7 @@ The Swift half is an SPM package and has its own suite:
 swift test --package-path ui
 ```
 
-Quality gates cover both halves:
+Quality gates cover both halves, each with a measured coverage floor:
 
 ```bash
 ./tools/gate.sh --full
@@ -152,7 +152,7 @@ Quality gates cover both halves:
 | Layer | What it runs |
 | --- | --- |
 | structural | emoji, conflict markers, file length, shell lint, secrets |
-| rust | `fmt`, `clippy -D warnings`, cargo manifest lints, no-`#[allow]` |
+| rust | `fmt`, `clippy -D warnings`, cargo manifest lints, no-`#[allow]`, coverage floor |
 | swift | `swiftlint --strict` against a shrink-only baseline, a **cold** warnings-as-errors build, `swift test`, coverage floor |
 | repo | the Rust test suite, `cargo audit` |
 

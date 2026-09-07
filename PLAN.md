@@ -23,65 +23,101 @@ file carries only what is still open. `git log --oneline` and
 
 ## Open
 
-### 1. Swift coverage is a ratchet, not a bar
+### 1. Coverage floors are ratchets, not bars
 
-The Swift half is now under the house gate (`ui/` is an SPM package; see
-`ui/.gatesrc`), but the coverage floor it enforces is 4%, which is the honest
-measured figure rather than a quality bar. Of ~6,900 lines, ~6,000 are SwiftUI
-view bodies no unit test executes; `Models.swift` -- the part with testable
-logic -- sits at 64% and everything else at 0%.
+Both floors are the measured figure with the decimal shaved off, set so they
+can only be met by keeping tests, never by picking a number: Rust 61
+(`GOH_COV_FLOOR_RUST`, measured 61.92%) and Swift 3 (`GOH_SWIFT_COV_MIN`,
+measured 3.4% over SOURCES -- the house checker stopped counting `Tests/` on
+2026-09-07, because a test file is ~100% covered by definition and a floor set
+on that can be met by tests that assert nothing).
 
-Two ways to make the number mean something, in order of value:
+The Swift number is low because ~6,000 of its ~7,300 lines are SwiftUI view
+bodies no unit test executes. The logic that has a seam scores far higher --
+`Models.swift` 64%, `SocketWire` near total. Two ways to make the number mean
+more, in order of value:
 
-* Split the package into a logic target and a views target so the floor can
-  apply where coverage is meaningful. `StatusPresentation` and `ledModeNames`
-  were already pulled out of `ConfigStore` for exactly this reason and are the
-  start of that target.
-* Put a seam under `SocketClient` (247 lines, 0%) so its JSON-RPC framing and
-  error paths can be tested without a live daemon.
+* Split the package into a logic target and a views target so a floor can
+  apply where coverage is meaningful. Blocked on the house side, not here:
+  `swift_gate.sh` calls `check_swift_coverage.py --min N` directly and never
+  reaches `coverage_gate.sh`, which is the script that supports per-target
+  floors (`--floors-json`). Routing Swift through it would fix this for every
+  repo.
+* Keep putting seams under the logic that has none. `ConfigStore` (659 lines,
+  0%) is the largest remaining one; its `init()` loads config and starts a
+  2s poll timer, so it cannot be constructed in a test as it stands.
 
-`ui/.swiftlint-baseline.json` is the companion ratchet: 11 entries, all
-`cyclomatic_complexity` / `function_body_length` / `type_body_length` on view
-bodies and the two exhaustive `Action` coding switches. It is shrink-only --
-new violations fail, and a listed one that grows fails too, because the match
-key includes the count in the reason string. Delete entries as the bodies get
-split; do not re-record it to make a failure go away. It has been re-recorded
-once, when splitting `LayerDetail.swift` moved three entries to a new file and
-eliminated a fourth; that was verified as a pure move (zero new debt, ignoring
-which file each violation lived in) before re-recording, which is the only
-form of re-record the ratchet permits.
+`ui/.swiftlint-baseline.json` is the companion ratchet: 8 entries, all
+body-length and complexity on view bodies and the two exhaustive `Action`
+coding switches. Shrink-only -- a new violation fails and so does a listed one
+that GROWS, because the match key includes the measured count. It has been
+re-recorded twice, both times verified file-agnostically as zero new debt
+first, which is the only form of re-record it permits.
 
 ### 2. `rdev` drags in a crate a future rustc will reject
 
-`cargo build` warns: `block v0.1.6` "contains code that will be rejected by a
-future version of Rust". The chain is `antiknob -> rdev 0.5.3 -> cocoa 0.22 ->
-block 0.1.6`. `rdev` is the input-tap engine, so this is not a version bump --
-it is either an upstream fix, a fork, or replacing the tap with `objc2`
-+ `CGEventTap` directly (the crate is already a dependency). Standing rule:
-never build on APIs that are on a removal path. Track the warning with
-`cargo report future-incompatibilities`.
+`cargo build` warns that `block v0.1.6` "contains code that will be rejected by
+a future version of Rust". The lint is `static of uninhabited type`
+(rust-lang/rust#74840) on `_NSConcreteStackBlock`, and it becomes a hard error.
 
-### 3. No coverage floor on the Rust side
+Investigated 2026-09-07, so the next session need not repeat it:
 
-`tools/gate.sh --full` prints `no coverage floor -- set GOH_COV_FLOOR_RUST in
-.gatesrc`. Measure the current figure first, set the floor just under it, then
-ratchet; do not pick a round number and grind toward it.
+* The chain is `antiknob -> rdev 0.5.3 -> cocoa 0.22.0 -> block 0.1.6`.
+* **0.5.3 is the newest rdev**; there is no version to bump to, and `block` is
+  unmaintained, so waiting is not a plan.
+* The surface is small: `Event`, `EventType`, `Key`, `rdev::listen` and
+  `rdev::grab`, at exactly two call sites (`src/host/tap.rs:240`,
+  `src/bin/antiknob-daemon/run.rs:375`).
+* `tap.rs` already speaks CG keycodes internally and holds its own mirror of
+  rdev's macOS mapping, so the translation layer that would normally dominate
+  such a port is already written.
+* The hard part is `grab`: swallowing an event needs a `CGEventTap` that
+  returns NULL for consumed events. `objc2-core-graphics` is already a
+  dependency, so nothing new is added.
 
-### 4. Hold+twist firmware slots stay unbound
+Not attempted here on purpose: this is the code path that can swallow the
+user's keystrokes, and getting it wrong leaves the keyboard misbehaving. It
+wants its own session with the daemon running in observe mode first.
+
+### 3. Hold+twist firmware slots stay unbound
 
 `bind-slots` binds three slots per layer (CCW / Press / CW) to
 `ctrl-alt-F16..F18`. The hold+twist key IDs were never verified against the
-vendor app, so they are deliberately left alone rather than guessed at --
-a wrong ID writes a binding the firmware then reports back as something else.
-Recover them with `antiknob read-slots --wide` against a vendor-app-configured
-device, then extend `host::bind::binding_packets`.
+vendor app, so they are left alone rather than guessed at -- a wrong ID writes
+a binding the firmware then reports back as something else.
 
-### 5. Bluetooth transport detection is inferred, not confirmed
+Progress 2026-09-07: `antiknob read-slots --wide` dumps decode further than
+before. Records have the shape
 
-`device::list_devices` classifies a device as Bluetooth from
-`dev.bus_type() == Bluetooth` or a product string containing
-`anticater`/`vk01`/`vk-01`. That path has never run against real Bluetooth
-hardware -- only USB and the 2.4GHz receiver are verified. The power
-description it drives (`Bluetooth Wireless (Battery Powered)`) is likewise
-unverified, and no vendor battery-level query has been found in the protocol
-(the device reports bus power over USB). Probe before trusting either.
+    03 FA <key_id> <layer> <kind> .. .. .. .. <code>
+
+with `kind` 01 = keyboard (mods at byte 11, code at byte 12), 02 = media (code
+at byte 9, e.g. `E9` = volume up, `B5` = next track, matching `protocol.rs`),
+03 = mouse. Group `0x0F` holds the three bound slots; `0x19` and the low
+groups hold records whose key IDs (0x09, 0x0E, 0x13...) do not match the
+`key_id_for_knob` scheme.
+
+Still blocked on the same thing: a device whose hold+twist gestures have been
+configured **by the vendor app**, to diff against. Without that reference the
+dump shows what is there, not which byte means hold+twist.
+
+### 4. Bluetooth transport is inferred, and cannot be confirmed here
+
+`device::classify_device` decides a device is ours, and over which transport,
+from its VID/PID, its bus type and its product string. Only USB and the 2.4GHz
+receiver have ever been exercised against real hardware.
+
+Progress 2026-09-07: the decision was pulled out of `list_devices_on` into a
+pure function and pinned by 7 tests, which is the only way the Bluetooth
+branches can be exercised at all without the hardware. That extraction found a
+real defect: the old inline code raised its `is_bt` flag from the PRODUCT
+STRING as well as the bus, so an Anticater with an unlisted PID plugged into
+USB was classified as Bluetooth -- and since transport drives the power
+readout, the UI would have called a bus-powered device battery-powered. Fixed:
+the bus is ground truth, the name only decides whether the device is ours.
+
+What remains needs the hardware: no Anticater has been paired over Bluetooth
+here, so the branch is pinned by construction and unconfirmed in life. The
+power description it drives (`Bluetooth Wireless (Battery Powered)`) is
+likewise unverified, and no vendor battery-level query has been found in the
+protocol -- over USB the device reports bus power and nothing else.

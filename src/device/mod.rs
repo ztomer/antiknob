@@ -2,7 +2,9 @@ use anyhow::{anyhow, Context, Result};
 use hidapi::HidApi;
 use serde::{Deserialize, Serialize};
 
+mod classify;
 mod thread;
+pub use classify::classify_device;
 pub use thread::{with_device, with_hid, HidDevice};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -199,36 +201,9 @@ pub fn list_devices_on(api: &HidApi) -> Result<Vec<DeviceMatch>> {
     for dev in api.device_list() {
         let vid = dev.vendor_id();
         let pid = dev.product_id();
-        let bus = dev.bus_type();
-        let prod = dev.product_string().unwrap_or("").to_lowercase();
-
-        let known = SUPPORTED_DEVICES
-            .iter()
-            .find(|(v, p, _, _)| *v == vid && *p == pid);
-        let is_bt = matches!(bus, hidapi::BusType::Bluetooth)
-            || prod.contains("anticater")
-            || prod.contains("vk01")
-            || prod.contains("vk-01");
-
-        let match_info = if let Some((_, _, name, transport)) = known {
-            let actual = if matches!(bus, hidapi::BusType::Bluetooth) {
-                TransportType::Bluetooth
-            } else {
-                *transport
-            };
-            Some((name.to_string(), actual))
-        } else if is_bt
-            && (prod.contains("anticater") || prod.contains("vk01") || prod.contains("vk-01"))
-        {
-            let name = if let Some(ps) = dev.product_string() {
-                format!("Anticater ({})", ps)
-            } else {
-                "Anticater (Bluetooth)".to_string()
-            };
-            Some((name, TransportType::Bluetooth))
-        } else {
-            None
-        };
+        let bluetooth_bus = matches!(dev.bus_type(), hidapi::BusType::Bluetooth);
+        let match_info =
+            classify_device(vid, pid, bluetooth_bus, dev.product_string().unwrap_or(""));
 
         if let Some((name, transport)) = match_info {
             matches.push(DeviceMatch {

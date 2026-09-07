@@ -12,18 +12,36 @@ struct LedMode: Identifiable, Hashable {
     let icon: String
 
     /// The selectable modes, in display order.
+    ///
+    /// These are the 514c:8850's own modes, watched one by one on real
+    /// hardware. The previous list carried the 1189:884x names -- it offered
+    /// "Shock (Breathe)" and "Press (Reactive)" for modes that are reactive
+    /// and rainbow here, so picking one gave an effect the label did not
+    /// describe. Mode 5 is deliberately absent: it crashes this firmware.
     static let all: [LedMode] = [
-            LedMode(id: "backlight", name: "Backlight",
-                    desc: "Steady solid illumination", icon: "lightbulb.fill"),
-            LedMode(id: "shock", name: "Shock (Breathe)",
-                    desc: "Gentle pulsing breath", icon: "waveform.path"),
-            LedMode(id: "shock2", name: "Shock 2 (Rapid)",
-                    desc: "Faster pulse cycle", icon: "waveform.path.ecg"),
-            LedMode(id: "press", name: "Press (Reactive)",
-                    desc: "Lights up on knob press", icon: "hand.tap.fill"),
+            LedMode(id: "static", name: "Static",
+                    desc: "Steady illumination", icon: "lightbulb.fill"),
+            LedMode(id: "reactive", name: "Reactive",
+                    desc: "Lights up in response to input", icon: "hand.tap.fill"),
+            LedMode(id: "ripple", name: "Ripple",
+                    desc: "Ripple effect on input", icon: "waveform.path.ecg"),
+            LedMode(id: "rainbow", name: "Rainbow",
+                    desc: "Cycling multicolour — the effect the knob ships in",
+                    icon: "rainbow"),
             LedMode(id: "off", name: "Off",
                     desc: "Disable LEDs to conserve power", icon: "power")
         ]
+
+    /// Whether this build can promise the colour swatches do anything.
+    ///
+    /// On the 3-button knob they do not: mode 1 was set with blue, red and
+    /// green in turn and stayed red every time. The 16-key device sharing
+    /// this product id does honour them, so the controls stay -- but a UI
+    /// that silently ignores a colour someone picked is the same defect as a
+    /// layer view showing bindings that cannot fire.
+    static let colourNotice =
+        "This knob has a single fixed colour — only the effect can change. "
+        + "Colour choices are sent and ignored by its firmware."
 }
 
 /// One swatch in the colour row. `hex` is the wire name sent to `set_led`.
@@ -49,7 +67,7 @@ struct LedSection: View {
     @ObservedObject var store: ConfigStore
 
     @State private var selectedLayer: Int = 0
-    @State private var selectedMode: String = "backlight"
+    @State private var selectedMode: String = "rainbow"
     @State private var selectedColorHex: String = "white"
     @State private var customColor: Color = .white
     @State private var liveApply: Bool = true
@@ -225,6 +243,16 @@ struct LedSection: View {
 
     private var colorSelectionSection: some View {
         Section("Color Swatches") {
+            // Says plainly that these do nothing here rather than letting
+            // someone pick a colour and wonder why the knob stays red.
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "info.circle")
+                    .foregroundStyle(.secondary)
+                Text(LedMode.colourNotice)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack(spacing: 12) {
                 ForEach(LedColorPreset.all, id: \.hex) { preset in
                     Button {

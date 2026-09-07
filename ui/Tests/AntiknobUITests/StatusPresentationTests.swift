@@ -149,3 +149,40 @@ struct ModePresentationTests {
         #expect(Set(icons).count == 3, "two modes share a glyph: \(icons)")
     }
 }
+
+/// The LED controls must describe this device's own modes, and must not
+/// offer a promise the firmware does not keep.
+@Suite("LED mode list")
+struct LedModeTests {
+    @Test("the modes are the 8850's, not the 884x names")
+    func modesMatchTheDevice() {
+        let ids = LedMode.all.map(\.id)
+        #expect(ids == ["static", "reactive", "ripple", "rainbow", "off"], "\(ids)")
+        // The old list's names described effects this device does not have.
+        #expect(!ids.contains("backlight"))
+        #expect(!ids.contains("shock"))
+        #expect(!ids.contains("press"))
+    }
+
+    /// Mode 5 crashes the firmware. It must not be reachable from the UI.
+    @Test("mode 5 is not offered anywhere in the picker")
+    func modeFiveIsAbsent() {
+        for m in LedMode.all {
+            #expect(m.id != "custom" && m.id != "mode5", "mode 5 is selectable: \(m.id)")
+        }
+    }
+
+    @Test("the colour notice says colour is ignored, not that it is broken")
+    func colourNoticeIsHonest() {
+        let n = LedMode.colourNotice
+        #expect(n.contains("ignored"), "\(n)")
+        #expect(n.contains("effect"), "\(n)")
+    }
+
+    @Test("every mode has a description and its own glyph")
+    func modesAreDistinct() {
+        #expect(LedMode.all.allSatisfy { !$0.desc.isEmpty })
+        let icons = LedMode.all.map(\.icon)
+        #expect(Set(icons).count == icons.count, "two modes share a glyph: \(icons)")
+    }
+}

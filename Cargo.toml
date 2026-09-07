@@ -1,6 +1,6 @@
 [package]
 name = "antiknob"
-version = "0.8.1"
+version = "0.8.2"
 edition = "2021"
 authors = ["Tomer Zaidentein <ztomer@gmail.com>"]
 description = "Native macOS Apple Silicon configuration utility for the Anticater VK01 Knob"

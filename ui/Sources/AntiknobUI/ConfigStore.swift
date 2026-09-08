@@ -63,6 +63,10 @@ public final class ConfigStore: ObservableObject {
     /// reads, with nothing anywhere reporting a failure.
     @Published var knobButtons: Int?
     @Published var knobKeyIds: [Int]?
+    /// Which DEVICE layer carries the slot chords, and therefore the one
+    /// whose backlight the daemon drives. nil when nothing is bound, which
+    /// is a real state: no layer's colour can appear until one is.
+    @Published var boundDeviceLayer: Int?
     @Published var startOnLogin: Bool = false
     /// The socket path the last successful call actually went to. nil when
     /// nothing has answered. Three panes printed `/tmp/antiknob.sock` as a
@@ -119,11 +123,13 @@ public final class ConfigStore: ObservableObject {
             let binding = reply?["device_binding_summary"] as? String
             let buttons = reply?["buttons"] as? Int
             let keyIds = reply?["knob_key_ids"] as? [Int]
+            let bound = (reply?["device_binding"] as? [String: Any])?["host_translated"] as? Int
             await MainActor.run { [weak self] in
                 self?.knobModeRaw = mode
                 self?.deviceBindingSummary = binding
                 self?.knobButtons = buttons
                 self?.knobKeyIds = keyIds
+                self?.boundDeviceLayer = bound
             }
         }
     }

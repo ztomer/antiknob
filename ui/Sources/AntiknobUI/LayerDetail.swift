@@ -21,7 +21,9 @@ enum ActionPreset: Hashable {
 struct LayerDetail: View {
     @ObservedObject var store: ConfigStore
     let idx: Int
-    @Binding var sel: TabSelection
+    /// Which layer the pane is showing. Owned by `LayersPane`; move and
+    /// delete write it so the pane lands on a layer that still exists.
+    @Binding var selectedLayer: Int
 
     @State private var selected: Gesture?
     @State private var confirmingDelete = false
@@ -45,13 +47,19 @@ struct LayerDetail: View {
 
                 ReachabilityNotice(mode: store.modePresentation, store: store)
 
-                Section("Knob Gestures") {
+                Section("Gestures") {
                     PropertyGrid(horizontalSpacing: 12, verticalSpacing: 2) {
                         ForEach(Gesture.allCases) { g in
                             gestureRow(g)
                         }
                     }
                 }
+
+                LayerLighting(store: store, idx: idx)
+
+                // Global rather than per-layer, so it sits last: the
+                // sections above are this layer, this one is all of them.
+                LayerSwitchingSection(store: store)
             }
             .formStyle(.grouped)
             .sheet(item: $editingSequence) { g in
@@ -66,8 +74,10 @@ struct LayerDetail: View {
     // MARK: - Layer Name, Order, and Removal
 
     private var layerSection: some View {
-        Section("Layer") {
+        Section {
             PropertyGrid {
+                LayerChooser(store: store, selected: $selectedLayer, idx: idx)
+
                 GridRow {
                     Text("Name")
                         .foregroundStyle(.secondary)
@@ -133,7 +143,7 @@ struct LayerDetail: View {
         guard store.cfg.layers.indices.contains(dest) else { return }
         withAnimation {
             store.cfg.layers.swapAt(idx, dest)
-            sel = .layer(dest)
+            selectedLayer = dest
         }
     }
 
@@ -143,7 +153,7 @@ struct LayerDetail: View {
               store.cfg.layers.indices.contains(idx) else { return }
         withAnimation {
             store.cfg.layers.remove(at: idx)
-            sel = .layer(min(idx, store.cfg.layers.count - 1))
+            selectedLayer = min(idx, store.cfg.layers.count - 1)
         }
     }
 

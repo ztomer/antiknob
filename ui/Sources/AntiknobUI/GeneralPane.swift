@@ -8,7 +8,6 @@ struct GeneralPane: View {
 
     var body: some View {
         Form {
-            switchingSection
             slotBindingSection
             startupSection
             systemStatusSection
@@ -16,42 +15,17 @@ struct GeneralPane: View {
         .formStyle(.grouped)
     }
 
-    private var switchingSection: some View {
-        Section {
-            Toggle("Double-tap the knob to switch layers", isOn: Binding(
-                get: { store.cfg.doubleTapEnabled },
-                set: { store.cfg.doubleTapSwitch = $0 }
-            ))
-
-            LabeledContent("Next layer") {
-                ChordRecorder(
-                    chord: $store.cfg.layerHotkey,
-                    requireModifiers: true,
-                    clearable: true
-                )
-            }
-
-            LabeledContent("Previous layer") {
-                ChordRecorder(
-                    chord: $store.cfg.layerHotkeyBack,
-                    requireModifiers: true,
-                    clearable: true
-                )
-            }
-        } header: {
-            Text("Layer Switching")
-        } footer: {
-            Text("With double-tap on, a single press waits "
-               + "\(Int(store.cfg.tapWindow * 1000)) ms to see if a second one follows. "
-               + "The shortcuts and the menu bar switch layers either way.")
-        }
-    }
-
     private var slotBindingSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Binds the knob's five gestures to ⌃⌥F16..F20 so the daemon hears "
-                   + "them. Run once.")
+                // The old line named the mechanism -- "binds the knob's five
+                // gesture slots to ⌃⌥F16..F20" -- to a reader who wanted to
+                // know what the button was for. The chords are still spelled
+                // out, on the Hardware pane, next to the control that picks
+                // which device layer gets them.
+                Text("Out of the box the knob talks straight to macOS, so nothing you "
+                   + "configure here can run. Flashing it once, over USB, hands its "
+                   + "gestures to Antiknob instead.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -89,7 +63,7 @@ struct GeneralPane: View {
                                 Text("Flashing slots…")
                             }
                         } else {
-                            Label("Flash Slot Bindings to Hardware", systemImage: "bolt.fill")
+                            Label("Flash the Knob", systemImage: "bolt.fill")
                         }
                     }
                     .disabled(store.isBindingSlots || !store.hardwareConnected)
@@ -101,7 +75,7 @@ struct GeneralPane: View {
             }
             .padding(.vertical, 4)
         } header: {
-            Text("Firmware Slot Translation")
+            Text("Knob Control")
         }
     }
 

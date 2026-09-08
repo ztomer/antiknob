@@ -34,7 +34,12 @@ enum SlotMemoryGroup: UInt8, CaseIterable, Identifiable {
     }
 }
 
-struct InspectorPane: View {
+/// The three diagnostic sections, for the Hardware pane's Form.
+///
+/// A tab of its own until now, which put a snoop, a slot dump and a raw
+/// packet console one tab away from the device they all read and the pane
+/// that flashes it. Same sections, same state, rendered inside Hardware.
+struct InspectorSections: View {
     @ObservedObject var store: ConfigStore
     // Module-internal, not private: InspectorActions.swift is an extension on
     // this type in another file, and `private` does not reach across files.
@@ -51,12 +56,11 @@ struct InspectorPane: View {
     @State var rawPacketStatus: String?
 
     var body: some View {
-        Form {
+        Group {
             trafficSnooperSection
             slotMemorySection
             rawConsoleSection
         }
-        .formStyle(.grouped)
     }
 
     private var trafficSnooperSection: some View {

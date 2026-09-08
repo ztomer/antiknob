@@ -9,7 +9,7 @@ import AppKit
 import Foundation
 import SwiftUI
 
-extension InspectorPane {
+extension InspectorSections {
 
     func startSnooping() {
         isSnooping = true

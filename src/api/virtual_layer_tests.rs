@@ -48,6 +48,7 @@ mod tests {
                     variant("Browser", &["com.apple.Safari"]),
                     variant("Editor", &["com.microsoft.VSCode"]),
                 ],
+                led: None,
             }],
             ..HostConfig::default_config()
         };

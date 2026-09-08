@@ -96,13 +96,13 @@ struct LedMode: Identifiable, Hashable, Sendable {
         LedMode(
             id: "red", name: "Red",
             desc: "Steady red",
-            icon: "lightbulb.fill", number: 1,
+            icon: "circle.fill", number: 1,
             appearance: .steady(RGB(1.0, 0.15, 0.1))
         ),
         LedMode(
             id: "green", name: "Green",
             desc: "Steady green",
-            icon: "lightbulb.fill", number: 2,
+            icon: "circle.fill", number: 2,
             appearance: .steady(RGB(0.1, 1.0, 0.25))
         ),
         LedMode(
@@ -124,6 +124,19 @@ struct LedMode: Identifiable, Hashable, Sendable {
             appearance: .sweep
         )
     ]
+
+    /// The colour to tint this mode's glyph, when it has one.
+    ///
+    /// Two modes share `circle.fill`, and what separates them is the only
+    /// thing this device varies: red versus green. A shape alone cannot say
+    /// that. The multicolour modes have no single colour, so they keep their
+    /// own distinct symbols and no tint.
+    var swatch: RGB? {
+        switch appearance {
+        case .steady(let rgb), .pulse(let rgb): return rgb
+        case .unlit, .palette, .sweep: return nil
+        }
+    }
 
     /// Look up by wire name.
     static func named(_ id: String) -> LedMode? {

@@ -271,6 +271,7 @@ mod tests {
             hold_twist_r: HostAction::None,
             press: HostAction::None,
             variants: vec![],
+            led: None,
         }
     }
 

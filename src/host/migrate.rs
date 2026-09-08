@@ -224,6 +224,14 @@ pub fn migrate_preset(preset: &Preset) -> (MigratedPreset, Vec<String>) {
             .unwrap_or_default(),
         press: migrate_slot(preset.press, &mut warnings),
         variants: vec![],
+        // The preset's own mode, carried on the layer so the daemon can put
+        // it back on the knob whenever this layer is active. The preset's
+        // COLOUR is not carried: each mode on this device holds its own, and
+        // storing "white" beside mode 1 would record a colour the firmware
+        // never shows.
+        led: crate::led::LED_MODE_NAMES
+            .get(preset.led_mode as usize)
+            .map(|m| (*m).to_string()),
     };
     let led_spec = format!("mode{} {}", preset.led_mode, preset.led_color);
     (MigratedPreset { layer, led_spec }, warnings)

@@ -67,49 +67,15 @@ struct HardwarePane: View {
 
     var body: some View {
         Form {
-            deviceInfoSection
             endpointSection
             slotBindingSection
             standaloneKeymapSection
+            // The Inspector's three sections. They read the same device this
+            // pane flashes, and were a tab away from it.
+            InspectorSections(store: store)
         }
         .formStyle(.grouped)
         .onAppear { store.refreshKnobMode() }
-    }
-
-    private var deviceInfoSection: some View {
-        Section {
-            PropertyGrid {
-                StatusRow(label: "Device", value: store.hardwareProduct) {
-                    StatusDot(color: store.hardwareConnected ? .green : .secondary)
-                }
-                StatusRow(
-                    label: "Connection",
-                    value: store.hardwareConnected ? store.transportDisplay : "Not detected",
-                    valueStyle: store.hardwareConnected ? .primary : .secondary
-                ) {
-                    Image(systemName: store.transportIcon)
-                        .foregroundStyle(store.hardwareConnected
-                                         ? store.transportColor : Color.secondary)
-                        .frame(width: 16)
-                }
-                StatusRow(
-                    label: "Power",
-                    value: store.hardwareConnected ? store.powerDescription : "Disconnected"
-                ) {
-                    Image(systemName: store.powerIcon)
-                        .foregroundStyle(store.hardwareConnected
-                                         ? Color.accentColor : Color.secondary)
-                        .frame(width: 16)
-                }
-            }
-        } header: {
-            Text("Device")
-        } footer: {
-            // Says which of the many endpoints below this names, because it
-            // used to name whichever one enumerated first -- a keyboard
-            // interface belonging to a different product id from the knob.
-            Text("The interface every command on this pane is sent to.")
-        }
     }
 
     /// Endpoints as a five-column table: index, transport tag, device name,

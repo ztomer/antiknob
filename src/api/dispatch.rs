@@ -131,6 +131,11 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                     );
                 }
                 let _events = lock.set_layer(layer);
+                // The backlight follows the active host layer here too. A
+                // switch from the menu bar and a switch from the knob are
+                // the same switch, and only one of them changing the light
+                // would be the app disagreeing with itself.
+                crate::host::led_sync::sync_led(lock.config(), layer);
                 Ok(json!({
                     "ok": true,
                     "active_layer": layer,

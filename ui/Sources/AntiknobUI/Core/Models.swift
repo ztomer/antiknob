@@ -275,6 +275,14 @@ struct LayerConfig: Codable, Equatable, Hashable, Sendable {
     var holdTwistL: Action?
     var holdTwistR: Action?
     var press: Action?
+    /// Backlight mode the knob wears while this layer is active, by wire
+    /// name. `nil` means "leave the light alone", which is what every layer
+    /// written before this field existed loads as.
+    ///
+    /// The firmware stores modes per DEVICE layer and knows nothing about
+    /// host layers, so this only means anything because the daemon writes it
+    /// on every switch -- see `host::led_sync` on the Rust side.
+    var led: String?
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -283,16 +291,19 @@ struct LayerConfig: Codable, Equatable, Hashable, Sendable {
         case holdTwistL, hold_twist_l
         case holdTwistR, hold_twist_r
         case press
+        case led
     }
 
     init(name: String, twistL: Action? = nil, twistR: Action? = nil,
-         holdTwistL: Action? = nil, holdTwistR: Action? = nil, press: Action? = nil) {
+         holdTwistL: Action? = nil, holdTwistR: Action? = nil, press: Action? = nil,
+         led: String? = nil) {
         self.name = name
         self.twistL = twistL
         self.twistR = twistR
         self.holdTwistL = holdTwistL
         self.holdTwistR = holdTwistR
         self.press = press
+        self.led = led
     }
 
     init(from decoder: Decoder) throws {
@@ -307,6 +318,7 @@ struct LayerConfig: Codable, Equatable, Hashable, Sendable {
         holdTwistR = (try? c.decodeIfPresent(Action.self, forKey: .holdTwistR))
             ?? (try? c.decodeIfPresent(Action.self, forKey: .hold_twist_r)) ?? nil
         press = try? c.decodeIfPresent(Action.self, forKey: .press)
+        led = (try? c.decodeIfPresent(String.self, forKey: .led)) ?? nil
     }
 
     func encode(to encoder: Encoder) throws {
@@ -317,6 +329,10 @@ struct LayerConfig: Codable, Equatable, Hashable, Sendable {
         try c.encode(holdTwistL ?? .none, forKey: .holdTwistL)
         try c.encode(holdTwistR ?? .none, forKey: .holdTwistR)
         try c.encode(press ?? .none, forKey: .press)
+        // Encoded only when set. The Rust side skips a `None` too, so a
+        // layer that names no mode round-trips as one rather than gaining a
+        // null nobody chose.
+        try c.encodeIfPresent(led, forKey: .led)
     }
 
     subscript(g: Gesture) -> Action? {

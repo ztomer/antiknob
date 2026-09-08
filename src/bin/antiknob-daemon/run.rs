@@ -63,7 +63,14 @@ fn describe_fire(action: &FiredAction) -> String {
 }
 
 /// Observe-mode logging; active mode synthesizes instead.
-fn handle_events(out: Vec<EngineEvent>, active: bool) {
+///
+/// Takes the config because a layer change is not only a log line: the
+/// knob's backlight follows the active HOST layer, and the firmware has no
+/// idea host layers exist, so the daemon writes the new layer's mode on
+/// every switch. `led_sync` decides whether there is anything to write and
+/// does it off this thread -- one of these call sites is the CGEventTap
+/// callback, and macOS disables a tap whose callback runs long.
+fn handle_events(out: Vec<EngineEvent>, active: bool, cfg: &HostConfig) {
     for ev in out {
         match ev {
             EngineEvent::Fire(action) => {
@@ -76,7 +83,10 @@ fn handle_events(out: Vec<EngineEvent>, active: bool) {
                     println!("[slot] WOULD {}", describe_fire(&action));
                 }
             }
-            EngineEvent::LayerChanged(idx) => println!("[slot] layer -> {}", idx + 1),
+            EngineEvent::LayerChanged(idx) => {
+                println!("[slot] layer -> {}", idx + 1);
+                antiknob::host::led_sync::sync_led(cfg, idx);
+            }
             EngineEvent::NoOp => {}
         }
     }
@@ -175,7 +185,8 @@ fn apply_tray_action(
 ) -> bool {
     match action {
         TrayAction::SwitchLayer(i) => {
-            handle_events(tap.set_layer(i), active);
+            let out = tap.set_layer(i);
+            handle_events(out, active, tap.config());
             false
         }
         TrayAction::ReloadNow => {
@@ -264,7 +275,7 @@ pub(crate) fn run_observe(
                         t.release_swallow(code);
                         vec![]
                     };
-                    handle_events(out, false);
+                    handle_events(out, false, t.config());
                 }
             }
             Ok(DaemonMsg::TapDead(reason)) => {
@@ -277,7 +288,8 @@ pub(crate) fn run_observe(
         }
         if let Ok(mut t) = tap.lock() {
             maybe_reload(&mut t, &mut watch);
-            handle_events(t.poll_expiry(start.elapsed().as_millis() as u64), false);
+            let out = t.poll_expiry(start.elapsed().as_millis() as u64);
+            handle_events(out, false, t.config());
         }
         if let Some(tray) = tray.as_mut() {
             tray.refresh(&tap, tap_is_up(&tap_health));
@@ -320,7 +332,8 @@ pub(crate) fn run_active(
             let now_ms = start.elapsed().as_millis() as u64;
             if let Ok(mut t) = timer_tap.lock() {
                 maybe_reload(&mut t, &mut watch);
-                handle_events(t.poll_expiry(now_ms), true);
+                let out = t.poll_expiry(now_ms);
+                handle_events(out, true, t.config());
             }
         }
     });
@@ -349,7 +362,7 @@ pub(crate) fn run_active(
                     if out.is_empty() {
                         Decision::Pass
                     } else {
-                        handle_events(out, true);
+                        handle_events(out, true, t.config());
                         Decision::Swallow
                     }
                 } else if t.release_swallow(code) {

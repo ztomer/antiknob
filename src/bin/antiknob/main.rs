@@ -156,6 +156,11 @@ enum Commands {
         /// instead of reading the table at its real width.
         #[arg(long)]
         wide: bool,
+        /// Read the WHOLE table -- every key, every layer -- in three burst
+        /// queries, the way the vendor app does. Sees past the declared
+        /// layout, which the per-slot walk never does.
+        #[arg(long)]
+        full: bool,
     },
 
     /// Determine which firmware slot a gesture drives, by writing a
@@ -209,6 +214,10 @@ enum Commands {
         /// (0xFE) has no reply and will simply time out.
         #[arg(long)]
         read: bool,
+        /// How many replies to read. One query can answer with a BURST, and
+        /// reading once makes a burst look like a single record.
+        #[arg(long, default_value_t = 1)]
+        reads: usize,
         /// Hex bytes, e.g. FC FC 02 00
         #[arg(trailing_var_arg = true)]
         bytes: Vec<String>,
@@ -257,8 +266,12 @@ fn main() -> Result<()> {
         } => diag::run_listen(timeout_secs, devices)?,
         Commands::ImportPresets { out, force } => cmds::run_import_presets(out, force)?,
         Commands::ListApps => cmds::run_list_apps()?,
-        Commands::ReadSlots { config, wide } => {
-            diag::run_read_slots(cmds::layout_slots_per_layer(config)?, wide)?
+        Commands::ReadSlots { config, wide, full } => {
+            if full {
+                diag::run_read_full()?
+            } else {
+                diag::run_read_slots(cmds::layout_slots_per_layer(config)?, wide)?
+            }
         }
         Commands::ProbeGestures {
             candidates,
@@ -290,7 +303,7 @@ fn main() -> Result<()> {
             dwell_secs,
             color,
         } => diag::run_led_probe(layer, dwell_secs, &color)?,
-        Commands::Raw { read, bytes } => diag::run_raw(bytes, read)?,
+        Commands::Raw { read, reads, bytes } => diag::run_raw(bytes, read, reads)?,
         Commands::Mcp { config } => {
             let config_path = match config {
                 Some(p) => p,

@@ -452,3 +452,24 @@ what value was sent in that position. Nothing here writes or reads it.
 
 `antiknob upload` reports 18/18 slots confirmed and every binding matches the
 session baseline in kind, length and action.
+
+## `View settings` reads the WHOLE table in three queries
+
+The three `FA 19 00 01..03` writes do not fetch three slots. `FA <width> 00
+<n>` answers with a BURST of `width` records, and reading once after the
+query -- which every probe in this repo did -- makes a burst look like a
+single record. That is why this was taken for a per-slot read for so long.
+
+Measured: width `0x06` returns 6 records, `0x09` returns 9, `0x19` returns
+25. One query never spans a layer boundary, so three are needed, and three at
+width 25 return **75 distinct `(key, layer)` records -- the complete table**.
+
+That is not merely faster than this repo's per-slot walk (3 queries against
+18). It is strictly MORE COMPLETE. The walk asks at the declared layout's
+width, so on a six-slot layout it stops at key 6 and cannot see anything
+above it. Keys 16-21 still hold the media bindings an old version of this
+tool wrote there when `key_id_for_knob` was hardcoded to 16 -- `cd`, `e9`,
+`b6`, `b5`, sitting untouched -- and the walk has never once shown them.
+
+`antiknob read-slots --full` uses it: 75 slots, 33 of them configured on this
+device, the rest labelled as firmware defaults. Stable across repeated runs.

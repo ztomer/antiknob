@@ -6,10 +6,12 @@ mod classify;
 pub mod mode;
 #[cfg(test)]
 mod slot_address_tests;
+mod slot_read;
 pub mod snoop;
 mod thread;
 pub mod verify;
 pub use classify::classify_device;
+pub use slot_read::{read_full_table, read_slot, BURST_QUERIES, BURST_WIDTH};
 pub use thread::{with_device, with_hid, HidDevice};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -394,26 +396,6 @@ pub fn read_slot_table(dev: &HidDevice, slots_per_layer: u8, layers: u8) -> Vec<
 
 /// How many device layers the firmware holds.
 pub const DEVICE_LAYERS: u8 = 3;
-
-/// Slot-table read query, reverse-engineered from the vendor app's
-/// `Widget::read_Hidkey_Data`: write `[FA group 00 counter]` (report 0x03)
-/// and read back the 64-byte slot dump. Read-only; changes no device state.
-/// `group` selects the slot bank (`0x0F` / `0x19` observed), `counter`
-/// walks entries 1..=3 within the bank.
-pub fn read_slot(dev: &HidDevice, group: u8, counter: u8) -> Result<Vec<u8>> {
-    let mut payload = [0u8; 64];
-    payload[0] = 0xFA;
-    payload[1] = group;
-    payload[2] = 0x00;
-    payload[3] = counter;
-    send_report(dev, &payload)?;
-
-    let mut buf = [0u8; 64];
-    let n = dev
-        .read_timeout(&mut buf, 500)
-        .context("Timed out reading slot dump from device")?;
-    Ok(buf[..n].to_vec())
-}
 
 /// LED state read-back, mirroring the vendor app's
 /// `Widget::Read_RgbLed_DataDsp`: query `[FA B0 layer]` (report 0x03);

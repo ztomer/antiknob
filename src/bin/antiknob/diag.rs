@@ -89,6 +89,39 @@ pub fn run_listen(timeout_secs: u64, devices: Vec<String>) -> Result<()> {
     println!("[ Ok  ] Listen window closed.");
     Ok(())
 }
+/// Dump the WHOLE slot table using the vendor's burst read.
+///
+/// Three queries instead of eighteen, and it covers keys the per-slot walk
+/// never reaches: that walk uses the declared layout's width, so on a
+/// six-slot layout it stops at key 6 and cannot see the bindings an older
+/// version of this tool wrote to keys 16-18.
+pub fn run_read_full() -> Result<()> {
+    println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
+    println!(
+        "[ ==> ] Reading the whole table ({} burst queries at width {})...",
+        device::BURST_QUERIES,
+        device::BURST_WIDTH
+    );
+    let table = device::with_device(|dev| Ok(device::read_full_table(dev)))?;
+    let mut bound = 0usize;
+    for record in &table {
+        let hex: Vec<String> = record.iter().map(|b| format!("{b:02x}")).collect();
+        let note = if device::verify::is_synthetic_default(record) {
+            "  (firmware default, not a binding)"
+        } else {
+            bound += 1;
+            ""
+        };
+        println!("        {}{}", hex.join(" "), note);
+    }
+    println!(
+        "[ Ok  ] {} slot(s) read, {} of them configured (device state unchanged).",
+        table.len(),
+        bound
+    );
+    Ok(())
+}
+
 pub fn run_read_slots(slots_per_layer: u8, wide: bool) -> Result<()> {
     println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
     // `wide` keeps the old exploratory sweep for protocol work; the default
@@ -138,31 +171,37 @@ pub fn run_read_slots(slots_per_layer: u8, wide: bool) -> Result<()> {
     println!("[ Ok  ] Slot dump complete (device state unchanged).");
     Ok(())
 }
-pub fn run_raw(bytes: Vec<String>, read: bool) -> Result<()> {
+pub fn run_raw(bytes: Vec<String>, read: bool, reads: usize) -> Result<()> {
     let payload = parse_hex_bytes(&bytes)?;
     let sent = payload.len();
     println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
     let reply = device::with_device(move |dev| {
         device::send_report(dev, &payload)?;
         if !read {
-            return Ok(None);
+            return Ok(Vec::new());
         }
+        // Read repeatedly, because a single query may answer with a BURST:
+        // the vendor's `FA 19 00 01` looks like one read here but repopulates
+        // its whole UI, which one 64-byte reply cannot do. A query that does
+        // not answer at all is a normal outcome when sweeping, so a timeout
+        // ends the burst rather than failing.
+        let mut out = Vec::new();
         let mut buf = [0u8; 64];
-        // A query that does not answer is a normal outcome when sweeping
-        // for one that does, so a timeout is None rather than an error.
-        Ok(match dev.read_timeout(&mut buf, 250) {
-            Ok(n) if n > 0 => Some(buf[..n].to_vec()),
-            _ => None,
-        })
+        for _ in 0..reads {
+            match dev.read_timeout(&mut buf, 250) {
+                Ok(n) if n > 0 => out.push(buf[..n].to_vec()),
+                _ => break,
+            }
+        }
+        Ok(out)
     })?;
     println!("[ Ok  ] Raw {sent}-byte payload sent.");
-    match reply {
-        Some(r) => {
-            let hex: Vec<String> = r.iter().map(|b| format!("{b:02x}")).collect();
-            println!("        reply ({}B): {}", r.len(), hex.join(" "));
-        }
-        None if read => println!("        no reply within 250ms"),
-        None => {}
+    if read && reply.is_empty() {
+        println!("        no reply within 250ms");
+    }
+    for (i, r) in reply.iter().enumerate() {
+        let hex: Vec<String> = r.iter().map(|b| format!("{b:02x}")).collect();
+        println!("        reply {} ({}B): {}", i + 1, r.len(), hex.join(" "));
     }
     Ok(())
 }

@@ -152,10 +152,12 @@ pub fn run_upload(
                 (&knob.press, protocol::KnobEvent::Press),
                 (&knob.cw, protocol::KnobEvent::RotateCW),
             ] {
-                if let Some(text) = spec {
-                    let action = protocol::Action::parse(text)?;
+                if let Some(binding) = spec {
                     let key_id = protocol::key_id_for_knob(button_count, knob_idx, event);
-                    packets.push(action.to_packet(key_id, layer_u8));
+                    // A sequence needs the 0xFD writer; a single action keeps
+                    // the 0xFE path. `Binding::to_packet` decides, so the CLI
+                    // and the daemon cannot drift on it.
+                    packets.push(binding.to_packet(key_id, layer_u8)?);
                 }
             }
         }

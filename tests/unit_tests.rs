@@ -154,5 +154,8 @@ layers:
     let cfg: DeviceConfig = serde_yaml::from_str(yaml).unwrap();
     assert_eq!(cfg.model, "Anticater VK01");
     assert_eq!(cfg.layers.len(), 1);
-    assert_eq!(cfg.layers[0].knobs[0].ccw, Some("volumedown".to_string()));
+    assert_eq!(
+        cfg.layers[0].knobs[0].ccw,
+        Some(antiknob::binding::Binding::One("volumedown".to_string()))
+    );
 }

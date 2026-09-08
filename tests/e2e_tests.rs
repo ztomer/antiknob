@@ -67,7 +67,7 @@ layers:
     let layer = &config.layers[0];
 
     // Verify knob packets
-    let ccw_action = Action::parse(layer.knobs[0].ccw.as_ref().unwrap()).unwrap();
+    let ccw_action = Action::parse(&layer.knobs[0].ccw.as_ref().unwrap().names()[0]).unwrap();
     let buttons: usize = layer.buttons.iter().map(Vec::len).sum();
     let ccw_id = key_id_for_knob(buttons, 0, KnobEvent::RotateCCW);
     let ccw_pkt = ccw_action.to_packet(ccw_id, 0);
@@ -146,14 +146,12 @@ fn test_e2e_cli_validate_bundled_config() {
 
     for (layer_idx, layer) in config.layers.iter().enumerate() {
         for knob in &layer.knobs {
-            if let Some(ref s) = knob.ccw {
-                assert!(Action::parse(s).is_ok());
-            }
-            if let Some(ref s) = knob.press {
-                assert!(Action::parse(s).is_ok());
-            }
-            if let Some(ref s) = knob.cw {
-                assert!(Action::parse(s).is_ok());
+            // Every gesture, whichever shape it takes in the YAML. A
+            // sequence validates as a whole -- it has to fit one record and
+            // its actions have to be one kind -- so this asks the binding
+            // rather than parsing a string it may not be.
+            for binding in [&knob.ccw, &knob.press, &knob.cw].into_iter().flatten() {
+                binding.validate().expect("knob binding");
             }
         }
         for row in &layer.buttons {

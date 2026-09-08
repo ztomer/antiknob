@@ -105,21 +105,58 @@ pub enum SlotVerdict {
 /// Compare what was written against what the device reports.
 ///
 /// `written` and `observed` are both records in the shared layout above.
+/// The slot a record addresses, whatever command wrote it.
+///
+/// `parse_record` deliberately rejects `0xFD`, because the bytes it reads
+/// mean something else there. Addressing is the one thing all three commands
+/// agree on, so it gets its own reader.
+fn record_addr(record: &[u8]) -> Option<SlotAddr> {
+    if record.len() < 7 || record[0] != 0x03 {
+        return None;
+    }
+    if !matches!(record[1], 0xFE | 0xFA | crate::fd::CMD) {
+        return None;
+    }
+    let (key_id, layer) = (record[2], record[3]);
+    if key_id == 0 || key_id > MAX_KEY_ID || layer == 0 || layer > 3 {
+        return None;
+    }
+    Some(SlotAddr { key_id, layer })
+}
+
 pub fn verify(written: &[Vec<u8>], observed: &[Vec<u8>]) -> Vec<(SlotAddr, SlotVerdict)> {
     let seen: Vec<(SlotAddr, SlotAction)> =
         observed.iter().filter_map(|r| parse_record(r)).collect();
-    written
-        .iter()
-        .filter_map(|r| parse_record(r))
-        .map(|(addr, want)| {
-            let verdict = match seen.iter().find(|(a, _)| *a == addr) {
+    let mut out = Vec::new();
+    for record in written {
+        // A sequence is written with 0xFD, whose payload `parse_record`
+        // cannot read -- its bytes 9/11/12 are delays and values, not a
+        // media usage and a chord. Left to the path below, every sequence
+        // would be dropped from the comparison and a flash that wrote
+        // nothing would report as clean. Compare those whole instead.
+        if record.get(1) == Some(&crate::fd::CMD) {
+            let Some(addr) = record_addr(record) else {
+                continue;
+            };
+            let verdict = match observed.iter().find(|o| record_addr(o) == Some(addr)) {
                 None => SlotVerdict::NotSeen,
-                Some((_, got)) if *got == want => SlotVerdict::Confirmed,
+                Some(got) if crate::fd::record_matches(record, got) => SlotVerdict::Confirmed,
                 Some(_) => SlotVerdict::Mismatched,
             };
-            (addr, verdict)
-        })
-        .collect()
+            out.push((addr, verdict));
+            continue;
+        }
+        let Some((addr, want)) = parse_record(record) else {
+            continue;
+        };
+        let verdict = match seen.iter().find(|(a, _)| *a == addr) {
+            None => SlotVerdict::NotSeen,
+            Some((_, got)) if *got == want => SlotVerdict::Confirmed,
+            Some(_) => SlotVerdict::Mismatched,
+        };
+        out.push((addr, verdict));
+    }
+    out
 }
 
 /// A one-line summary a user can act on, or `None` when every slot that
@@ -329,5 +366,55 @@ mod tests {
         assert!(!is_synthetic_default(&nearly));
 
         assert!(!is_synthetic_default(&[]));
+    }
+
+    /// A sequence is written with 0xFD, which `parse_record` cannot read.
+    /// Before this was handled, every such record was silently dropped from
+    /// the comparison -- so a flash that wrote nothing reported as clean.
+    #[test]
+    fn a_sequence_record_is_verified_rather_than_skipped() {
+        use crate::fd;
+        let steps = fd::parse_sequence(&["cmd-c".to_string(), "cmd-v".to_string()]).unwrap();
+        let sent = fd::build_packet(5, 0, &steps).unwrap();
+
+        let mut echoed = sent.clone();
+        echoed[1] = 0xFA;
+        let v = verify(std::slice::from_ref(&sent), std::slice::from_ref(&echoed));
+        assert_eq!(v.len(), 1, "the sequence must appear in the verdicts");
+        assert_eq!(v[0].1, SlotVerdict::Confirmed);
+
+        // A device that stored something else is a mismatch, not a pass.
+        let mut wrong = echoed.clone();
+        wrong[9] = 0x99;
+        assert_eq!(
+            verify(std::slice::from_ref(&sent), &[wrong])[0].1,
+            SlotVerdict::Mismatched
+        );
+
+        // And a slot that never came back is NotSeen.
+        assert_eq!(verify(&[sent], &[])[0].1, SlotVerdict::NotSeen);
+    }
+
+    /// Mixed flashes are the normal case: buttons go out as 0xFE and a
+    /// knob sequence as 0xFD, in one upload.
+    #[test]
+    fn a_mixed_flash_verifies_both_commands() {
+        use crate::fd;
+        let single = crate::protocol::Action::parse("mute")
+            .unwrap()
+            .to_packet(1, 0);
+        let steps = fd::parse_sequence(&["a".to_string(), "b".to_string()]).unwrap();
+        let seq = fd::build_packet(2, 0, &steps).unwrap();
+
+        let mut e1 = single.clone();
+        e1[1] = 0xFA;
+        let mut e2 = seq.clone();
+        e2[1] = 0xFA;
+
+        let v = verify(&[single, seq], &[e1, e2]);
+        assert_eq!(v.len(), 2);
+        assert!(v
+            .iter()
+            .all(|(_, verdict)| *verdict == SlotVerdict::Confirmed));
     }
 }

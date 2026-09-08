@@ -1,4 +1,6 @@
 use anyhow::{Context, Result};
+
+pub use crate::binding::Binding;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -6,11 +8,11 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KnobConfig {
     #[serde(default)]
-    pub ccw: Option<String>,
+    pub ccw: Option<Binding>,
     #[serde(default)]
-    pub press: Option<String>,
+    pub press: Option<Binding>,
     #[serde(default)]
-    pub cw: Option<String>,
+    pub cw: Option<Binding>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -169,26 +171,14 @@ impl DeviceConfig {
             }
 
             for (k_idx, knob) in layer.knobs.iter().enumerate() {
-                if let Some(ref ccw) = knob.ccw {
-                    crate::protocol::Action::parse(ccw).with_context(|| {
-                        format!(
-                            "Invalid knob {} CCW action '{}' in layer {}",
-                            k_idx, ccw, idx
-                        )
-                    })?;
-                }
-                if let Some(ref press) = knob.press {
-                    crate::protocol::Action::parse(press).with_context(|| {
-                        format!(
-                            "Invalid knob {} press action '{}' in layer {}",
-                            k_idx, press, idx
-                        )
-                    })?;
-                }
-                if let Some(ref cw) = knob.cw {
-                    crate::protocol::Action::parse(cw).with_context(|| {
-                        format!("Invalid knob {} CW action '{}' in layer {}", k_idx, cw, idx)
-                    })?;
+                for (name, binding) in
+                    [("CCW", &knob.ccw), ("press", &knob.press), ("CW", &knob.cw)]
+                {
+                    if let Some(binding) = binding {
+                        binding.validate().with_context(|| {
+                            format!("knob {} {} binding in layer {}", k_idx, name, idx)
+                        })?;
+                    }
                 }
             }
         }
@@ -215,9 +205,9 @@ mod tests {
                     .collect(),
                 knobs: (0..knobs)
                     .map(|_| KnobConfig {
-                        ccw: Some("volumedown".to_string()),
-                        press: Some("mute".to_string()),
-                        cw: Some("volumeup".to_string()),
+                        ccw: Some(Binding::One("volumedown".to_string())),
+                        press: Some(Binding::One("mute".to_string())),
+                        cw: Some(Binding::One("volumeup".to_string())),
                     })
                     .collect(),
                 led: None,
@@ -380,5 +370,95 @@ layers: []
         let msg = err.to_string();
         assert!(msg.contains("lists 1 button(s)"), "{msg}");
         assert!(msg.contains("declares 0"), "{msg}");
+    }
+
+    /// The three YAML shapes a gesture can take. A plain string keeps the
+    /// meaning it has always had; the list and map forms are new.
+    #[test]
+    fn a_gesture_accepts_a_string_a_list_or_a_timed_map() {
+        let y = r#"
+model: ch57x-1
+rows: 1
+columns: 3
+knobs: 1
+layers:
+  - buttons: [["play", "prev", "next"]]
+    knobs:
+      - ccw: "volumedown"
+        press: ["cmd-c", "cmd-v"]
+        cw:
+          steps: ["cmd-a", "cmd-c"]
+          delay_ms: 120
+"#;
+        let cfg: DeviceConfig = serde_yaml::from_str(y).expect("parses");
+        cfg.validate().expect("valid");
+        let knob = &cfg.layers[0].knobs[0];
+
+        let ccw = knob.ccw.as_ref().unwrap();
+        assert!(!ccw.is_sequence(), "a bare string stays the 0xFE path");
+        assert_eq!(ccw.to_packet(4, 0).unwrap()[1], 0xFE);
+
+        let press = knob.press.as_ref().unwrap();
+        assert!(press.is_sequence());
+        assert_eq!(press.to_packet(5, 0).unwrap()[1], 0xFD);
+        assert_eq!(press.delay_ms(), 0);
+
+        let cw = knob.cw.as_ref().unwrap();
+        assert_eq!(cw.delay_ms(), 120);
+        let p = cw.to_packet(6, 0).unwrap();
+        assert_eq!(p[1], 0xFD);
+        // cmd-a then cmd-c = four entries; the delay sits on the SECOND
+        // step, not before the first.
+        assert_eq!(p[6], 4);
+        assert_eq!(&p[7..10], &[0, 0, 0xF4], "no wait before the opening chord");
+        assert_eq!(&p[13..16], &[0, 120, 0xF4], "120ms before the second");
+    }
+
+    /// A one-element list is still the sequence form. Downgrading it would
+    /// make `steps: [x]` and `x` behave differently from how they read.
+    #[test]
+    fn a_single_element_list_is_still_a_sequence() {
+        let b: Binding = serde_yaml::from_str("[\"cmd-c\"]").unwrap();
+        assert!(b.is_sequence());
+        assert_eq!(b.to_packet(4, 0).unwrap()[1], 0xFD);
+    }
+
+    /// Load time is where a binding the device cannot store should fail --
+    /// not at flash time, with half the layers already written.
+    #[test]
+    fn a_binding_the_device_cannot_store_is_refused_when_it_loads() {
+        // Media cannot chain: the firmware keeps one action per slot.
+        let media: Binding = serde_yaml::from_str("[\"volumeup\", \"next\"]").unwrap();
+        let err = media.validate().expect_err("a media chain must be refused");
+        assert!(err.to_string().contains("one media action"), "{err}");
+
+        // Twenty entries do not fit in one record.
+        let long: Vec<String> = (0..20).map(|_| "a".to_string()).collect();
+        let err = Binding::Sequence(long).validate().expect_err("too long");
+        assert!(err.to_string().contains("entries"), "{err}");
+
+        // An empty sequence binds nothing.
+        assert!(Binding::Sequence(vec![]).validate().is_err());
+
+        // And an unknown action name is still caught.
+        assert!(Binding::One("chartreuse".into()).validate().is_err());
+    }
+
+    /// The whole point: a gesture can type a string.
+    #[test]
+    fn a_gesture_can_type_a_sequence_of_keystrokes() {
+        let b = Binding::Sequence(
+            ["h", "e", "l", "l", "o"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+        );
+        b.validate().expect("valid");
+        let p = b.to_packet(2, 0).unwrap();
+        assert_eq!(p[4], 1, "keyboard kind");
+        assert_eq!(p[6], 5, "five entries");
+        assert_eq!(p[9], 0x0B, "h");
+        assert_eq!(p[12], 0x08, "e");
+        assert_eq!(p[15], 0x0F, "l");
     }
 }

@@ -371,10 +371,9 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                         (&knob.press, protocol::KnobEvent::Press),
                         (&knob.cw, protocol::KnobEvent::RotateCW),
                     ] {
-                        if let Some(text) = spec {
-                            let action = Action::parse(text)?;
+                        if let Some(binding) = spec {
                             let key_id = protocol::key_id_for_knob(button_count, knob_idx, event);
-                            packets.push(action.to_packet(key_id, layer_u8));
+                            packets.push(binding.to_packet(key_id, layer_u8)?);
                         }
                     }
                 }

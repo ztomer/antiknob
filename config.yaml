@@ -54,3 +54,20 @@ layers:
       - ccw: "cmd-minus"
         press: "cmd-0"
         cw: "cmd-equal"
+
+# A gesture can also run a SEQUENCE, which the vendor's 0xFD command carries
+# and the old 0xFE one has no field for. Either shape works:
+#
+#   press: ["cmd-c", "cmd-v"]        # steps, back to back
+#   press:                           # steps, with a wait between them
+#     steps: ["cmd-a", "cmd-c"]
+#     delay_ms: 120
+#
+# A slot holds 19 entries, and a chord costs one entry per modifier plus one
+# for the key -- so `cmd-c` is two. Only KEYBOARD sequences chain: the
+# firmware keeps one media action per slot and drops the rest, so a media
+# list is refused when the config loads rather than truncated when it flashes.
+#
+# This is what makes a gesture able to type a string or drive an application:
+# the vendor's own Procreate menu is nothing but named chords, and its Undo
+# is Cmd+Z. See VENDOR_UI_MAP.md.

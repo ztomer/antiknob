@@ -337,14 +337,20 @@ Nineteen letters clicked in a row saved as one record:
 `len = 0x13 = 19`, and each entry carries one keycode. This is the capability
 the whole exercise was after: a gesture can type a sequence.
 
-**Media actions did NOT chain in any attempt.** Clicking two or three media
-actions leaves a title listing all of them but writes `len` for the full list
-with only the LAST action's usage in entry 1 and zeros after. Keyboard
-chaining works from the identical click sequence, so this is specific to the
-media path, not to how the UI was driven. Whether the device can hold a media
-chain is a separate question -- the knob arrived with `Volume+ Next track`
-bound, which the app rendered from a read-back, so the DEVICE can clearly
-store one even if this app version will not write one.
+**Media actions do NOT chain, and it is the DEVICE that refuses.** Clicking
+two or three media actions leaves a title listing all of them but writes a
+record the firmware truncates. Tested directly with this repo's own writer,
+bypassing the app entirely:
+
+    written : 03 FD 07 01 02 00 04  00 00 e9  00 00 00  00 00 92  00 00 01
+    read    : 03 FA 07 01 02 00 02  00 00 e9  00 00 00  00 00 00
+
+`len` came back 02 and the second action was dropped. The second usage was
+Calculator (`0x0192`) precisely so its non-zero high byte ruled out
+trailing-zero trimming. So a media slot holds exactly one action, and an
+earlier note here guessing "the limit is the app, not the hardware" was
+wrong. `fd::build_packet` now refuses a media sequence rather than letting
+the firmware truncate one silently, which is what the vendor app allows.
 
 ### Capacity
 
@@ -352,11 +358,11 @@ The payload runs from byte 7 to byte 63: 57 bytes = **19 entries of 3 bytes**.
 `len` counts value BYTES, and an action costs 1 byte (keyboard), 2 (media) or
 4 (mouse). So one gesture holds at most:
 
-| kind     | bytes/action | max actions |
-|----------|--------------|-------------|
-| keyboard | 1            | 19          |
-| media    | 2            | 9           |
-| mouse    | 4            | 4           |
+| kind     | bytes/action | max actions | note                          |
+|----------|--------------|-------------|-------------------------------|
+| keyboard | 1            | 19          | the only kind that chains     |
+| media    | 2            | 1           | firmware caps it, see below    |
+| mouse    | 4            | 4 (untested)| encoding only partly measured |
 
 ### Modifiers are actions, not a bitmask
 

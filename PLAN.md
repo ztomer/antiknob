@@ -204,6 +204,16 @@ Two things learned while reading the table that the notes had wrong:
   as step N>1 of an in-process walk. Re-running it in the standalone form
   would find nothing new.
 
+**Superseded 2026-09-07 by `VENDOR_UI_MAP.md`.** The vendor app was driven
+under the interposer and the whole format decoded. The `0xFD` record is a
+19-entry sequence with a 16-bit big-endian delay on every entry; modifiers
+are entries (`F1..F8`), not a bitmask; and the gesture map is keys 2-6 =
+CCW / press / CW / hold-L / hold-R -- the ORIGINAL note, not the correction
+made earlier that day. That map conflicts with `key_id_for_knob`, which puts
+the knob at 4-6 behind three buttons the vendor UI does not show, and the
+conflict is written up there rather than resolved: it needs one deliberate
+twist against `antiknob listen`.
+
 Still to do: **find out which slot hold+twist actually drives.** It cannot be
 settled from the desk -- it needs the gesture performed while a distinct
 marker sits in each candidate slot. That is now one command:

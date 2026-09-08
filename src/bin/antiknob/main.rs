@@ -109,8 +109,14 @@ enum Commands {
         /// Print the packet without touching hardware
         #[arg(long)]
         dry_run: bool,
+        /// Milliseconds to wait between steps. Every entry carries its own
+        /// 16-bit delay, so a sequence can wait for a menu to open rather
+        /// than racing it. The vendor's own default is 50.
+        #[arg(long, default_value_t = 0)]
+        delay_ms: u16,
         /// Actions to run in order, e.g. `cmd-c cmd-v`. All must be the same
-        /// kind: one slot record holds one kind.
+        /// kind: one slot record holds one kind. A chord costs one entry per
+        /// modifier plus one for the key, and a slot holds 19 entries.
         actions: Vec<String>,
     },
 
@@ -242,8 +248,9 @@ fn main() -> Result<()> {
             layer,
             width,
             dry_run,
+            delay_ms,
             actions,
-        } => binding::run_bind_seq(key, layer, width, dry_run, actions)?,
+        } => binding::run_bind_seq(key, layer, width, dry_run, delay_ms, actions)?,
         Commands::Listen {
             timeout_secs,
             devices,

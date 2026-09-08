@@ -107,6 +107,7 @@ pub fn run_bind_seq(
     layer: u8,
     width: Option<u8>,
     dry_run: bool,
+    delay_ms: u16,
     actions: Vec<String>,
 ) -> Result<()> {
     if layer >= device::DEVICE_LAYERS {
@@ -116,15 +117,28 @@ pub fn run_bind_seq(
             device::DEVICE_LAYERS - 1
         );
     }
-    let parsed = fd::parse_sequence(&actions)?;
+    let mut parsed = fd::parse_sequence(&actions)?;
+    // The delay belongs to every step after the first: a wait before the
+    // opening keystroke only slows the gesture down. The vendor's own
+    // default is 50 ms between steps, which is what the 0x32 bytes filling
+    // its records are.
+    for step in parsed.iter_mut().skip(1) {
+        step.delay_ms = delay_ms;
+    }
     let packet = fd::build_packet(key, layer, &parsed)?;
 
     let hex: Vec<String> = packet[..13].iter().map(|b| format!("{b:02x}")).collect();
     println!(
-        "[ ==> ] Slot key={} layer={} <- {} action(s): {}",
+        "[ ==> ] Slot key={} layer={} <- {} action(s) in {} entr(ies){}: {}",
         key,
         layer,
         parsed.len(),
+        packet[6],
+        if delay_ms > 0 {
+            format!(", {delay_ms}ms between")
+        } else {
+            String::new()
+        },
         actions.join(" then ")
     );
     println!("        packet: {} ...", hex.join(" "));
@@ -142,7 +156,14 @@ pub fn run_bind_seq(
         layer: layer + 1,
     };
     let sent = packet.clone();
+    let wipe = fd::wipe_packet(key, layer);
     let readback = device::with_device(move |dev| {
+        // Clear every entry first. The device updates only the first `len`
+        // bytes' worth and leaves the rest, so a short sequence written over
+        // a long one strands the old tail in the slot.
+        device::send_report(dev, &wipe)?;
+        sleep(Duration::from_millis(15));
+        device::send_commit(dev)?;
         device::send_report(dev, &packet)?;
         sleep(Duration::from_millis(15));
         device::send_commit(dev)?;

@@ -43,11 +43,29 @@ bodies no unit test executes. The logic that has a seam scores far higher --
 more, in order of value:
 
 * Split the package into a logic target and a views target so a floor can
-  apply where coverage is meaningful. Blocked on the house side, not here:
-  `swift_gate.sh` calls `check_swift_coverage.py --min N` directly and never
-  reaches `coverage_gate.sh`, which is the script that supports per-target
-  floors (`--floors-json`). Routing Swift through it would fix this for every
-  repo.
+  apply where coverage is meaningful. Still blocked on the house side, but
+  NOT in the way this used to say. The note read: `swift_gate.sh` calls
+  `check_swift_coverage.py --min N` directly and never reaches
+  `coverage_gate.sh`, the script that supports per-target floors
+  (`--floors-json`), so routing Swift through it would fix every repo at
+  once.
+
+  Measured 2026-09-07, and the reroute is the wrong move. `coverage_gate.sh`
+  in Swift mode could not measure this package AT ALL -- it handed llvm-cov
+  the `.dSYM` directory instead of the executable -- and once that was fixed
+  it reported 10.54% where the working checker reports 4.78%, because it
+  counted `Tests/` toward the floor. Rerouting would have raised every
+  repo's measured Swift coverage and made every floor easier to pass, which
+  is the opposite of what a ratchet is for. Both defects are fixed upstream
+  (gates_of_heck `9ef8f1c`) and the scope rule now lives in one module both
+  paths import, but the two engines still differ: `check_swift_coverage.py`
+  reads SwiftPM's codecov JSON payloads, `coverage_swift.py` re-runs
+  `swift test` and shells out to llvm-cov.
+
+  So the smaller, safer fix is to teach `check_swift_coverage.py` per-path
+  floors directly, reusing `coverage_gate.sh`'s existing `--floors-json`
+  schema. That keeps the fast path every repo already uses and does not
+  double the test run.
 * Keep putting seams under the logic that has none. `ConfigStore` is still
   the largest -- its `init()` loads config and starts a 2s poll timer, so it
   cannot be constructed in a test as it stands -- but the seam does not have

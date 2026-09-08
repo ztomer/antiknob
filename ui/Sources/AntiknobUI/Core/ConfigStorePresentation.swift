@@ -10,7 +10,9 @@ import SwiftUI
 extension ConfigStore {
     /// Whether the host layers on screen can actually fire, as a value the
     /// views render without deciding anything themselves.
-    var modePresentation: ModePresentation { ModePresentation(rawMode: knobModeRaw) }
+    var modePresentation: ModePresentation {
+        ModePresentation(rawMode: knobModeRaw, deviceBinding: deviceBindingSummary)
+    }
 
     var status: StatusPresentation {
         StatusPresentation(

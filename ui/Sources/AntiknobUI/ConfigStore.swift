@@ -51,6 +51,10 @@ public final class ConfigStore: ObservableObject {
     /// when the firmware is reflashed would be a poor trade. Refreshed on
     /// launch, on becoming active, and after any flash.
     @Published var knobModeRaw: String?
+    /// Which device layer the daemon hears, in the daemon's own words.
+    /// nil until the knob's bindings have been read, which presents as
+    /// "not stated" rather than as an arrangement nobody confirmed.
+    @Published var deviceBindingSummary: String?
     @Published var startOnLogin: Bool = false
 
     /// Everything the status bar renders, as a pure value. Lives in
@@ -97,9 +101,12 @@ public final class ConfigStore: ObservableObject {
     /// the two real modes, because not knowing is not the same as knowing.
     func refreshKnobMode() {
         Task.detached(priority: .utility) {
-            let mode = (try? SocketClient.shared.getKnobMode())?["mode"] as? String
+            let reply = try? SocketClient.shared.getKnobMode()
+            let mode = reply?["mode"] as? String
+            let binding = reply?["device_binding_summary"] as? String
             await MainActor.run { [weak self] in
                 self?.knobModeRaw = mode
+                self?.deviceBindingSummary = binding
             }
         }
     }

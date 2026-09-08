@@ -186,3 +186,50 @@ struct LedModeTests {
         #expect(Set(icons).count == icons.count, "two modes share a glyph: \(icons)")
     }
 }
+
+@Suite("Device layer binding")
+struct DeviceBindingPresentationTests {
+    /// The arrangement is a separate claim from the mode. `mode` says
+    /// whether the knob sends slot chords at all; the binding says which of
+    /// the three firmware layers carries them, and therefore which run
+    /// standalone with the daemon stopped. The app used to present all three
+    /// host layers as though the daemon drove all three.
+    @Test func theBindingIsCarriedAlongsideTheModeNotInsteadOfIt() {
+        let p = ModePresentation(
+            rawMode: "host-translate",
+            deviceBinding: "Device layer 2 is host-translated; layer(s) 1, 3 run standalone."
+        )
+        #expect(p.hostLayersCanFire)
+        #expect(p.deviceBinding?.contains("layer 2") == true)
+        // Nothing is wrong, so there is still no warning banner.
+        #expect(p.banner == nil)
+    }
+
+    /// A blank summary is not a summary. Rendering one would put an empty
+    /// row where an explanation belongs.
+    @Test func anEmptyOrMissingSummaryIsTreatedAsAbsent() {
+        #expect(ModePresentation(rawMode: "host-translate").deviceBinding == nil)
+        #expect(ModePresentation(rawMode: "host-translate", deviceBinding: "").deviceBinding == nil)
+        #expect(
+            ModePresentation(rawMode: "host-translate", deviceBinding: "   \n ").deviceBinding == nil
+        )
+    }
+
+    /// Whitespace around a real summary is trimmed, not treated as absent.
+    @Test func aPaddedSummaryIsKept() {
+        let p = ModePresentation(rawMode: "standalone", deviceBinding: "  bound to layer 1  ")
+        #expect(p.deviceBinding == "bound to layer 1")
+    }
+
+    /// Both claims can be present at once: the knob is standalone AND
+    /// nothing is recorded as bound. Neither message may suppress the other.
+    @Test func aStandaloneKnobStillReportsItsRecordedArrangement() {
+        let p = ModePresentation(
+            rawMode: "standalone",
+            deviceBinding: "No device layer is bound to slot chords."
+        )
+        #expect(p.banner != nil)
+        #expect(p.deviceBinding != nil)
+        #expect(p.callToAction == "Flash Slot Bindings")
+    }
+}

@@ -242,10 +242,24 @@ chords, which is what `bind-slots --layer N` already flashes. No device-layer
 switching is attempted, because this knob cannot do it (below) -- the user
 picks the layer once and that is the one the daemon drives.
 
-What that leaves to build: the daemon has to KNOW which device layer carries
-the virtual layer rather than assuming, `host.json` has to record it, and the
-GUI has to say plainly that the other two layers are standalone and
-unaffected by the daemon.
+Built 2026-09-07. `host.json` carries `boundDeviceLayer`, `bind-slots`
+records the layer it flashed (and records NOTHING when every layer is bound,
+because there is then no single answer), and `host::device_binding` turns the
+record into something a person can read. `get_knob_mode` and
+`get_virtual_layer` both report it, and the GUI's reachability notice states
+it -- including when nothing is bound, which is the failure this closes:
+a virtual layer configured on an unbound device is perfect and fires never,
+and the only previous symptom was a knob that did nothing.
+
+An out-of-range recorded layer is reported, not clamped, and an unparseable
+`host.json` is refused rather than replaced with defaults carrying one new
+field.
+
+**Not verified against the hardware.** Running `bind-slots` for real converts
+this knob out of the standalone media mode it is in, which is a change to the
+user's working device rather than a test. The pure half is covered (10 tests)
+and the API shape is asserted through `execute_command`; what is unproven is
+the flash-then-record sequence on real hardware.
 
 The reasoning that was open before that decision:
 

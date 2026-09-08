@@ -31,7 +31,12 @@ mod tests {
     }
 
     fn ctx_with_virtual_layer(app: Arc<FakeApp>) -> ApiContext {
+        ctx_bound_to(app, None)
+    }
+
+    fn ctx_bound_to(app: Arc<FakeApp>, bound: Option<u8>) -> ApiContext {
         let cfg = HostConfig {
+            bound_device_layer: bound,
             layers: vec![HostLayer {
                 name: "Virtual".into(),
                 twist_l: HostAction::None,
@@ -125,5 +130,43 @@ mod tests {
         let names: Vec<&str> = crate::api::all_tools().iter().map(|t| t.name).collect();
         assert!(names.contains(&"get_virtual_layer"), "{names:?}");
         assert!(names.contains(&"set_virtual_variant"), "{names:?}");
+    }
+
+    /// A virtual layer on a device nothing was bound to is configured
+    /// perfectly and fires never. Before the report carried the
+    /// arrangement, the only symptom was a knob that did nothing, with no
+    /// error and nothing to search for.
+    #[test]
+    fn the_report_says_when_the_daemon_cannot_hear_the_knob_at_all() {
+        let app = Arc::new(FakeApp::new(Some("com.apple.Safari")));
+        let mut ctx = ctx_bound_to(app, None);
+
+        let v = get(&mut ctx);
+        assert_eq!(v["can_fire"], false);
+        assert_eq!(v["device_binding"]["state"], "unbound");
+        let said = v["device_binding_summary"].as_str().expect("summary");
+        assert!(said.contains("never hears"), "{said}");
+        assert!(said.contains("bind-slots"), "{said}");
+        // The variant still resolves -- the config is fine. It is the
+        // hardware arrangement that is not, and the two must not be
+        // conflated in the report.
+        assert_eq!(v["active_variant"], "Browser");
+    }
+
+    /// With a layer bound, the report names it AND names the ones the
+    /// daemon is not involved in, so a user can see that two of their three
+    /// layers work with the daemon stopped.
+    #[test]
+    fn the_report_names_the_bound_layer_and_the_standalone_ones() {
+        let app = Arc::new(FakeApp::new(Some("com.apple.Safari")));
+        let mut ctx = ctx_bound_to(app, Some(1));
+
+        let v = get(&mut ctx);
+        assert_eq!(v["can_fire"], true);
+        assert_eq!(v["device_binding"]["state"], "bound");
+        assert_eq!(v["device_binding"]["host_translated"], 1);
+        let said = v["device_binding_summary"].as_str().expect("summary");
+        assert!(said.contains("Device layer 2 is host-translated"), "{said}");
+        assert!(said.contains("standalone"), "{said}");
     }
 }

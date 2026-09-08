@@ -169,10 +169,21 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                     .get(idx)
                     .ok_or_else(|| anyhow::anyhow!("no layer at index {idx}"))?;
                 let resolution = lock.resolution();
+                // Which DEVICE layer the daemon actually hears. A virtual
+                // layer on an unbound device is configured perfectly and
+                // fires never, so the caller is told the arrangement rather
+                // than left to infer it from silence.
+                let arrangement = crate::host::device_binding::arrangement(
+                    lock.config().bound_device_layer,
+                    crate::device::DEVICE_LAYERS,
+                );
                 Ok(json!({
                     "layer": layer.name,
                     "layer_index": idx,
                     "is_virtual": layer.is_virtual(),
+                    "device_binding": arrangement,
+                    "device_binding_summary": arrangement.describe(),
+                    "can_fire": arrangement.daemon_can_hear_the_knob(),
                     "variants": layer.variants.iter().map(|v| json!({
                         "name": v.name,
                         "apps": v.apps,
@@ -272,11 +283,25 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
             })
             .context("Cannot read the slot table from the Anticater USB device")?;
             let mode = device::mode::classify(&table, buttons);
+            // WHICH device layer carries the host chords, alongside whether
+            // any does. The mode above is read from the hardware; this is
+            // read from what `bind-slots` recorded, and the two answer
+            // different questions -- "can a host layer fire at all" versus
+            // "which of your three layers is the daemon involved in". The
+            // GUI presented three host layers as though all three were live.
+            let bound = crate::host::HostConfig::try_load_json(
+                &std::fs::read_to_string(&ctx.config_path).unwrap_or_default(),
+            )
+            .and_then(|c| c.bound_device_layer);
+            let arrangement =
+                crate::host::device_binding::arrangement(bound, device::DEVICE_LAYERS);
             Ok(json!({
                 "mode": mode.as_str(),
                 "buttons": buttons,
                 "slots_read": table.len(),
-                "host_layers_can_fire": mode == device::mode::KnobMode::HostTranslate
+                "host_layers_can_fire": mode == device::mode::KnobMode::HostTranslate,
+                "device_binding": arrangement,
+                "device_binding_summary": arrangement.describe()
             }))
         }
 

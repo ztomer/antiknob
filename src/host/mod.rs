@@ -7,6 +7,7 @@
 //! HID, no TCC, no threads.
 
 pub mod bind;
+pub mod device_binding;
 pub mod engine;
 #[cfg(test)]
 mod engine_virtual_tests;
@@ -250,6 +251,19 @@ pub struct HostConfig {
     pub layer_hotkey_back: Option<ChordSpec>,
     #[serde(default = "default_scroll_lines")]
     pub scroll_lines_per_detent: i32,
+    /// Which DEVICE layer was bound to the slot chords, 0-based.
+    ///
+    /// The daemon only hears the one firmware layer that carries those
+    /// chords; the others run standalone and it is not involved in them.
+    /// Nothing recorded which one, so a host layer configured while
+    /// `bind-slots` had never run simply never fired -- no error, nothing to
+    /// search for. `bind-slots` writes it and `device_binding` turns it into
+    /// something a person can read.
+    ///
+    /// `None` means nothing is bound, which is a real state and not a
+    /// missing value: it is what every install starts in.
+    #[serde(default)]
+    pub bound_device_layer: Option<u8>,
 }
 
 fn default_double_tap() -> bool {
@@ -313,6 +327,9 @@ impl HostConfig {
             layer_hotkey: None,
             layer_hotkey_back: None,
             scroll_lines_per_detent: 3,
+            // Nothing is bound until `bind-slots` runs, which is the honest
+            // starting state: a fresh install's knob is not host-translated.
+            bound_device_layer: None,
         }
     }
 

@@ -64,14 +64,33 @@ pub fn run_bind_slots(
         return Ok(());
     }
     println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
+    let flashed = layers.clone();
     let sent =
-        device::with_device(move |dev| host::bind::flash_slot_bindings(dev, buttons, &layers))?;
+        device::with_device(move |dev| host::bind::flash_slot_bindings(dev, buttons, &flashed))?;
     println!(
                 "[ Ok  ] Flashed {} slot binding(s): CCW=ctrl-alt-F16, Press=ctrl-alt-F17, CW=ctrl-alt-F18.",
                 sent
             );
     println!("        Hold+twist slots unchanged (which slot drives them is unmeasured;");
     println!("        arm candidates with `antiknob bind-seq` and run `probe-gestures`).");
+    let recorded = host::default_config_path()
+        .map_err(anyhow::Error::from)
+        .and_then(|path| host::device_binding::record_bound_layer(&path, &layers));
+    match recorded {
+        Ok(Some(layer)) => {
+            let arrangement = host::device_binding::arrangement(Some(layer), device::DEVICE_LAYERS);
+            println!("[ Ok  ] {}", arrangement.describe());
+        }
+        Ok(None) => {
+            println!("        Every layer was bound, so no single one is recorded as THE");
+            println!("        host-translated layer; whichever the knob is on will work.");
+        }
+        Err(e) => {
+            // The flash landed; only the bookkeeping failed. Saying so beats
+            // reporting the whole command as failed.
+            println!("[ Wrn ] Slots flashed, but host.json could not record the layer: {e}");
+        }
+    }
     println!("        Verify with: antiknob listen --timeout-secs 10");
     Ok(())
 }

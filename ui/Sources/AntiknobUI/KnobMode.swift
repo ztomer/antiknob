@@ -26,8 +26,22 @@ enum KnobMode: String, Sendable {
 struct ModePresentation: Equatable, Sendable {
     let mode: KnobMode
 
-    init(rawMode: String?) {
+    /// Which DEVICE layer the daemon hears, in the daemon's own words.
+    ///
+    /// Separate from `mode` because the two answer different questions.
+    /// `mode` says whether the knob is flashed to send slot chords at all;
+    /// this says which of the three firmware layers carries them, and
+    /// therefore which layers run standalone with the daemon stopped. The
+    /// app presented all three host layers as though the daemon drove all
+    /// three, which is true of none of them.
+    let deviceBinding: String?
+
+    init(rawMode: String?, deviceBinding: String? = nil) {
         self.mode = rawMode.flatMap(KnobMode.init(rawValue:)) ?? .unknown
+        // An empty string is not a summary. Treated as absent so the view
+        // never renders a blank row where an explanation should be.
+        let trimmed = deviceBinding?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.deviceBinding = (trimmed?.isEmpty ?? true) ? nil : trimmed
     }
 
     /// True only when the firmware can actually reach the host layers.
@@ -71,7 +85,19 @@ struct ModePresentation: Equatable, Sendable {
 struct ReachabilityNotice: View {
     let mode: ModePresentation
 
+    /// True when there is anything to draw at all.
+    private var hasSomethingToSay: Bool {
+        mode.banner != nil || mode.deviceBinding != nil
+    }
+
     var body: some View {
+        if hasSomethingToSay {
+            content
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         if let banner = mode.banner {
             Section {
                 HStack(alignment: .top, spacing: 8) {
@@ -86,7 +112,27 @@ struct ReachabilityNotice: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
+                        if let binding = mode.deviceBinding {
+                            Text(binding)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
+                }
+            }
+        } else if let binding = mode.deviceBinding {
+            // Nothing is wrong, but the arrangement is still worth stating:
+            // two of the three layers run with the daemon stopped, and
+            // nothing else in the app says so.
+            Section {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "info.circle")
+                        .foregroundStyle(.secondary)
+                    Text(binding)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }

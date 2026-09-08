@@ -56,23 +56,24 @@ pub fn run_bind_slots(
                 packet[3], packet[2], packet[4], packet[11], packet[12]
             );
         }
+        // Counted from the plan, not restated as a literal. The literal
+        // said "3 slots" and "hold+twist NOT bound" for as long as it took
+        // the plan to grow to five -- a summary that contradicts the lines
+        // printed directly above it.
         println!(
-            "        3 slots x {} layer(s). Hold+twist slots are NOT bound",
+            "        {} slots x {} layer(s): CCW/press/CW/hold+twist L/hold+twist R.",
+            antiknob::protocol::GESTURES_PER_KNOB,
             layers.len()
         );
-        println!("        (which slot drives them is still unmeasured).");
         return Ok(());
     }
     println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
     let flashed = layers.clone();
     let sent =
         device::with_device(move |dev| host::bind::flash_slot_bindings(dev, buttons, &flashed))?;
-    println!(
-                "[ Ok  ] Flashed {} slot binding(s): CCW=ctrl-alt-F16, Press=ctrl-alt-F17, CW=ctrl-alt-F18.",
-                sent
-            );
-    println!("        Hold+twist slots unchanged (which slot drives them is unmeasured;");
-    println!("        arm candidates with `antiknob bind-seq` and run `probe-gestures`).");
+    println!("[ Ok  ] Flashed {sent} slot binding(s).");
+    println!("        CCW=ctrl-alt-F16, Press=ctrl-alt-F17, CW=ctrl-alt-F18,");
+    println!("        Hold+Twist L=ctrl-alt-F19, Hold+Twist R=ctrl-alt-F20.");
     let recorded = host::default_config_path()
         .map_err(anyhow::Error::from)
         .and_then(|path| host::device_binding::record_bound_layer(&path, &layers));

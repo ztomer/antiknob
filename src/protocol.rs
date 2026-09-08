@@ -54,6 +54,13 @@ impl Action {
             "next" => Some(0x00B5),
             "prev" | "previous" => Some(0x00B6),
             "stop" => Some(0x00B7),
+            // Transport controls that act on whatever is playing, which
+            // during a deliberate probe is nothing. Added so
+            // `gesture_probe` has enough markers left after excluding
+            // everything the device already emits.
+            "fastforward" | "ff" => Some(0x00B3),
+            "rewind" | "rw" => Some(0x00B4),
+            "eject" => Some(0x00B8),
             "brightnessup" => Some(0x006F),
             "brightnessdown" => Some(0x0070),
             _ => None,

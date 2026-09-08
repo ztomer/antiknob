@@ -51,8 +51,23 @@ pub fn run(
     capture_secs: u64,
     devices: Vec<String>,
 ) -> Result<()> {
-    let probe =
-        gesture_probe::plan_with_control(control, &candidates).map_err(|e| anyhow::anyhow!(e))?;
+    println!("[ ==> ] Reading the device's own bindings so the markers cannot collide...");
+    let table = device::with_device(move |dev| {
+        Ok(device::read_slot_table(
+            dev,
+            slots_per_layer,
+            device::DEVICE_LAYERS,
+        ))
+    })
+    .context("cannot read the slot table; refusing to probe blind")?;
+    let in_use = gesture_probe::usages_in_use(&table);
+    println!(
+        "        {} usage(s) this device already emits; markers avoid every one.",
+        in_use.len()
+    );
+
+    let probe = gesture_probe::plan_with_control_avoiding(control, &candidates, &in_use)
+        .map_err(|e| anyhow::anyhow!(e))?;
     let plan = probe.all();
 
     println!("[ ==> ] Reading the current contents of the candidate slots first...");

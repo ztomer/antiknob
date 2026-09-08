@@ -210,12 +210,31 @@ marker sits in each candidate slot. That is now one command:
 
     antiknob probe-gestures
 
-It arms slots 7-11, captures for 45s, and puts every slot back afterwards
-(confirmed by read-back). The missing step is a human twisting the knob.
+It arms slots 7-11 plus a control on slot 4, captures for 45s, and puts
+every slot back afterwards (confirmed by read-back). The missing step is a
+human twisting the knob.
+
+First real run, 2026-09-07: inconclusive, and twice over. It was run from a
+stale installed binary that predated the control, and its markers collided
+with the buttons. What it did establish is that the capture path works --
+`0x00EA`, `0x00E2` and `0x00E9` were all seen, so the knob's own CCW, press
+and CW fired during the window -- and that slots 7 and 8 did not fire.
+Slots 9-11 were never armed by that build.
 
 `probe-gestures` now runs a **positive control**: slot 4, the knob's CCW
 gesture, carries a marker of its own, and a run whose control never fires
-reports INCONCLUSIVE instead of listing candidates as silent. That is the
+reports INCONCLUSIVE instead of listing candidates as silent.
+
+It also picks markers the device does not already emit. The first real run
+exposed why: the marker set excluded volume, because the knob's own twist
+emits it, and excluded nothing else -- while the three BUTTONS on this VK01
+are bound to play, prev and next, which were three of the six markers. That
+run captured `0x00B6` because a button was pressed during the window, and
+the next default assignment would have reported it as slot 9 firing. A false
+positive manufactured by the instrument is worse than the silent run the
+control was added to catch. The probe now reads the whole slot table first
+and draws markers from a nine-usage pool minus everything already bound;
+running out is a refusal, never a reuse. That is the
 whole reason the original claim was wrong -- a negative result from an
 instrument nobody had shown could produce a positive one. The old default
 of `7,8` was itself the same mistake in miniature: it came from reading

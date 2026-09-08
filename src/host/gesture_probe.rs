@@ -20,21 +20,76 @@
 
 use crate::protocol::Action;
 
-/// Consumer usages used as probe markers.
+/// The pool of consumer usages a probe marker may be drawn from.
 ///
 /// Chosen to be individually recognisable in a capture and harmless to
 /// trigger: transport controls act on whatever is playing, which during a
-/// deliberate probe is nothing. Volume is deliberately NOT here -- the
-/// knob's own bindings already emit it, so a volume marker could not be told
-/// apart from an ordinary twist.
-const MARKERS: [(&str, u16); 6] = [
+/// deliberate probe is nothing.
+///
+/// A pool rather than the marker set, because which of these are USABLE
+/// depends on the device in front of you. An earlier version was a fixed
+/// list of six with one exclusion rule -- no volume, because the knob's own
+/// twist emits it. That rule was right and far too narrow: on this VK01 the
+/// three BUTTONS are bound to play, prev and next, which were three of the
+/// six markers. A real run captured `0x00B6` because a button was pressed
+/// during the window, and a marker set containing prev would have reported
+/// that as the candidate slot firing -- a false positive produced by the
+/// very instrument added to prevent false readings.
+///
+/// So the exclusion is no longer a hardcoded rule about volume. The probe
+/// reads what the device actually emits and avoids all of it.
+const MARKER_POOL: [(&str, u16); 9] = [
     ("stop", 0x00B7),
     ("play", 0x00CD),
     ("next", 0x00B5),
     ("prev", 0x00B6),
     ("brightnessup", 0x006F),
     ("brightnessdown", 0x0070),
+    ("fastforward", 0x00B3),
+    ("rewind", 0x00B4),
+    ("eject", 0x00B8),
 ];
+
+/// Usages the knob emits whatever is bound where.
+///
+/// The twist gestures drive volume through the very slots being probed, so
+/// a volume marker could never be told from an ordinary turn.
+const ALWAYS_EXCLUDED: [u16; 3] = [0x00E9, 0x00EA, 0x00E2];
+
+/// Every consumer usage the device currently emits, read off its slot table.
+///
+/// A probe marker that collides with one of these is not a marker. The
+/// buttons on this VK01 are bound to play, prev and next -- three of the six
+/// markers the original set used -- so a button pressed during the capture
+/// window read exactly like a probed slot firing. That is a false positive
+/// manufactured by the instrument, which is worse than the silent run the
+/// control was added to catch.
+///
+/// Media records carry a 16-bit usage little-endian at bytes 9-10; keyboard
+/// and mouse records emit no consumer usage and are skipped.
+pub fn usages_in_use(table: &[Vec<u8>]) -> Vec<u16> {
+    let mut out = Vec::new();
+    for record in table {
+        if record.len() > 10 && record.get(4) == Some(&2) {
+            let usage = u16::from(record[9]) | (u16::from(record[10]) << 8);
+            if usage != 0 && !out.contains(&usage) {
+                out.push(usage);
+            }
+        }
+    }
+    out
+}
+
+/// The markers usable on a device that already emits `in_use`.
+///
+/// Order is stable so a plan is reproducible: a probe whose marker
+/// assignment shifted between runs would make two captures incomparable.
+pub fn usable_markers(in_use: &[u16]) -> Vec<(&'static str, u16)> {
+    MARKER_POOL
+        .into_iter()
+        .filter(|(_, usage)| !ALWAYS_EXCLUDED.contains(usage) && !in_use.contains(usage))
+        .collect()
+}
 
 /// One slot to probe, and the marker it will carry.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,15 +105,25 @@ pub struct ProbeSlot {
 /// markers: a plan that silently probed only the first six slots would
 /// report "gesture not found" for slots it never wrote to.
 pub fn plan(candidates: &[u8]) -> Result<Vec<ProbeSlot>, String> {
+    plan_avoiding(candidates, &[])
+}
+
+/// Build the probe plan, avoiding every usage the device already emits.
+///
+/// A marker the device shares with a live binding is not a marker: pressing
+/// that button during the capture window reads exactly like the probed slot
+/// firing, and the run reports a gesture that does not exist.
+pub fn plan_avoiding(candidates: &[u8], in_use: &[u16]) -> Result<Vec<ProbeSlot>, String> {
     if candidates.is_empty() {
         return Err("no candidate slots to probe".to_string());
     }
-    if candidates.len() > MARKERS.len() {
+    let markers = usable_markers(in_use);
+    if candidates.len() > markers.len() {
         return Err(format!(
-            "{} candidates but only {} distinct markers; probe them in smaller batches \
-             so each slot stays identifiable",
+            "{} candidate(s) but only {} marker(s) this device does not already \
+             emit; probe them in smaller batches so each slot stays identifiable",
             candidates.len(),
-            MARKERS.len()
+            markers.len()
         ));
     }
     let mut seen = Vec::new();
@@ -70,7 +135,7 @@ pub fn plan(candidates: &[u8]) -> Result<Vec<ProbeSlot>, String> {
     }
     Ok(candidates
         .iter()
-        .zip(MARKERS)
+        .zip(markers)
         .map(|(key_id, (marker_name, marker_usage))| ProbeSlot {
             key_id: *key_id,
             marker_name,
@@ -140,6 +205,15 @@ pub enum Verdict {
 /// candidates with a calibrated instrument answer the question, and six with
 /// an uncalibrated one do not.
 pub fn plan_with_control(control_key: u8, candidates: &[u8]) -> Result<ProbePlan, String> {
+    plan_with_control_avoiding(control_key, candidates, &[])
+}
+
+/// `plan_with_control`, avoiding every usage the device already emits.
+pub fn plan_with_control_avoiding(
+    control_key: u8,
+    candidates: &[u8],
+    in_use: &[u16],
+) -> Result<ProbePlan, String> {
     if candidates.contains(&control_key) {
         return Err(format!(
             "slot {control_key} is the control and cannot also be a candidate;              it would carry two markers and identify neither"
@@ -147,7 +221,7 @@ pub fn plan_with_control(control_key: u8, candidates: &[u8]) -> Result<ProbePlan
     }
     let mut all = vec![control_key];
     all.extend_from_slice(candidates);
-    let slots = plan(&all)?;
+    let slots = plan_avoiding(&all, in_use)?;
     let (control, candidates) = slots.split_first().expect("plan refuses an empty list");
     Ok(ProbePlan {
         control: control.clone(),
@@ -203,6 +277,90 @@ mod tests {
                 s.marker_name
             );
         }
+    }
+
+    /// The VK01's real layer 1, as read off the device: three buttons bound
+    /// to play/prev/next and the knob to volume down/mute/up.
+    fn vk01_layer_one() -> Vec<Vec<u8>> {
+        [0x00CDu16, 0x00B6, 0x00B5, 0x00EA, 0x00E2, 0x00E9]
+            .iter()
+            .enumerate()
+            .map(|(i, usage)| {
+                let mut r = vec![0u8; 13];
+                r[0] = 0x03;
+                r[1] = 0xFA;
+                r[2] = (i + 1) as u8;
+                r[3] = 1;
+                r[4] = 2; // media
+                r[9] = (*usage & 0xFF) as u8;
+                r[10] = (*usage >> 8) as u8;
+                r
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_devices_own_usages_are_read_off_its_slot_table() {
+        let found = usages_in_use(&vk01_layer_one());
+        assert_eq!(found.len(), 6);
+        for usage in [0x00CDu16, 0x00B6, 0x00B5, 0x00EA, 0x00E2, 0x00E9] {
+            assert!(
+                found.contains(&usage),
+                "{usage:#06x} missing from {found:?}"
+            );
+        }
+        // Keyboard and mouse records carry no consumer usage.
+        let mut kbd = vec![0u8; 13];
+        kbd[4] = 1;
+        kbd[9] = 0xB7;
+        assert!(usages_in_use(&[kbd]).is_empty());
+        // An empty media slot is not a usage in use.
+        let mut blank = vec![0u8; 13];
+        blank[4] = 2;
+        assert!(usages_in_use(&[blank]).is_empty());
+    }
+
+    /// The defect a real run exposed. A button bound to `prev` makes `prev`
+    /// useless as a marker: pressing it during the capture window is
+    /// indistinguishable from the probed slot firing, and the run reports a
+    /// gesture that does not exist.
+    #[test]
+    fn no_marker_collides_with_a_binding_the_device_already_has() {
+        let in_use = usages_in_use(&vk01_layer_one());
+        let p = plan_avoiding(&[7, 8, 9, 10, 11], &in_use).expect("plan");
+        for s in &p {
+            assert!(
+                !in_use.contains(&s.marker_usage),
+                "{} ({:#06x}) is already bound on this device",
+                s.marker_name,
+                s.marker_usage
+            );
+        }
+        // And the control gets the same treatment.
+        let withc = plan_with_control_avoiding(4, &[7, 8, 9, 10, 11], &in_use).expect("plan");
+        assert!(!in_use.contains(&withc.control.marker_usage));
+    }
+
+    /// Running out of usable markers is a refusal, not a silent reuse.
+    /// Reusing one would make two slots indistinguishable, which is the
+    /// whole thing being measured.
+    #[test]
+    fn too_few_usable_markers_is_refused_and_says_why() {
+        // Everything in the pool is already bound: nothing is usable.
+        let all: Vec<u16> = usable_markers(&[]).iter().map(|(_, u)| *u).collect();
+        let err = plan_avoiding(&[7], &all).expect_err("must refuse");
+        assert!(err.contains("does not already"), "{err}");
+        assert!(usable_markers(&all).is_empty());
+    }
+
+    /// Marker assignment must not shift between runs, or two captures of
+    /// the same device cannot be compared.
+    #[test]
+    fn the_marker_assignment_is_stable_across_runs() {
+        let in_use = usages_in_use(&vk01_layer_one());
+        let a = plan_avoiding(&[7, 8, 9], &in_use).expect("plan");
+        let b = plan_avoiding(&[7, 8, 9], &in_use).expect("plan");
+        assert_eq!(a, b);
     }
 
     /// Truncating would report "not found" for slots never written to.

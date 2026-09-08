@@ -36,9 +36,8 @@ struct LayerSwitchingSection: View {
         } header: {
             Text("Switching Between Layers")
         } footer: {
-            Text("With double-tap on, a single press waits "
-               + "\(Int(store.cfg.tapWindow * 1000)) ms to see if a second one follows. "
-               + "The shortcuts and the menu bar switch layers either way.")
+            Text("A single press waits \(Int(store.cfg.tapWindow * 1000)) ms "
+               + "for a second one.")
         }
     }
 }

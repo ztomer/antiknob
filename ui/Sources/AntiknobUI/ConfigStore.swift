@@ -67,10 +67,6 @@ public final class ConfigStore: ObservableObject {
     /// whose backlight the daemon drives. nil when nothing is bound, which
     /// is a real state: no layer's colour can appear until one is.
     @Published var boundDeviceLayer: Int?
-    /// The mode the firmware reports on the bound device layer -- what the
-    /// knob is wearing right now. nil when unread, unbound or unreachable,
-    /// which are all "we do not know" and none of which is a mode.
-    @Published var firmwareLedMode: Int?
     @Published var startOnLogin: Bool = false
     /// The socket path the last successful call actually went to. nil when
     /// nothing has answered. Three panes printed `/tmp/antiknob.sock` as a
@@ -157,21 +153,7 @@ public final class ConfigStore: ObservableObject {
                 self?.knobButtons = buttons
                 self?.knobKeyIds = keyIds
                 self?.boundDeviceLayer = bound
-                self?.refreshFirmwareLedMode()
             }
-        }
-    }
-
-    /// Read the bound device layer's mode. Deliberately not on the status
-    /// poll: it opens the HID device, and the answer only changes when
-    /// something writes it.
-    func refreshFirmwareLedMode() {
-        guard hardwareConnected, let bound = boundDeviceLayer else {
-            firmwareLedMode = nil
-            return
-        }
-        getHardwareLedMode(layer: bound) { [weak self] mode in
-            self?.firmwareLedMode = mode
         }
     }
 

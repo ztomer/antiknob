@@ -133,8 +133,8 @@ struct InspectorSections: View {
         } header: {
             Text("Live HID Traffic")
         } footer: {
-            Text("Reads the vendor (0xFF00), keyboard (0x01:0x06) and mouse (0x01:0x02) "
-               + "interfaces without taking them from macOS.")
+            Text("Vendor 0xFF00, keyboard 0x01:0x06, mouse 0x01:0x02 — read without "
+               + "taking them from macOS.")
         }
     }
 
@@ -143,8 +143,7 @@ struct InspectorSections: View {
             VStack(alignment: .leading, spacing: 8) {
                 // No backticks: SwiftUI's Text renders them literally rather
                 // than as code, so they arrive on screen as punctuation.
-                Text("What the knob has stored in each slot — the raw 64-byte replies "
-                   + "to a FA group query.")
+                Text("Raw 64-byte replies to a FA group query.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -213,7 +212,7 @@ struct InspectorSections: View {
     private var rawConsoleSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Sends a 64-byte report (ID 0x03) straight to the knob.")
+                Text("64-byte report, ID 0x03.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 

@@ -56,12 +56,6 @@ extension ServicesPane {
             if capabilitiesExpanded {
                 capabilitiesBody
             }
-        } footer: {
-            // What the reader can DO with this, not how it is plumbed. The
-            // previous line explained that the list is generated from the
-            // same table as the CLI and "cannot drift" -- true, and a note
-            // to ourselves rather than to anyone reading the pane.
-            Text("Every command this daemon answers to, over the socket or MCP.")
         }
     }
 

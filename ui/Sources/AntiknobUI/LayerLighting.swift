@@ -1,4 +1,4 @@
-// LayerLighting.swift — one layer's backlight, as glyphs and a preview.
+// LayerLighting.swift — one layer's backlight, as a row of glyphs.
 //
 // This was a tab of its own, and it addressed the wrong thing. Its picker
 // chose between the firmware's three DEVICE layers -- a fixed hardware axis
@@ -9,14 +9,11 @@
 // did not read.
 //
 // It is per host layer now, for real: the layer carries a mode and the
-// daemon writes it on every switch (`host::led_sync`). So the control lives
-// in the layer it describes.
+// daemon writes it on every switch (`host::led_sync`).
 //
-// The six-row list with a description each is a row of glyphs, and the
-// preview it used to carry moved onto the knob at the top of the pane --
-// the same knob these gestures are bound on, which is the object the light
-// is actually on. Two drawings of one knob, one of them lit and one of them
-// clickable, was a picture of the same thing twice.
+// A GridRow, in the same grid as the gestures, so its glyphs start where
+// their action menus start. It was a full-width row of its own above them,
+// on a different left edge from every other control in the pane.
 
 import SwiftUI
 
@@ -29,8 +26,20 @@ struct LayerLightingRow: View {
     }
 
     var body: some View {
-        glyphRow
-            .onAppear { store.refreshFirmwareLedMode() }
+        GridRow {
+            Text("Light mode")
+                .fixedSize(horizontal: true, vertical: false)
+                .gridColumnAlignment(.leading)
+            // The gestures' parameter column, held open and empty: a mode
+            // takes no parameter, and collapsing the cell would pull the
+            // glyphs left of the action menus they line up with.
+            Color.clear
+                .frame(width: Layout.gestureParams, height: 1)
+                .gridColumnAlignment(.leading)
+            glyphRow
+                .gridColumnAlignment(.leading)
+        }
+        .padding(.vertical, 3)
     }
 
     // MARK: - Glyphs
@@ -40,15 +49,21 @@ struct LayerLightingRow: View {
     /// there has to be a way back to it.
     private var glyphRow: some View {
         HStack(spacing: 6) {
-            glyph(nil)
-            Divider().frame(height: 22)
-            ForEach(LedMode.all) { m in
-                glyph(m)
+            // Sized to `Layout.dropdown`, so the seven glyphs end exactly
+            // where the action menus below them end. Left edge alone is only
+            // half an alignment.
+            HStack(spacing: 4) {
+                glyph(nil)
+                Divider().frame(height: 20)
+                ForEach(LedMode.all) { m in
+                    glyph(m)
+                }
             }
+            .frame(width: Layout.dropdown, alignment: .leading)
+
             Text(selection?.name ?? "No change")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .padding(.leading, 4)
             Spacer(minLength: 0)
         }
         .padding(.vertical, 2)
@@ -61,7 +76,7 @@ struct LayerLightingRow: View {
             store[layer: idx]?.led = mode?.id
         } label: {
             Image(systemName: mode?.icon ?? "minus")
-                .frame(width: 28, height: 24)
+                .frame(width: 26, height: 24)
                 // Tinted by the mode's own colour when it has one, because
                 // red and green share a glyph and the colour IS the
                 // difference. Selected rows go white on the accent fill,

@@ -48,18 +48,13 @@ struct LayerDetail: View {
                     LayerTabBar(store: store, selected: $selectedLayer, idx: idx)
                     LayerEditRow(store: store, selectedLayer: $selectedLayer, idx: idx)
 
-                    KnobHeader(
-                        selected: $selected,
-                        mode: lightingMode,
-                        isLive: lightingIsLive
-                    )
-                    .frame(maxWidth: .infinity)
-
-                    // Directly under the knob it lights, so picking a mode
-                    // and seeing what it does are one movement of the eye.
-                    LayerLightingRow(store: store, idx: idx)
+                    KnobHeader(selected: $selected, mode: lightingMode)
+                        .frame(maxWidth: .infinity)
 
                     PropertyGrid(horizontalSpacing: 12, verticalSpacing: 2) {
+                        // First, directly under the knob it lights, and on
+                        // the same column edges as the gestures below it.
+                        LayerLightingRow(store: store, idx: idx)
                         ForEach(Gesture.allCases) { g in
                             gestureRow(g)
                         }
@@ -70,8 +65,6 @@ struct LayerDetail: View {
                     }
                 } header: {
                     Text("Layers")
-                } footer: {
-                    lightingFooter
                 }
             }
             .formStyle(.grouped)
@@ -84,31 +77,9 @@ struct LayerDetail: View {
         }
     }
 
-    /// What this layer's lighting choice will and will not do. Sits in the
-    /// section footer rather than as another row, because it is a caveat
-    /// about the row above and not a control.
-    @ViewBuilder
-    private var lightingFooter: some View {
-        if lightingMode == nil {
-            Text("This layer leaves the knob's backlight as it is.")
-        } else if !store.modePresentation.hostLayersCanFire {
-            Text("The backlight follows the active layer once the knob is flashed.")
-        } else {
-            Text("The knob wears this mode whenever this layer is active.")
-        }
-    }
-
     /// The mode this layer sets, if it sets one. Drawn as the knob's ring.
     private var lightingMode: LedMode? {
         store[layer: idx]?.led.flatMap(LedMode.named)
-    }
-
-    /// True only when the knob is wearing it now: this layer is the active
-    /// one AND the firmware reports its mode. An intention drawn identically
-    /// to a fact is the defect this app keeps finding in itself.
-    private var lightingIsLive: Bool {
-        guard let lightingMode, let firmware = store.firmwareLedMode else { return false }
-        return store.activeLayerIdx == idx && lightingMode.number == firmware
     }
 
     /// Three columns: gesture, its parameter control, its action menu.

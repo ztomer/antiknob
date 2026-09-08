@@ -133,13 +133,6 @@ struct HardwarePane: View {
     private var slotBindingSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
-                Text("""
-                    Binds the knob's five gestures to ⌃⌥F16..F20 so the daemon hears them \
-                    and runs the host layers. Run once.
-                    """)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
                 PropertyGrid {
                     GridRow {
                         Text("Target Layer")

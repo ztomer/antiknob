@@ -94,20 +94,3 @@ struct LedRing: View {
         }
     }
 }
-
-/// The line under the knob: which mode, and whether it is on the knob now.
-struct LedPreviewCaption: View {
-    let mode: LedMode
-    let isLive: Bool
-
-    var body: some View {
-        VStack(spacing: 3) {
-            Text(isLive
-                 ? "\(mode.name) — on the knob now"
-                 : "\(mode.name) — not sent yet")
-                .font(.caption)
-                .foregroundStyle(isLive ? Color.primary : Color.secondary)
-
-        }
-    }
-}

@@ -17,25 +17,17 @@ struct KnobHeader: View {
     /// knob unlit -- which is what "leave the backlight alone" looks like,
     /// and must not be confused with mode `off`.
     var mode: LedMode?
-    /// True when the knob is wearing this mode right now, rather than when
-    /// it is a choice not yet applied.
-    var isLive: Bool = false
 
     var body: some View {
-        VStack(spacing: 10) {
-            HStack(alignment: .center, spacing: 20) {
-                VStack(spacing: 12) {
-                    zone(.twistL, "arrow.counterclockwise", "Twist Left")
-                    zone(.holdTwistL, "arrow.counterclockwise.circle", "Hold + Twist L")
-                }
-                knobBody
-                VStack(spacing: 12) {
-                    zone(.twistR, "arrow.clockwise", "Twist Right")
-                    zone(.holdTwistR, "arrow.clockwise.circle", "Hold + Twist R")
-                }
+        HStack(alignment: .center, spacing: 20) {
+            VStack(spacing: 12) {
+                zone(.twistL, "arrow.counterclockwise", "Twist Left")
+                zone(.holdTwistL, "arrow.counterclockwise.circle", "Hold + Twist L")
             }
-            if let mode {
-                LedPreviewCaption(mode: mode, isLive: isLive)
+            knobBody
+            VStack(spacing: 12) {
+                zone(.twistR, "arrow.clockwise", "Twist Right")
+                zone(.holdTwistR, "arrow.clockwise.circle", "Hold + Twist R")
             }
         }
         .padding(.vertical, 8)

@@ -101,8 +101,6 @@ struct ServicesPane: View {
             .padding(.top, 4)
         } header: {
             Text("Daemon")
-        } footer: {
-            Text("This app, the CLI and any script reach the knob through the daemon.")
         }
     }
 
@@ -124,11 +122,8 @@ struct ServicesPane: View {
 
             if !store.tapActive {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("""
-                        Antiknob needs Accessibility and Input Monitoring to intercept the \
-                        knob's chords. Flashing and lighting still work without it; the host \
-                        layers do not.
-                        """)
+                    Text("Needs Accessibility and Input Monitoring. Flashing and lighting "
+                       + "work without them; the host layers do not.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -197,8 +192,6 @@ struct ServicesPane: View {
             .padding(.top, 4)
         } header: {
             Text("Model Context Protocol (MCP) Server")
-        } footer: {
-            Text("Lets an AI assistant read the knob's status and change its configuration.")
         }
     }
 

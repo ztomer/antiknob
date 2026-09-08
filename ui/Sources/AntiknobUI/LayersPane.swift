@@ -155,13 +155,6 @@ struct LayerEditRow: View {
                 .disabled(idx >= store.cfg.layers.count - 1)
                 .help("Move this layer later")
 
-            Text("\(idx + 1) of \(store.cfg.layers.count)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-
-            Spacer(minLength: 0)
-
             Button(role: .destructive) { confirmingDelete = true } label: {
                 Image(systemName: "trash")
             }

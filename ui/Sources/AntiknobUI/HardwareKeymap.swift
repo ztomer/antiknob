@@ -99,9 +99,8 @@ extension HardwarePane {
         Section {
             VStack(alignment: .leading, spacing: 8) {
                 Text("""
-                    Writes actions into the knob itself, so it works on any machine with no \
-                    daemon. This overwrites the chords above, and the host layers stay quiet \
-                    until you flash them again.
+                    Runs with no daemon, on any machine. Overwrites the chords above, so the \
+                    host layers stay quiet until you flash them again.
                     """)
                     .font(.caption)
                     .foregroundStyle(.secondary)

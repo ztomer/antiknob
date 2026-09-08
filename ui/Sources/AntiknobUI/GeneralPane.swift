@@ -20,8 +20,7 @@ struct GeneralPane: View {
                 get: { store.startOnLogin },
                 set: { store.toggleStartOnLogin(enabled: $0) }
             ))
-            Text("Starts the Antiknob daemon when you log in. Without it the knob's "
-               + "gestures reach macOS unchanged.")
+            Text("Without the daemon, the knob's gestures reach macOS unchanged.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

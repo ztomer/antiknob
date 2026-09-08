@@ -63,6 +63,49 @@ The large group at (229, 974) is six buttons, one per firmware mode:
 Mode 5 is a first-class button in the vendor's own UI, which is a third
 independent reason the "mode 5 crashes the firmware" claim was wrong.
 
+## Reading the LED mode back -- and the echo that hides it
+
+Measured 2026-09-08 on `514c:8850`, by draining every report the handle
+offered after a write instead of taking the first one.
+
+The query is `03 FA B0 <layer>`. Its reply is framed:
+
+    03 FA <mode> <48 bytes of palette>
+
+so the mode is byte 2. On a handle with an empty input queue that is the
+first report to arrive, and a naive "send the query, read one report, return
+byte 2" works.
+
+**After a write it is not the first report.** `send_led` sends the required
+init packet (`03 FB FB FB`) before the mode packet, and the device ANSWERS
+the init:
+
+    [0] 03 FB 00 01 0B 00 FF 00 00 FF 80 30 FF FF 30 00   <- init echo
+    [1] 03 FA 02 FF 00 00 FF 00 00 FF 00 00 FF 00 00 FF   <- the reply
+
+Byte 2 of the echo is `00`. So a read-back on the writing handle returned
+mode 0 -- "off" -- for a write that had worked perfectly, every time,
+reproducibly. A fresh handle has no queue and answers correctly, which is why
+`get_led` looked fine while write-then-verify looked broken.
+
+Three candidate explanations were on the table and only one survives:
+
+| hypothesis | test | result |
+|---|---|---|
+| the firmware needs time to commit | read again after 150 ms on the same handle | still 0 |
+| the queue holds a stale report | read TWICE, discard the first | correct mode |
+| the handle is the problem | read on a fresh handle | correct mode |
+
+So it is the queue, not the clock. `device::led_state::read_led_mode` now
+matches `buf[1] == 0xFA` and skips anything else, which makes the read
+correct on any handle rather than only on a clean one.
+
+The general shape is worth more than the bytes: **a verifier that reads
+whatever arrives next is not reading its own answer.** It reported failure
+for success, which is worse than no verifier -- it would have "proved" the
+firmware ignores LED writes, a conclusion this device has already caused
+once.
+
 ## The device is held exclusively
 
 While ANTICATER.app is running, `antiknob read-slots` fails with
@@ -451,6 +494,9 @@ entry for the keycode. No new vocabulary is needed.
   for `Like`. Not decoded, and nothing built here depends on it.
 * **Layer.** Every packet observed used layer `01`. The vendor UI exposes no
   layer switch for this device.
+* **Mode 3 ("ripple").** Still the one LED mode whose behaviour is taken
+  from kriomant/ch57x-keyboard-tool#173 rather than watched here. Modes 0,
+  1, 2, 4 and 5 have been seen on this knob.
 
 ## Verified with this repo's own writer
 

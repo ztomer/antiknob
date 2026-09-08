@@ -58,7 +58,7 @@ struct HardwarePane: View {
     // Module-internal rather than private: the standalone-flash half of this
     // pane is an extension in HardwareKeymap.swift, and an extension in
     // another file cannot see `private` members. Same arrangement as
-    // LayerDetail / LayerBindings and InspectorPane / InspectorActions.
+    // LayerDetail / LayerBindings and InspectorSections / InspectorActions.
     @State var selectedTemplate: KeymapTemplate = .media
     @State var yamlText: String = KeymapTemplate.media.defaultYaml
     @State var isFlashingKeymap: Bool = false

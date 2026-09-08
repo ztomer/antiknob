@@ -19,25 +19,46 @@ What it settled:
 
 * **`KnobAction { RotateCCW, Press, RotateCW }` is THIS TOOL's model of the
   knob, not the firmware's capability.** Reading it as the latter produced
-  the worst wrong claim of this session -- that hold+twist does not exist.
-  It does: the vendor binds all five gestures, using the `0xFD` command this
-  project's `k884x` driver does not use. A probe finding nothing in the
-  `0xFE` space was treated as proof of absence. (The key IDs first recorded
-  here for that command -- 2..6 -- were wrong: `0xFD` and `0xFE` address the
-  same single slot table, where 1-3 are the buttons and 4-6 the knob. Which
-  slot hold+twist drives is still unmeasured. See PLAN.md item 2.)
+  the worst wrong claim in this repo's history -- that hold+twist does not
+  exist. It does: the vendor binds all five gestures, using the `0xFD`
+  command this project's `k884x` driver does not use. A probe finding
+  nothing in the `0xFE` space was treated as proof of absence.
 * **Our device is in its table**: `(Ch57x_3, 0x514c, 0x8850, 0x04)`.
 * **Key ids are per-model constants there**, e.g. `MAX_NUMBER_OF_BUTTONS + 1
   + 3 * knob + action`, with the constant 12, 15 or 16 depending on model.
-  That does NOT match this hardware, which reads its knob from slots 4/5/6
-  with three buttons -- measured, not inferred. This build derives the base
-  from the declared layout instead, and verifies every flash by read-back.
+  That does not match this hardware. This build derives the base from the
+  declared layout instead, and verifies every flash by read-back.
+
+**Where the key IDs landed, after two wrong answers.** This entry has said
+three different things and only the last one was measured, so all three are
+here rather than only the survivor:
+
+1. First: keys 2..6 for the five gestures, read off the vendor app.
+2. Then a retraction -- "2..6 was wrong; 1-3 are the buttons and 4-6 the
+   knob, and which slot hold+twist drives is still unmeasured." That
+   retraction was itself wrong, and it was inference, not measurement.
+3. Measured 2026-09-08 with `antiknob probe-gestures --map`, which writes a
+   distinct marker to keys 1-6, performs each gesture in a stated order and
+   reports which key it drove: **key 1 is never driven, and keys 2/3/4/5/6
+   are CCW / press / CW / hold+twist-left / hold+twist-right.** So the first
+   answer was right, this device has AT MOST ONE button, and nothing about
+   hold+twist is unmeasured any more. `bind-slots` flashes all five
+   (`ctrl-alt-F16..F20`); see `src/host/bind.rs`.
+
+The lesson is in the shape rather than the numbers: a retraction based on
+reading someone else's constants overturned a reading of the actual vendor
+app, and stood for weeks. See the `probe-first` skill.
 
 What it is NOT good for: **the LED protocol.** Its driver for `514c:8850`
 refuses LED commands outright and asks for help at
 <https://github.com/kriomant/ch57x-keyboard-tool/issues/60>. Concluding from
 that that this device has no working backlight was wrong -- it has one, the
 project simply has not reverse-engineered it.
+
+Nor for **the shape of a read reply.** See VENDOR_UI_MAP's "Reading the LED
+mode back": the query answers `03 FA <mode>`, and a read taken right after a
+write must skip the init packet's own `03 FB ...` echo or it returns mode 0
+for a write that worked.
 
 ---
 

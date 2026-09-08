@@ -1,4 +1,4 @@
-// InspectorActions.swift — the process and device work behind InspectorPane.
+// InspectorActions.swift — the process and device work behind InspectorSections.
 //
 // Split out for the same reason as LayerBindings.swift: the view struct
 // crossed the body-length cap once its rows became grids, and there was

@@ -17,7 +17,13 @@ GOH_SWIFT_LINT_BASELINE=.swiftlint-baseline.json
 # 2026-09-07: 3 -> 4. Pulling the CLI discovery and status parsing out of
 # ConfigStore gave them a seam and 20 tests, and the measured figure moved
 # 3.4% -> 4.8%. The floor follows the measurement, decimal shaved.
-GOH_SWIFT_COV_MIN=4
+#
+# 2026-09-08: 4 -> 7. `ConfigStore(inMemory:)` finally gave the store itself
+# a seam -- it could not be constructed in a test before, because `init()`
+# loaded the real config and started a poll timer -- and the LED mode table,
+# the daemon command table and the safe layer accessor arrived with tests.
+# Measured 7.53%.
+GOH_SWIFT_COV_MIN=7
 
 # Per-directory floors, checked BEFORE the package floor. The package number
 # is dominated by the view bodies -- 6,606 of its 7,423 lines, 0.2% covered --

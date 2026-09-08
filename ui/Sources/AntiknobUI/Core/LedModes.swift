@@ -4,7 +4,8 @@
 // which modes exist, what each is called, what number the firmware reports
 // for it, and what it looks like. `ledModeNames` was a separate `[Int: String]`
 // in Models.swift whose own comment claimed to mirror the Rust table and had
-// drifted from it for months; the mode list in LedSection was a third copy
+// drifted from it for months; the mode list in the old LedSection (deleted)
+// was a third copy
 // that carried different descriptions again.
 //
 // No SwiftUI here on purpose: Core/ holds the half with no view declarations,

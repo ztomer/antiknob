@@ -1,4 +1,4 @@
-// InspectorPane.swift — Live HID Traffic Snooper, Slot Memory Dump, and Raw Packet Console.
+// InspectorSections.swift — live HID traffic, the slot table, and raw packets.
 // Provides real-time packet inspection, reverse-engineering diagnostics, and wire testing.
 
 import AppKit

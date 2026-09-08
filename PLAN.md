@@ -17,7 +17,22 @@ plan and does not get pruned.
   Measured with `antiknob probe-gestures --map`; see `key_id_for_knob`.
 * Architecture: the GUI and CLI stay TCC-free (device flashing, presets, LED,
   YAML). The daemon alone needs Accessibility / Input Monitoring for host-side
-  translation. `host.json` is the contract between them.
+  translation. `host.json` is the contract between them, and `set_config`
+  keeps five rotated backups (`host.json.1..5`) because a bad writer used to
+  take the file with it.
+* **The backlight follows the ACTIVE HOST LAYER**, and that is something the
+  daemon does rather than something the firmware offers: the firmware stores
+  one mode per DEVICE layer and has never heard of host layers, so
+  `host::led_sync` writes the active layer's mode to the bound device layer
+  on every switch, off the caller's thread. A layer with no mode leaves the
+  light alone.
+* All hidapi work re-enumerates the bus before every job. `HidApi::new`
+  snapshots it once, so a daemon that never refreshed answered from that
+  snapshot forever -- one replug and every open failed against a dead device
+  path while `get_status` still reported "connected".
+* The settings app is four tabs: General, Layers, Hardware, Services. Layers
+  live behind one tab because the strip is in the titlebar and has a fixed
+  budget; lighting lives inside a layer because it is per host layer.
 * Every command is declared once in `src/api/registry.rs`; the CLI's clap tree
   and the MCP tool list are both generated from it. A command absent from a
   surface states why, in the table.
@@ -38,19 +53,25 @@ be met by keeping tests:
 
 | floor | value | measured | what it covers |
 |-------|-------|----------|----------------|
-| `GOH_COV_FLOOR_RUST` | 61 | 61.92% | the Rust crate |
-| `GOH_SWIFT_COV_MIN` | 4 | 4.8% | the whole Swift package |
-| `coverage-floors.json` | 46 | 46.58% | `Sources/AntiknobUI/Core/` |
+| `GOH_COV_FLOOR_RUST` | 61 | 61.45% | the Rust crate |
+| `GOH_SWIFT_COV_MIN` | 7 | 7.53% | the whole Swift package |
+| `coverage-floors.json` | 54 | 54.84% | `Sources/AntiknobUI/Core/` |
 
-The package figure is low because ~6,000 of its ~7,300 lines are SwiftUI view
+The package figure is low because ~6,400 of its ~6,900 lines are SwiftUI view
 bodies no unit test executes. `Core/` is the half with no view declarations at
 all, and its floor is the one that means something.
 
-Still worth doing: **put seams under the logic that has none.** `ConfigStore`
-is the largest remaining -- its `init()` loads config and starts a 2s poll
-timer, so it cannot be constructed in a test. Its one-shot RPC methods need
-the socket faked; that is the next seam and a bigger one than the two already
-pulled out (`CliDiscovery`, `StatusParse`).
+`ConfigStore` has a seam now: `ConfigStore(inMemory:)` builds a store that
+loads nothing, polls nothing and writes nothing. That was overdue for a
+reason worse than coverage -- the plain `init()` loads the real `host.json`
+and pushes every `cfg` assignment back to the running daemon, so a test that
+built one and assigned a fixture EDITED THE USER'S CONFIGURATION. One did,
+and destroyed a working two-layer setup plus two restores of it.
+
+Still worth doing: **fake the socket.** The seam above covers construction
+and the config, but `ConfigStore`'s one-shot RPCs still reach
+`SocketClient.shared` directly, so nothing exercises their success and
+failure paths. That is the next seam.
 
 `ui/.swiftlint-baseline.json` is the companion ratchet: 5 entries, shrink-only
 -- a new violation fails and so does a listed one that GROWS, because the
@@ -78,10 +99,22 @@ unbound case, where a virtual layer is configured perfectly and fires never.
 
 Still to do:
 
-* **Verify the flash-then-record sequence on hardware.** The pure half is
-  covered and the API shape is asserted, but running `bind-slots` for real
-  converts the knob out of standalone mode, which is a change to a working
-  device rather than a test.
+* **Flash the slot bindings on hardware.** Everything downstream of the flash
+  is now built and, where it could be, verified: `bind-slots` writes all five
+  chords (`ctrl-alt-F16..F20`, keys 2-6 on this device), the daemon drives the
+  backlight from the active host layer, and the settings app reports the
+  state honestly. What has never been run is the flash itself, because it
+  converts the knob out of standalone mode -- a change to a working device
+  rather than a test. Until it runs, the host layers do nothing and the app
+  says so.
+
+      antiknob bind-slots --dry-run    # shows the plan, touches nothing
+      antiknob bind-slots              # the real thing
+
+  The per-layer backlight was verified end to end WITHOUT flashing, by
+  recording a bound layer in `host.json` and switching layers over the
+  socket: red, green, red on the knob, matching the layers. That proves
+  `led_sync`; it does not prove the flash.
 * **Decide what the virtual layer should DO.** The mechanism exists and the
   frontmost-app driver works; nothing has been designed for it to mean.
 
@@ -122,6 +155,9 @@ From [VENDOR_UI_MAP.md](VENDOR_UI_MAP.md), in rough order of value:
 * **Byte 5.** Device-owned: it reads back the same whatever is written there,
   and was `01` on every slot at session start and `00` afterwards. Nothing
   depends on it.
+* **LED mode 3 ("ripple").** The one mode whose behaviour is still taken from
+  kriomant/ch57x-keyboard-tool#173 rather than watched on this knob. The
+  other five have been seen.
 * **`upload --verify` still walks slot by slot.** The burst read
   (`read_full_table`) is three queries instead of eighteen and strictly more
   complete, but swapping the verification gate onto new code is a deliberate

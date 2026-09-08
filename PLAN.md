@@ -187,10 +187,22 @@ Two things learned while reading the table that the notes had wrong:
   sized for a larger family member, not a gesture map.
 * **The slot table is walked, not addressed.** A lone query for counter 7
   never answers; the same query as step 7 of a walk from counter 1 answers
-  every time. An earlier read-only sweep that concluded "nothing else
-  answers" was using the standalone form, so its negative results say
-  nothing -- a query for counter 6, which demonstrably exists, also came back
-  empty under it.
+  every time, and the state is per-handle -- a counter-1 read in another
+  process does not unlock it.
+
+  An earlier note here said this voided the 512-query sweep's negative
+  results. It does not, and that was an overclaim recorded on 2026-09-07 and
+  corrected the same day. The sweep queried `FA <cmd> 00 00` and
+  `FA <cmd> 00 01`, and counter 1 DOES answer standalone -- verified against
+  the hardware for widths `01`, `06`, `0f`, `19` and `24`, and `FA B0`
+  answers standalone too. So the sweep could see both families that are
+  known to answer: it was calibrated in fact, not merely in claim.
+
+  What the walk finding narrows is the sweep's blindness, not its validity.
+  On top of the limits already recorded -- an argument outside bytes 3-4, a
+  prefix other than `FA` -- it is also blind to a command that answers only
+  as step N>1 of an in-process walk. Re-running it in the standalone form
+  would find nothing new.
 
 Still to do: **find out which slot hold+twist actually drives.** It cannot be
 settled from the desk -- it needs the gesture performed while a distinct

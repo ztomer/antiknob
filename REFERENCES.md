@@ -20,9 +20,12 @@ What it settled:
 * **`KnobAction { RotateCCW, Press, RotateCW }` is THIS TOOL's model of the
   knob, not the firmware's capability.** Reading it as the latter produced
   the worst wrong claim of this session -- that hold+twist does not exist.
-  It does: the vendor binds all five gestures, at key IDs 2..6 in the `0xFD`
-  command space this project's `k884x` driver does not use. A probe finding
-  nothing in the `0xFE` space was treated as proof of absence.
+  It does: the vendor binds all five gestures, using the `0xFD` command this
+  project's `k884x` driver does not use. A probe finding nothing in the
+  `0xFE` space was treated as proof of absence. (The key IDs first recorded
+  here for that command -- 2..6 -- were wrong: `0xFD` and `0xFE` address the
+  same single slot table, where 1-3 are the buttons and 4-6 the knob. Which
+  slot hold+twist drives is still unmeasured. See PLAN.md item 2.)
 * **Our device is in its table**: `(Ch57x_3, 0x514c, 0x8850, 0x04)`.
 * **Key ids are per-model constants there**, e.g. `MAX_NUMBER_OF_BUTTONS + 1
   + 3 * knob + action`, with the constant 12, 15 or 16 depending on model.

@@ -109,24 +109,57 @@ reached code, tests, the GUI, README, REFERENCES and the v0.9.0 tag before
 the user corrected it.
 
 The reason it was invisible: **the vendor uses a different command.** Writes
-go out as `0xFD`, not the `0xFE` this build uses, and the two address
-different tables. Captured with `tools/hidsnoop/` while binding all five knob
-gestures to distinct media codes:
+go out as `0xFD`, not the `0xFE` this build uses. The `0xFD` writer is built
+and confirmed against the hardware (`src/fd.rs`, `antiknob bind-seq`); the
+record layout is:
 
-    03 fd <key> <layer> <kind> <n_mods> <n_groups> <3-byte groups...>
+    03 FD <key_id> <layer> <kind> <n_groups> <group_kind> <group> <group> ...
 
-    key 2  CCW              key 5  hold+twist left
-    key 3  press            key 6  hold+twist right
-    key 4  CW
+    group = 00 <mods | usage_high> <keycode | usage_low>
 
-Each group is 3 bytes carrying its value in the THIRD byte, and `n_groups`
-says how many -- so **one gesture can run a SEQUENCE of actions**, which the
-`0xFE` path cannot express. The commit is `03 FD FE FF`, which this build
-already sends.
+`kind` and `group_kind` are both `01` for keyboard and `02` for media, layer
+is 1-based on the wire, and the commit is `03 FD FE FF`. `n_groups` is why
+this command matters: **one gesture can run a SEQUENCE of actions**, which
+`0xFE` has no field for. Written and read back on real hardware for a single
+chord, a media usage, and two- and three-action sequences; every write echoed
+byte for byte.
 
-Still to do: implement the `0xFD` writer, bind hold+twist through it, and
-decide whether `0xFE` stays for compatibility. See
-kriomant/ch57x-keyboard-tool#191 and #174, which describe the same variant.
+**The capture notes this replaces were wrong twice, and both errors were the
+same mistake as before -- a dump read as a diff.** The recorded frame put
+`<n_mods>` before `<n_groups>`, which is one byte out; and the recorded key
+map (2..6 for the five knob gestures) does not describe this device. Writing
+`03 FD 02 ...` changes the slot the `FA` read reports as key 2, which on this
+3-button layout is the `prev` BUTTON. There is only ONE slot table: `0xFD`
+and `0xFE` address the same keys, 1-3 buttons and 4-6 knob. Nobody checked
+the captured key numbers against the slot map this repo had already measured.
+
+That single table is the useful part: a `0xFD` write is visible to the
+ordinary `FA` read, so `bind-seq` confirms every write by reading it back and
+comparing the binding bytes, not just the address.
+
+`0xFE` **stays.** It is verified for keyboard, media and mouse, the firmware
+fills in `n_groups`/`group_kind` for it, and `0xFD` has no measured mouse
+encoding -- which `fd::build_packet` refuses rather than guesses. `0xFD` is
+the path for anything needing a sequence.
+
+Two things learned while reading the table that the notes had wrong:
+
+* **Slots 7 and up are not evidence of hold+twist.** They exist and answer a
+  read, but so do 8..12, and every one of them holds the same generic factory
+  placeholder (`key N -> the Nth letter`, `0a` through `0f`). That is a table
+  sized for a larger family member, not a gesture map.
+* **The slot table is walked, not addressed.** A lone query for counter 7
+  never answers; the same query as step 7 of a walk from counter 1 answers
+  every time. An earlier read-only sweep that concluded "nothing else
+  answers" was using the standalone form, so its negative results say
+  nothing -- a query for counter 6, which demonstrably exists, also came back
+  empty under it.
+
+Still to do: **find out which slot hold+twist actually drives.** It cannot be
+settled from the desk -- it needs the gesture performed while a distinct
+marker sits in each candidate slot. `antiknob bind-seq` arms a candidate with
+a confirmed write and `probe-gestures` plans the markers; the missing step is
+a human twisting the knob. See kriomant/ch57x-keyboard-tool#191 and #174.
 
 ### 3. Three layers, the third one virtual and daemon-driven
 

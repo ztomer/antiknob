@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
+mod binding;
 mod cmds;
 mod diag;
 mod probe;
@@ -90,6 +91,27 @@ enum Commands {
         /// Print the packet plan without touching hardware
         #[arg(long)]
         dry_run: bool,
+    },
+
+    /// Bind one slot to a SEQUENCE of actions using the vendor's 0xFD command
+    BindSeq {
+        /// Slot key ID to bind. Buttons come first (1..n), then three per
+        /// knob; `read-slots` shows what each one currently holds.
+        #[arg(long)]
+        key: u8,
+        /// Device layer to bind (0-2)
+        #[arg(long, default_value_t = 0)]
+        layer: u8,
+        /// Width to read the table back at. Must be at least --key, or the
+        /// read-back addresses a different slot. Defaults to the key id.
+        #[arg(long)]
+        width: Option<u8>,
+        /// Print the packet without touching hardware
+        #[arg(long)]
+        dry_run: bool,
+        /// Actions to run in order, e.g. `cmd-c cmd-v`. All must be the same
+        /// kind: one slot record holds one kind.
+        actions: Vec<String>,
     },
 
     /// Dump raw input reports for a few seconds (verify what the knob sends)
@@ -204,7 +226,14 @@ fn main() -> Result<()> {
             buttons,
             layer,
             dry_run,
-        } => cmds::run_bind_slots(config, buttons, layer, dry_run)?,
+        } => binding::run_bind_slots(config, buttons, layer, dry_run)?,
+        Commands::BindSeq {
+            key,
+            layer,
+            width,
+            dry_run,
+            actions,
+        } => binding::run_bind_seq(key, layer, width, dry_run, actions)?,
         Commands::Listen {
             timeout_secs,
             devices,

@@ -60,7 +60,7 @@ pub fn run_status(json: bool) -> Result<()> {
 }
 /// The layout file to act on: the explicit argument, else the one in
 /// Application Support, seeded from the packaged starter on first use.
-fn layout_path(explicit: Option<PathBuf>) -> Result<PathBuf> {
+pub fn layout_path(explicit: Option<PathBuf>) -> Result<PathBuf> {
     let home = PathBuf::from(std::env::var("HOME").context("HOME is not set")?);
     config::resolve_device_config_path(&home, explicit)
 }
@@ -307,62 +307,6 @@ pub fn run_show_keys() -> Result<()> {
 /// constant. `--buttons` wins when given; otherwise the config file is the
 /// source of truth, and its absence is an error rather than a fallback --
 /// a guessed count is how knob bindings landed in slots nothing reads.
-fn resolve_button_count(config: Option<PathBuf>, buttons: Option<usize>) -> Result<usize> {
-    if let Some(n) = buttons {
-        return Ok(n);
-    }
-    let path = layout_path(config)?;
-    let cfg = config::DeviceConfig::load_from_file(&path).with_context(|| {
-        format!(
-            "cannot read the hardware layout from {} -- pass --config <file> or \
-             --buttons <n> so knob slots land where the firmware reads them",
-            path.display()
-        )
-    })?;
-    Ok(cfg.button_count())
-}
-
-pub fn run_bind_slots(
-    config: Option<PathBuf>,
-    buttons: Option<usize>,
-    layer: Option<u8>,
-    dry_run: bool,
-) -> Result<()> {
-    let buttons = resolve_button_count(config, buttons)?;
-    println!(
-        "[ ==> ] Layout has {} button(s); knob slots follow them.",
-        buttons
-    );
-    let layers: Vec<u8> = match layer {
-        Some(l) => vec![l],
-        None => host::bind::BIND_LAYERS.to_vec(),
-    };
-    if dry_run {
-        println!("[ ==> ] Slot binding plan (dry run, no hardware touched):");
-        for packet in host::bind::binding_packets(buttons, &layers)? {
-            println!(
-                "        layer byte={} key_id={} kind={} mods=0x{:02x} code=0x{:02x}",
-                packet[3], packet[2], packet[4], packet[11], packet[12]
-            );
-        }
-        println!(
-            "        3 slots x {} layer(s). Hold+twist slots are NOT bound",
-            layers.len()
-        );
-        println!("        (key IDs unverified; use the vendor app for those).");
-        return Ok(());
-    }
-    println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
-    let sent =
-        device::with_device(move |dev| host::bind::flash_slot_bindings(dev, buttons, &layers))?;
-    println!(
-                "[ Ok  ] Flashed {} slot binding(s): CCW=ctrl-alt-F16, Press=ctrl-alt-F17, CW=ctrl-alt-F18.",
-                sent
-            );
-    println!("        Hold+twist slots unchanged (key IDs unverified; use the vendor app).");
-    println!("        Verify with: antiknob listen --timeout-secs 10");
-    Ok(())
-}
 pub fn run_import_presets(out: Option<PathBuf>, force: bool) -> Result<()> {
     let (cfg, leds, warnings) = host::migrate::migrate_all_presets();
     println!(

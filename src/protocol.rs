@@ -406,6 +406,3 @@ mod tests {
         assert_eq!(packet[7], 255); // B
     }
 }
-
-// Re-exported so the many  call sites keep
-// working after the split; the implementation lives in .

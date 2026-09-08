@@ -2,11 +2,20 @@
 //!
 //! "Bind once": programs the knob's firmware slots to fixed host chords
 //! (`ctrl+alt+F16..F18`) so the translation engine in `super::engine` can
-//! swallow them and run layered host actions. Only knob 0's three known
-//! slots (CCW / Press / CW, key IDs 16-18) are bound here. Hold+twist slot
-//! key IDs are unverified against this firmware, so hold gestures must
-//! still be bound with the vendor app until they are reverse-engineered;
-//! the UI states this explicitly instead of flashing blind packets.
+//! swallow them and run layered host actions. Only knob 0's three measured
+//! slots (CCW / Press / CW) are bound here; they follow the buttons in the
+//! key-ID space, so a 3-button VK01 reads them from 4/5/6.
+//!
+//! Hold+twist is real (see `super::Gesture`) but which SLOT it drives is
+//! still unmeasured, so nothing here flashes blind packets at it. The
+//! candidates are the slots past the knob's three -- 7 upwards, which exist
+//! on this firmware and answer a read -- but every one of them holds the
+//! same generic factory placeholder (`key N -> letter N`) that keys 7..12
+//! all carry, so their presence is not evidence that a gesture drives them.
+//! Settling it needs the gesture performed while a distinct marker sits in
+//! each candidate: `crate::host::gesture_probe` plans exactly that, and
+//! `antiknob bind-seq` can now arm the candidates over the vendor's own
+//! `0xFD` command with the write confirmed by read-back.
 
 use crate::device::send_report;
 use crate::device::HidDevice;

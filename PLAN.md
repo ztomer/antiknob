@@ -214,7 +214,12 @@ the knob at 4-6 behind three buttons the vendor UI does not show, and the
 conflict is written up there rather than resolved: it needs one deliberate
 twist against `antiknob listen`.
 
-Still to do: **find out which slot hold+twist actually drives.** It cannot be
+**RESOLVED 2026-09-08.** `probe-gestures --map` answered it: hold+twist L
+and R are keys 5 and 6. A knob spans five slots from `button_count + 1`, and
+this device has at most one button. `config.yaml` binds both gestures and
+the corrected layout is flashed and confirmed 16/16.
+
+The superseded question, for the record: **which slot hold+twist drives.** It cannot be
 settled from the desk -- it needs the gesture performed while a distinct
 marker sits in each candidate slot. That is now one command:
 

@@ -13,6 +13,35 @@ pub struct KnobConfig {
     pub press: Option<Binding>,
     #[serde(default)]
     pub cw: Option<Binding>,
+    /// Hold the knob down and twist left. Key 5 on a VK01, measured with
+    /// `probe-gestures --map`. This repo said for months that the gesture
+    /// did not exist, then that its slot was unknown. It is neither.
+    #[serde(default, alias = "holdTwistL")]
+    pub hold_twist_l: Option<Binding>,
+    /// Hold the knob down and twist right. Key 6.
+    #[serde(default, alias = "holdTwistR")]
+    pub hold_twist_r: Option<Binding>,
+}
+
+impl KnobConfig {
+    /// Every gesture this knob binds, paired with the event it drives.
+    ///
+    /// One list, so a caller cannot handle three gestures and forget the
+    /// other two -- which is how hold+twist stayed unreachable even after
+    /// its slots were known.
+    pub fn bindings(&self) -> Vec<(crate::protocol::KnobEvent, &Binding)> {
+        use crate::protocol::KnobEvent as E;
+        [
+            (E::RotateCCW, &self.ccw),
+            (E::Press, &self.press),
+            (E::RotateCW, &self.cw),
+            (E::HoldTwistL, &self.hold_twist_l),
+            (E::HoldTwistR, &self.hold_twist_r),
+        ]
+        .into_iter()
+        .filter_map(|(event, slot)| slot.as_ref().map(|b| (event, b)))
+        .collect()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,7 +131,7 @@ impl DeviceConfig {
     /// This is `read_slot`'s first parameter -- the device wants to be told
     /// how wide a layer is before it will walk the table.
     pub fn slots_per_layer(&self) -> usize {
-        self.button_count() + self.knobs * 3
+        self.button_count() + self.knobs * crate::protocol::GESTURES_PER_KNOB
     }
 
     /// True when this layout puts knob slots at key IDs 1/2/3.
@@ -171,14 +200,10 @@ impl DeviceConfig {
             }
 
             for (k_idx, knob) in layer.knobs.iter().enumerate() {
-                for (name, binding) in
-                    [("CCW", &knob.ccw), ("press", &knob.press), ("CW", &knob.cw)]
-                {
-                    if let Some(binding) = binding {
-                        binding.validate().with_context(|| {
-                            format!("knob {} {} binding in layer {}", k_idx, name, idx)
-                        })?;
-                    }
+                for (event, binding) in knob.bindings() {
+                    binding.validate().with_context(|| {
+                        format!("knob {} {} binding in layer {}", k_idx, event.as_str(), idx)
+                    })?;
                 }
             }
         }
@@ -208,6 +233,8 @@ mod tests {
                         ccw: Some(Binding::One("volumedown".to_string())),
                         press: Some(Binding::One("mute".to_string())),
                         cw: Some(Binding::One("volumeup".to_string())),
+                        hold_twist_l: None,
+                        hold_twist_r: None,
                     })
                     .collect(),
                 led: None,
@@ -283,7 +310,16 @@ layers: []
     fn the_packaged_starter_layout_is_valid() {
         let cfg: DeviceConfig = serde_yaml::from_str(STARTER_CONFIG).expect("starter parses");
         cfg.validate().expect("starter validates");
-        assert_eq!(cfg.button_count(), 3);
+        // ONE button, because keys 2-6 are all gestures and there is no room
+        // for more. Declaring three pushed every gesture two slots along.
+        assert_eq!(cfg.button_count(), 1);
+        assert_eq!(cfg.slots_per_layer(), 6, "one button plus five gestures");
+        // And the starter binds every gesture the knob has, including the
+        // two this repo spent months saying did not exist.
+        let knob = &cfg.layers[0].knobs[0];
+        assert_eq!(knob.bindings().len(), 5, "all five gestures are bound");
+        assert!(knob.hold_twist_l.is_some());
+        assert!(knob.hold_twist_r.is_some());
     }
 
     /// The layer LEDs are the user's way of telling layers apart at a

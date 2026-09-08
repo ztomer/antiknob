@@ -156,7 +156,29 @@ read reports as key 2, whose content matched what `config.yaml` calls button
 keys 1-3, knob at 4-6) was itself measured. It was not; it is a declaration
 this repo wrote.
 
-### The conflict this leaves, and the one test that settles it
+### RESOLVED 2026-09-08 -- the vendor mapping is right
+
+`antiknob probe-gestures --map` was run on the hardware. Distinct markers on
+keys 1-6, all five gestures performed in order, and the device answered:
+
+    key 2 fired  (0x006f)   twist CCW
+    key 3 fired  (0x0070)   press
+    key 4 fired  (0x00b3)   twist CW
+    key 5 fired  (0x00b4)   hold + twist LEFT
+    key 6 fired  (0x00b8)   hold + twist RIGHT
+    key 1        never driven
+
+So a knob spans FIVE slots, not three, and this device has AT MOST ONE
+button -- keys 2-6 are all gestures and there is no room for more.
+`key_id_for_knob` and `config.yaml` are corrected: stride 5, and the layout
+declares one button rather than three.
+
+What the old model was actually doing: `ccw` went to key 4, which is the CW
+gesture, and the three declared "buttons" landed on keys 1-3, so `prev` was
+on counter-clockwise and `next` was on press. Every gesture did SOMETHING,
+which is why it survived so long.
+
+### The conflict this resolved, and the test that settled it
 
 Two mappings are now on the table for the SAME key ids:
 

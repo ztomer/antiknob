@@ -147,18 +147,12 @@ pub fn run_upload(
         // 2. Program knobs. Their slot IDs continue after the buttons, so
         // the count above is what places them -- see `key_id_for_knob`.
         for (knob_idx, knob) in layer.knobs.iter().enumerate() {
-            for (spec, event) in [
-                (&knob.ccw, protocol::KnobEvent::RotateCCW),
-                (&knob.press, protocol::KnobEvent::Press),
-                (&knob.cw, protocol::KnobEvent::RotateCW),
-            ] {
-                if let Some(binding) = spec {
-                    let key_id = protocol::key_id_for_knob(button_count, knob_idx, event);
-                    // A sequence needs the 0xFD writer; a single action keeps
-                    // the 0xFE path. `Binding::to_packet` decides, so the CLI
-                    // and the daemon cannot drift on it.
-                    packets.push(binding.to_packet(key_id, layer_u8)?);
-                }
+            for (event, binding) in knob.bindings() {
+                let key_id = protocol::key_id_for_knob(button_count, knob_idx, event);
+                // A sequence needs the 0xFD writer; a single action keeps the
+                // 0xFE path. `Binding::to_packet` decides, so the CLI and the
+                // daemon cannot drift on it.
+                packets.push(binding.to_packet(key_id, layer_u8)?);
             }
         }
 
@@ -169,12 +163,34 @@ pub fn run_upload(
     }
 
     println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
+    // Clear each slot before writing it. Neither write command clears the
+    // bytes it does not set, so a slot that used to hold a keyboard chord
+    // keeps that chord's modifier byte under a mouse binding written over
+    // it -- and the read-back then reports a mismatch that is real: the
+    // device really does hold bytes the new binding never wrote. Found
+    // when a corrected layout flashed two mouse gestures over old chords
+    // and came back with `01 08` still sitting at bytes 10-11.
+    let wipes: Vec<Vec<u8>> = packets
+        .iter()
+        .filter_map(|p| {
+            device::verify::parse_record(p).map(|(addr, _)| {
+                antiknob::fd::wipe_packet(addr.key_id, addr.layer.saturating_sub(1))
+            })
+        })
+        .collect();
     // Keep a copy to check against: `hid_write` succeeding says the packet
     // was well-formed, not that the firmware reads the slot it addressed.
     let written = packets.clone();
     let slots_per_layer = u8::try_from(cfg.slots_per_layer())
         .context("layout declares more slots per layer than the protocol can address")?;
     let observed = device::with_device(move |dev| {
+        for wipe in &wipes {
+            device::send_report(dev, wipe)?;
+            sleep(Duration::from_millis(10));
+        }
+        if !wipes.is_empty() {
+            device::send_commit(dev)?;
+        }
         for packet in &packets {
             device::send_report(dev, packet)?;
             sleep(Duration::from_millis(10));

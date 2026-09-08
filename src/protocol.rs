@@ -5,7 +5,38 @@ pub enum KnobEvent {
     RotateCCW,
     Press,
     RotateCW,
+    HoldTwistL,
+    HoldTwistR,
 }
+
+impl KnobEvent {
+    /// Every gesture, in slot order.
+    pub const ALL: [KnobEvent; GESTURES_PER_KNOB] = [
+        KnobEvent::RotateCCW,
+        KnobEvent::Press,
+        KnobEvent::RotateCW,
+        KnobEvent::HoldTwistL,
+        KnobEvent::HoldTwistR,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::RotateCCW => "ccw",
+            Self::Press => "press",
+            Self::RotateCW => "cw",
+            Self::HoldTwistL => "hold_twist_l",
+            Self::HoldTwistR => "hold_twist_r",
+        }
+    }
+}
+
+/// Slots one knob occupies. FIVE, not three.
+///
+/// Measured with `probe-gestures --map` on a VK01: distinct markers on keys
+/// 1-6, all five gestures performed in a stated order, and the device named
+/// them 2, 3, 4, 5, 6 for CCW, press, CW, hold-left, hold-right. Key 1 was
+/// never driven.
+pub const GESTURES_PER_KNOB: usize = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
@@ -143,27 +174,43 @@ pub fn key_id_for_button(button_index: usize) -> u8 {
 
 /// Slot key ID for one knob gesture.
 ///
-/// Knob slots continue the 1-based key-ID space straight after the buttons,
-/// so the base is `button_count + 1` -- NOT a constant. It used to be a
-/// hardcoded 16, which is only right for a 15-key device; on this VK01
-/// (3 buttons, 1 knob) the knob reads slots 4/5/6, so every knob binding
-/// this tool ever flashed landed in 16/17/18, slots the firmware does not
-/// read. Nothing failed: the packets were accepted, the slot table really
-/// did change, and the knob went on doing whatever it did before. Read back
-/// from a real device, layer 3:
+/// Knob slots continue the 1-based key-ID space after the buttons, so the
+/// base is `button_count + 1` -- NOT a constant. A knob occupies FIVE slots,
+/// not three: CCW, press, CW, hold-twist-left, hold-twist-right.
+///
+/// Measured 2026-09-08 with `probe-gestures --map`, which puts a distinct
+/// marker on keys 1-6, asks for all five gestures in a stated order, and
+/// reports which key each one drove. On this VK01:
 ///
 /// ```text
-/// key_id 1,2,3   ctrl-left, ctrl-up, ctrl-right   <- our buttons, live
-/// key_id 4,5,6   volume up, prev, next            <- what the knob reads
-/// key_id 16,17,18  cmd--, cmd-0, cmd-=            <- our knob writes, inert
+/// key 1  never driven          <- at most one button, and it is not a gesture
+/// key 2  twist CCW
+/// key 3  press
+/// key 4  twist CW
+/// key 5  hold + twist LEFT
+/// key 6  hold + twist RIGHT
 /// ```
+///
+/// Two earlier models were wrong. A hardcoded base of 16 sent every knob
+/// binding to slots the firmware never reads. Replacing it with
+/// `button_count + 1` and a stride of THREE was closer but still wrong on
+/// two counts: a knob spans five slots, and this device's layout declared
+/// three buttons it does not have -- so `ccw` was written to key 4, which is
+/// the CW gesture, and the declared buttons landed on keys 1-3, putting
+/// `prev` on CCW and `next` on press. The knob did something for every
+/// gesture, which is exactly why it went unnoticed.
+///
+/// Since keys 2-6 are all gestures, this device has AT MOST ONE button.
+/// A layout that declares more pushes every gesture off by that many.
 pub fn key_id_for_knob(button_count: usize, knob_index: usize, event: KnobEvent) -> u8 {
     let offset = match event {
         KnobEvent::RotateCCW => 0,
         KnobEvent::Press => 1,
         KnobEvent::RotateCW => 2,
+        KnobEvent::HoldTwistL => 3,
+        KnobEvent::HoldTwistR => 4,
     };
-    (button_count as u8) + 1 + (knob_index as u8) * 3 + offset
+    (button_count as u8) + 1 + (knob_index as u8) * (GESTURES_PER_KNOB as u8) + offset
 }
 
 fn parse_keycode(s: &str) -> Option<u8> {
@@ -357,31 +404,54 @@ mod tests {
         assert_eq!(packet.len(), 64);
         assert_eq!(packet[0], 0x03);
         assert_eq!(packet[1], 0xFE);
-        assert_eq!(packet[2], 16); // Knob 0 CCW on a 15-key device
+        assert_eq!(packet[2], 16); // Knob 0 CCW after 15 buttons
         assert_eq!(packet[3], 1); // Layer 0 + 1
         assert_eq!(packet[4], 2); // Media kind
     }
 
-    /// The device that exposed the bug: 1 row of 3 buttons plus one knob.
-    /// Knob slots must follow the buttons, not sit at a fixed 16.
+    /// The measured map. `probe-gestures --map` put a distinct marker on
+    /// keys 1-6 of a real VK01, all five gestures were performed in order,
+    /// and the device named 2, 3, 4, 5, 6. Key 1 was never driven.
+    ///
+    /// This is the layout the device HAS, so the test states it as the
+    /// device answered rather than as the old three-button model assumed.
     #[test]
-    fn knob_slots_follow_the_buttons_rather_than_a_fixed_base() {
-        let ids = |buttons: usize| {
-            [KnobEvent::RotateCCW, KnobEvent::Press, KnobEvent::RotateCW]
-                .map(|e| key_id_for_knob(buttons, 0, e))
-        };
-        // VK01: 3 buttons -> the knob reads 4/5/6 (read back from hardware).
-        assert_eq!(ids(3), [4, 5, 6]);
-        // A knob-only device has no buttons to follow.
-        assert_eq!(ids(0), [1, 2, 3]);
-        // 15-key macropad: the old hardcoded base was right only here.
-        assert_eq!(ids(15), [16, 17, 18]);
+    fn the_five_gestures_are_keys_two_through_six_on_a_vk01() {
+        let ids = KnobEvent::ALL.map(|e| key_id_for_knob(1, 0, e));
+        assert_eq!(ids, [2, 3, 4, 5, 6]);
     }
 
+    /// A knob spans five slots, so the next one starts five later. The old
+    /// stride of three overlapped a second knob onto the first one's
+    /// hold-twist gestures.
     #[test]
-    fn a_second_knob_follows_the_first() {
-        assert_eq!(key_id_for_knob(3, 1, KnobEvent::RotateCCW), 7);
-        assert_eq!(key_id_for_knob(3, 1, KnobEvent::RotateCW), 9);
+    fn a_second_knob_starts_five_slots_after_the_first() {
+        assert_eq!(key_id_for_knob(1, 1, KnobEvent::RotateCCW), 7);
+        assert_eq!(key_id_for_knob(1, 1, KnobEvent::HoldTwistR), 11);
+        // Every gesture of knob 0 and knob 1 is distinct.
+        let a: Vec<u8> = KnobEvent::ALL
+            .iter()
+            .map(|e| key_id_for_knob(1, 0, *e))
+            .collect();
+        let b: Vec<u8> = KnobEvent::ALL
+            .iter()
+            .map(|e| key_id_for_knob(1, 1, *e))
+            .collect();
+        assert!(a.iter().all(|k| !b.contains(k)), "{a:?} overlaps {b:?}");
+    }
+
+    /// The base still follows the declared buttons, so a layout that
+    /// declares buttons the device does not have pushes every gesture off.
+    /// That is how `ccw` came to be written to key 4 -- the CW gesture.
+    #[test]
+    fn a_wrongly_declared_button_count_shifts_every_gesture() {
+        assert_eq!(key_id_for_knob(3, 0, KnobEvent::RotateCCW), 4);
+        assert_eq!(key_id_for_knob(1, 0, KnobEvent::RotateCW), 4);
+        // Same slot, different gesture: the whole defect in one line.
+        assert_eq!(
+            key_id_for_knob(3, 0, KnobEvent::RotateCCW),
+            key_id_for_knob(1, 0, KnobEvent::RotateCW)
+        );
     }
 
     /// Buttons and knobs must never claim the same slot, whatever the layout.

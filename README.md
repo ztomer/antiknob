@@ -48,7 +48,19 @@ Tested and verified with the following hardware:
 
 ---
 
-## Installation to macOS `/Applications`
+## Installation
+
+### Homebrew (recommended)
+
+```bash
+brew tap ztomer/tap
+brew install --cask ztomer/tap/antiknob
+```
+
+Installs `Antiknob.app`, `AntiknobDaemon.app`, and the `antiknob` / `antiknob-daemon`
+CLIs, with Gatekeeper quarantine already stripped.
+
+### From source (build + install to macOS `/Applications`)
 
 Run the included installer to build and install `Antiknob.app`, the daemon, and CLI tools:
 

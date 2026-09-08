@@ -1,12 +1,14 @@
 //! Finding out which slot a gesture actually drives.
 //!
 //! `bind-slots` binds three of the knob's gestures. Hold+twist has never been
-//! bound because nobody knew its key IDs, and `PLAN.md` recorded that as
-//! needing the vendor app to diff against. It does not: reading the slot
-//! table at a wider layer shows slots 7 and 8 exist, answer the read, and sit
-//! empty -- exactly what an unbound gesture looks like.
+//! bound because nobody knows its key IDs, and reading the slot table does
+//! not answer it: the slots past the knob's three exist and answer a read,
+//! but 7 through 12 all hold the same generic factory placeholder, so their
+//! presence is not evidence that a gesture drives any of them. An earlier
+//! version of this note read "exists and is empty" as "is an unbound
+//! gesture" and narrowed the probe to slots 7 and 8 on that basis.
 //!
-//! So the question is answerable by experiment. Write a *distinct*,
+//! The question is answerable only by experiment. Write a *distinct*,
 //! recognisable action to each candidate slot, perform the gestures, and see
 //! which action comes out. The planning is here and pure; performing it lives
 //! in the CLI.
@@ -95,6 +97,82 @@ pub fn slot_for_usage(plan: &[ProbeSlot], usage: u16) -> Option<u8> {
         .map(|s| s.key_id)
 }
 
+/// A probe run: one control slot plus the candidates under test.
+///
+/// The control is a slot ALREADY KNOWN to be a gesture -- the knob's CCW
+/// slot. It exists so that "nothing fired" means something. Without it a
+/// silent run is ambiguous between "these slots are not the gesture" and
+/// "the capture never saw anything at all", and the two are
+/// indistinguishable from the outside. This repo has already published one
+/// wrong conclusion drawn from exactly that ambiguity: hold+twist was
+/// declared not to exist because a probe found nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProbePlan {
+    pub control: ProbeSlot,
+    pub candidates: Vec<ProbeSlot>,
+}
+
+impl ProbePlan {
+    /// Every slot the run writes to, control first.
+    pub fn all(&self) -> Vec<ProbeSlot> {
+        let mut out = vec![self.control.clone()];
+        out.extend(self.candidates.iter().cloned());
+        out
+    }
+}
+
+/// What a capture window is allowed to conclude.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Verdict {
+    /// The control gesture never fired, so the run proves nothing about the
+    /// candidates -- whether they are silent or the capture is.
+    Inconclusive,
+    /// The control fired and so did these candidates.
+    Fired(Vec<u8>),
+    /// The control fired and no candidate did. This is real evidence.
+    NoneFired,
+}
+
+/// Plan a run: the control slot, then the candidates.
+///
+/// The control spends one of the markers, which is why the candidate budget
+/// is one smaller than the marker set. That is the correct trade: five
+/// candidates with a calibrated instrument answer the question, and six with
+/// an uncalibrated one do not.
+pub fn plan_with_control(control_key: u8, candidates: &[u8]) -> Result<ProbePlan, String> {
+    if candidates.contains(&control_key) {
+        return Err(format!(
+            "slot {control_key} is the control and cannot also be a candidate;              it would carry two markers and identify neither"
+        ));
+    }
+    let mut all = vec![control_key];
+    all.extend_from_slice(candidates);
+    let slots = plan(&all)?;
+    let (control, candidates) = slots.split_first().expect("plan refuses an empty list");
+    Ok(ProbePlan {
+        control: control.clone(),
+        candidates: candidates.to_vec(),
+    })
+}
+
+/// Read the capture. The control decides whether anything may be concluded.
+pub fn verdict(plan: &ProbePlan, seen: &[u16]) -> Verdict {
+    if !seen.contains(&plan.control.marker_usage) {
+        return Verdict::Inconclusive;
+    }
+    let fired: Vec<u8> = plan
+        .candidates
+        .iter()
+        .filter(|s| seen.contains(&s.marker_usage))
+        .map(|s| s.key_id)
+        .collect();
+    if fired.is_empty() {
+        Verdict::NoneFired
+    } else {
+        Verdict::Fired(fired)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,5 +236,48 @@ mod tests {
         assert_eq!(slot_for_usage(&p, p[1].marker_usage), Some(8));
         // Volume is the knob's own; it must never be attributed to a probe.
         assert_eq!(slot_for_usage(&p, 0x00E9), None);
+    }
+
+    /// The control is what makes a silent run mean anything. Without it,
+    /// "no candidate fired" and "the capture saw nothing" are the same
+    /// observation -- and this repo shipped a wrong claim off exactly that.
+    #[test]
+    fn a_run_whose_control_never_fired_concludes_nothing() {
+        let p = plan_with_control(4, &[7, 8]).expect("plan");
+        // Candidate 7 fired but the control did not: the run is still
+        // inconclusive, because a capture that misses the control is not
+        // one whose silences can be trusted.
+        let seen = vec![p.candidates[0].marker_usage];
+        assert_eq!(verdict(&p, &seen), Verdict::Inconclusive);
+        assert_eq!(verdict(&p, &[]), Verdict::Inconclusive);
+    }
+
+    /// With the control seen, silence from the candidates is evidence.
+    #[test]
+    fn a_control_that_fired_licenses_the_candidate_result() {
+        let p = plan_with_control(4, &[7, 8]).expect("plan");
+        assert_eq!(verdict(&p, &[p.control.marker_usage]), Verdict::NoneFired);
+        let both = vec![p.control.marker_usage, p.candidates[1].marker_usage];
+        assert_eq!(verdict(&p, &both), Verdict::Fired(vec![8]));
+    }
+
+    /// The control needs a marker no candidate has, or it cannot be told
+    /// apart from the thing it is calibrating.
+    #[test]
+    fn the_control_carries_a_marker_of_its_own() {
+        let p = plan_with_control(4, &[7, 8, 9, 10, 11]).expect("plan");
+        assert_eq!(p.control.key_id, 4);
+        assert_eq!(p.candidates.len(), 5);
+        for c in &p.candidates {
+            assert_ne!(c.marker_usage, p.control.marker_usage);
+        }
+        assert_eq!(p.all().len(), 6, "the control is written like any other");
+    }
+
+    /// A control that is also a candidate would carry two markers.
+    #[test]
+    fn the_control_may_not_also_be_a_candidate() {
+        let err = plan_with_control(7, &[7, 8]).expect_err("must refuse");
+        assert!(err.contains("control"), "{err}");
     }
 }

@@ -157,9 +157,23 @@ Two things learned while reading the table that the notes had wrong:
 
 Still to do: **find out which slot hold+twist actually drives.** It cannot be
 settled from the desk -- it needs the gesture performed while a distinct
-marker sits in each candidate slot. `antiknob bind-seq` arms a candidate with
-a confirmed write and `probe-gestures` plans the markers; the missing step is
-a human twisting the knob. See kriomant/ch57x-keyboard-tool#191 and #174.
+marker sits in each candidate slot. That is now one command:
+
+    antiknob probe-gestures
+
+It arms slots 7-11, captures for 45s, and puts every slot back afterwards
+(confirmed by read-back). The missing step is a human twisting the knob.
+
+`probe-gestures` now runs a **positive control**: slot 4, the knob's CCW
+gesture, carries a marker of its own, and a run whose control never fires
+reports INCONCLUSIVE instead of listing candidates as silent. That is the
+whole reason the original claim was wrong -- a negative result from an
+instrument nobody had shown could produce a positive one. The old default
+of `7,8` was itself the same mistake in miniature: it came from reading
+"exists and looks empty" as "is an unbound gesture", when 7 through 12 all
+hold the same generic factory placeholder.
+
+See kriomant/ch57x-keyboard-tool#191 and #174.
 
 ### 3. Three layers, the third one virtual and daemon-driven
 

@@ -155,10 +155,20 @@ enum Commands {
     /// Determine which firmware slot a gesture drives, by writing a
     /// distinct marker to each candidate and watching what comes out
     ProbeGestures {
-        /// Slots to probe. Defaults to the two just past the three bound
-        /// knob gestures, which read as present-and-empty on this hardware.
-        #[arg(long, value_delimiter = ',', default_value = "7,8")]
+        /// Slots to probe. Defaults to every slot past the knob's three,
+        /// up to the six the marker set can tell apart. Narrowing this to
+        /// 7,8 was a guess: slots 7 through 12 all carry the SAME generic
+        /// factory placeholder, so none of them is a likelier gesture slot
+        /// than any other.
+        #[arg(long, value_delimiter = ',', default_value = "7,8,9,10,11")]
         candidates: Vec<u8>,
+        /// Slot used as the positive control -- one already known to be a
+        /// gesture, so that a silent run can be told apart from a broken
+        /// capture. Defaults to the knob's CCW slot, which follows the
+        /// buttons. Spends one of the six markers, which is why there are
+        /// five candidates and not six.
+        #[arg(long)]
+        control: Option<u8>,
         /// Device layer to probe on
         #[arg(long, default_value = "0")]
         layer: u8,
@@ -245,16 +255,28 @@ fn main() -> Result<()> {
         }
         Commands::ProbeGestures {
             candidates,
+            control,
             layer,
             capture_secs,
             devices,
             config,
         } => {
-            // Widen by the two candidates so the read can address them:
-            // the device only walks a table as wide as it is told.
-            let width = cmds::layout_slots_per_layer(config)?
+            // Widen to the highest candidate so the read can address it:
+            // the device only walks a table as wide as it is told, and the
+            // candidates deliberately sit past the declared layout.
+            let width = cmds::layout_slots_per_layer(config.clone())?
                 .max(candidates.iter().copied().max().unwrap_or(0));
-            probe::run(candidates, layer, width, capture_secs, devices)?
+            // The knob's CCW slot follows the buttons, so it is the first
+            // slot past them -- the same arithmetic `key_id_for_knob` does.
+            let control = match control {
+                Some(c) => c,
+                None => antiknob::protocol::key_id_for_knob(
+                    binding::button_count_for(config)?,
+                    0,
+                    antiknob::protocol::KnobEvent::RotateCCW,
+                ),
+            };
+            probe::run(control, candidates, layer, width, capture_secs, devices)?
         }
         Commands::LedProbe {
             layer,

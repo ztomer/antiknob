@@ -1,16 +1,23 @@
 //! `probe-gestures`: find out which slot a gesture drives, by experiment.
 //!
 //! Reading the slot table at a wider layer shows slots past the three bound
-//! knob gestures exist, answer the read, and sit empty -- which is what an
-//! unbound gesture looks like. This writes a distinct marker to each, has
-//! the user perform the gestures, and reports which marker came out.
+//! knob gestures exist and answer the read. That is ALL it shows: slots 7
+//! through 12 hold the same generic factory placeholder (`key N -> the Nth
+//! letter`), which is a table sized for a bigger sibling, not a gesture map.
+//! An earlier note read those slots as "empty, which is what an unbound
+//! gesture looks like" and probed only 7 and 8 on the strength of it.
+//!
+//! So the slot has to be found by experiment, not inference. This writes a
+//! distinct marker to each candidate, has the user perform the gestures, and
+//! reports which marker came out -- the one form of evidence that actually
+//! distinguishes a gesture slot from a slot that merely exists.
 //!
 //! It restores what it found. A diagnostic that leaves the hardware changed
 //! is one nobody runs twice, and this one deliberately writes to slots whose
 //! purpose is the thing being determined.
 
 use antiknob::device;
-use antiknob::host::gesture_probe::{self, ProbeSlot};
+use antiknob::host::gesture_probe::{self, ProbeSlot, Verdict};
 
 use anyhow::{Context, Result};
 use std::thread::sleep;
@@ -37,13 +44,16 @@ fn snapshot(slots: &[ProbeSlot], layer: u8, slots_per_layer: u8) -> Result<Vec<V
 }
 
 pub fn run(
+    control: u8,
     candidates: Vec<u8>,
     layer: u8,
     slots_per_layer: u8,
     capture_secs: u64,
     devices: Vec<String>,
 ) -> Result<()> {
-    let plan = gesture_probe::plan(&candidates).map_err(|e| anyhow::anyhow!(e))?;
+    let probe =
+        gesture_probe::plan_with_control(control, &candidates).map_err(|e| anyhow::anyhow!(e))?;
+    let plan = probe.all();
 
     println!("[ ==> ] Reading the current contents of the candidate slots first...");
     let before = snapshot(&plan, layer, slots_per_layer)?;
@@ -75,7 +85,11 @@ pub fn run(
         .filter(|(_, v)| *v == device::verify::SlotVerdict::Confirmed)
         .count();
     println!("[ ==> ] Armed {}/{} marker(s):", confirmed, verdicts.len());
-    for s in &plan {
+    println!(
+        "        slot {} -> {}   (CONTROL: a gesture already known to work)",
+        probe.control.key_id, probe.control.marker_name
+    );
+    for s in &probe.candidates {
         println!("        slot {} -> {}", s.key_id, s.marker_name);
     }
     if confirmed != verdicts.len() {
@@ -87,25 +101,39 @@ pub fn run(
 
     println!();
     println!("[ ==> ] Now perform each gesture in turn, several times each:");
-    println!("        hold the knob and twist LEFT, then hold and twist RIGHT.");
+    println!("        FIRST the control: twist the knob counter-clockwise.");
+    println!("        Then hold the knob and twist LEFT, then hold and twist RIGHT.");
     println!("        Capturing for {capture_secs}s...");
     let seen = capture(capture_secs, &devices)?;
 
     println!();
     println!("[ ==> ] Results:");
-    if seen.is_empty() {
-        println!("        Nothing was emitted. Either these slots are not the");
-        println!("        gestures, or the gestures were not performed in time.");
-    }
     for usage in &seen {
         match gesture_probe::slot_for_usage(&plan, *usage) {
-            Some(key_id) => println!("        usage {usage:#06x} -> slot {key_id} IS a gesture"),
+            Some(key_id) => println!("        usage {usage:#06x} -> slot {key_id} fired"),
             None => println!("        usage {usage:#06x} -> not a probe marker (the knob's own)"),
         }
     }
-    for s in &plan {
-        if !seen.contains(&s.marker_usage) {
-            println!("        slot {} never fired ({})", s.key_id, s.marker_name);
+    match gesture_probe::verdict(&probe, &seen) {
+        Verdict::Inconclusive => {
+            println!();
+            println!("[ Wrn ] INCONCLUSIVE: the control slot never fired.");
+            println!("        The control is a gesture that is known to work, so a run");
+            println!("        that misses it is measuring nothing -- a silent candidate");
+            println!("        here is not evidence that the slot is unbound. Re-run and");
+            println!("        make sure to twist the knob during the capture window.");
+        }
+        Verdict::Fired(slots) => {
+            println!();
+            for key_id in &slots {
+                println!("[ Ok  ] Slot {key_id} IS driven by one of the gestures performed.");
+            }
+        }
+        Verdict::NoneFired => {
+            println!();
+            println!("[ Ok  ] The control fired, so the capture was working.");
+            println!("        No candidate slot fired: on this firmware none of");
+            println!("        {candidates:?} is driven by the gestures performed.");
         }
     }
 

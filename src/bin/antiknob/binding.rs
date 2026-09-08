@@ -13,6 +13,11 @@ use std::path::PathBuf;
 use std::thread::sleep;
 use std::time::Duration;
 
+/// The declared button count, which is what places every knob slot.
+pub fn button_count_for(config: Option<PathBuf>) -> Result<usize> {
+    resolve_button_count(config, None)
+}
+
 fn resolve_button_count(config: Option<PathBuf>, buttons: Option<usize>) -> Result<usize> {
     if let Some(n) = buttons {
         return Ok(n);

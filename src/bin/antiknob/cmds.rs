@@ -305,20 +305,29 @@ pub fn run_led_read(layer: u8, raw: bool) -> Result<()> {
     Ok(())
 }
 pub fn run_show_keys() -> Result<()> {
-    println!("Modifiers:");
-    println!("  ctrl, shift, alt / opt, cmd / win, rctrl, rshift, ralt / ropt, rcmd / rwin");
-    println!();
-    println!("Keys:");
-    println!("  a-z, 1-0, enter, esc, backspace, tab, space, minus, equal");
-    println!("  leftbracket, rightbracket, backslash, semicolon, quote, grave");
-    println!("  comma, period, slash, capslock, f1-f12, f13-f24, printscreen, scrolllock");
-    println!("  pause, insert, home, pageup, delete, end, pagedown, up, down, left, right");
-    println!();
-    println!("Media Keys:");
-    println!("  volumeup, volumedown, mute, play, prev, next, stop, brightnessup, brightnessdown");
-    println!();
-    println!("Mouse Actions:");
-    println!("  click, rclick, mclick, wheelup, wheeldown");
+    // Rendered from `vocabulary`, the same tables the parser reads and the
+    // MCP `show_keys` tool returns. This used to be a hand-written list and
+    // it had already drifted: `fastforward`, `rewind` and `eject` parsed for
+    // a whole session without ever appearing here.
+    let render = |label: &str, names: Vec<&str>| {
+        println!("{label}:");
+        for chunk in names.chunks(9) {
+            println!("  {}", chunk.join(", "));
+        }
+        println!();
+    };
+    let names = |t: &[(&'static str, u8)]| t.iter().map(|(n, _)| *n).collect::<Vec<_>>();
+    render("Modifiers", names(antiknob::vocabulary::MODIFIER_NAMES));
+    render("Keys", names(antiknob::vocabulary::KEY_NAMES));
+    render(
+        "Media Keys",
+        antiknob::vocabulary::MEDIA_NAMES
+            .iter()
+            .map(|(n, _)| *n)
+            .collect(),
+    );
+    render("Mouse Actions", antiknob::vocabulary::MOUSE_NAMES.to_vec());
+    println!("Chords join a modifier and a key with '-' or '+', e.g. cmd-c.");
     Ok(())
 }
 /// How many buttons the target device has, from the layout rather than a

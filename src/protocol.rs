@@ -77,25 +77,7 @@ impl Action {
         }
 
         // 3. Media Keys
-        let media_code = match s.to_ascii_lowercase().as_str() {
-            "volumedown" | "voldown" => Some(0x00EA),
-            "volumeup" | "volup" => Some(0x00E9),
-            "mute" => Some(0x00E2),
-            "play" | "playpause" => Some(0x00CD),
-            "next" => Some(0x00B5),
-            "prev" | "previous" => Some(0x00B6),
-            "stop" => Some(0x00B7),
-            // Transport controls that act on whatever is playing, which
-            // during a deliberate probe is nothing. Added so
-            // `gesture_probe` has enough markers left after excluding
-            // everything the device already emits.
-            "fastforward" | "ff" => Some(0x00B3),
-            "rewind" | "rw" => Some(0x00B4),
-            "eject" => Some(0x00B8),
-            "brightnessup" => Some(0x006F),
-            "brightnessdown" => Some(0x0070),
-            _ => None,
-        };
+        let media_code = crate::vocabulary::media_usage(&s.to_ascii_lowercase());
         if let Some(code) = media_code {
             return Ok(Action::Media(code));
         }
@@ -105,16 +87,9 @@ impl Action {
         let parts: Vec<&str> = s.split(['+', '-']).collect();
 
         for part in &parts[..parts.len() - 1] {
-            match part.to_ascii_lowercase().as_str() {
-                "ctrl" => modifiers |= 0x01,
-                "shift" => modifiers |= 0x02,
-                "alt" | "opt" => modifiers |= 0x04,
-                "cmd" | "win" => modifiers |= 0x08,
-                "rctrl" => modifiers |= 0x10,
-                "rshift" => modifiers |= 0x20,
-                "ralt" | "ropt" => modifiers |= 0x40,
-                "rcmd" | "rwin" => modifiers |= 0x80,
-                other => return Err(anyhow!("Unknown modifier '{}' in '{}'", other, s)),
+            match crate::vocabulary::modifier_mask(&part.to_ascii_lowercase()) {
+                Some(mask) => modifiers |= mask,
+                None => return Err(anyhow!("Unknown modifier '{}' in '{}'", part, s)),
             }
         }
 
@@ -213,113 +188,12 @@ pub fn key_id_for_knob(button_count: usize, knob_index: usize, event: KnobEvent)
     (button_count as u8) + 1 + (knob_index as u8) * (GESTURES_PER_KNOB as u8) + offset
 }
 
+/// Look up a key name in the shared vocabulary.
+///
+/// The table used to BE this function's match arms, which meant the names
+/// the CLI printed were a third, hand-kept copy that had already drifted.
 fn parse_keycode(s: &str) -> Option<u8> {
-    match s {
-        // Letters a-z
-        "a" => Some(0x04),
-        "b" => Some(0x05),
-        "c" => Some(0x06),
-        "d" => Some(0x07),
-        "e" => Some(0x08),
-        "f" => Some(0x09),
-        "g" => Some(0x0A),
-        "h" => Some(0x0B),
-        "i" => Some(0x0C),
-        "j" => Some(0x0D),
-        "k" => Some(0x0E),
-        "l" => Some(0x0F),
-        "m" => Some(0x10),
-        "n" => Some(0x11),
-        "o" => Some(0x12),
-        "p" => Some(0x13),
-        "q" => Some(0x14),
-        "r" => Some(0x15),
-        "s" => Some(0x16),
-        "t" => Some(0x17),
-        "u" => Some(0x18),
-        "v" => Some(0x19),
-        "w" => Some(0x1A),
-        "x" => Some(0x1B),
-        "y" => Some(0x1C),
-        "z" => Some(0x1D),
-
-        // Digits 1-0
-        "1" => Some(0x1E),
-        "2" => Some(0x1F),
-        "3" => Some(0x20),
-        "4" => Some(0x21),
-        "5" => Some(0x22),
-        "6" => Some(0x23),
-        "7" => Some(0x24),
-        "8" => Some(0x25),
-        "9" => Some(0x26),
-        "0" => Some(0x27),
-
-        // Controls
-        "enter" | "return" => Some(0x28),
-        "esc" | "escape" => Some(0x29),
-        "backspace" => Some(0x2A),
-        "tab" => Some(0x2B),
-        "space" => Some(0x2C),
-        "minus" => Some(0x2D),
-        "equal" => Some(0x2E),
-        "leftbracket" => Some(0x2F),
-        "rightbracket" => Some(0x30),
-        "backslash" => Some(0x31),
-        "semicolon" => Some(0x33),
-        "quote" => Some(0x34),
-        "grave" => Some(0x35),
-        "comma" => Some(0x36),
-        "period" | "dot" => Some(0x37),
-        "slash" => Some(0x38),
-        "capslock" => Some(0x39),
-
-        // Function keys F1-F12
-        "f1" => Some(0x3A),
-        "f2" => Some(0x3B),
-        "f3" => Some(0x3C),
-        "f4" => Some(0x3D),
-        "f5" => Some(0x3E),
-        "f6" => Some(0x3F),
-        "f7" => Some(0x40),
-        "f8" => Some(0x41),
-        "f9" => Some(0x42),
-        "f10" => Some(0x43),
-        "f11" => Some(0x44),
-        "f12" => Some(0x45),
-
-        // Extended function keys F13-F24 (USB HID usage codes 0x68-0x73).
-        // Needed for host-translate slot bindings (ctrl-alt-F16..F20).
-        "f13" => Some(0x68),
-        "f14" => Some(0x69),
-        "f15" => Some(0x6A),
-        "f16" => Some(0x6B),
-        "f17" => Some(0x6C),
-        "f18" => Some(0x6D),
-        "f19" => Some(0x6E),
-        "f20" => Some(0x6F),
-        "f21" => Some(0x70),
-        "f22" => Some(0x71),
-        "f23" => Some(0x72),
-        "f24" => Some(0x73),
-
-        // Navigation
-        "printscreen" | "prtscn" => Some(0x46),
-        "scrolllock" => Some(0x47),
-        "pause" => Some(0x48),
-        "insert" | "ins" => Some(0x49),
-        "home" => Some(0x4A),
-        "pageup" | "pgup" => Some(0x4B),
-        "delete" | "del" => Some(0x4C),
-        "end" => Some(0x4D),
-        "pagedown" | "pgdn" => Some(0x4E),
-        "right" => Some(0x4F),
-        "left" => Some(0x50),
-        "down" => Some(0x51),
-        "up" => Some(0x52),
-
-        _ => None,
-    }
+    crate::vocabulary::keycode(s)
 }
 
 // Re-exported so the many `protocol::build_led_packet` call sites keep

@@ -150,7 +150,11 @@ pub fn all_tools() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "upload_keymap",
-            description: "Flash a hardware keymap YAML configuration to the device firmware.",
+            description: "Flash a hardware keymap YAML configuration to the device firmware. \
+                          A gesture may bind one action (\"volumeup\"), a sequence \
+                          ([\"cmd-c\", \"cmd-v\"]) or a timed sequence ({steps: [...], \
+                          delay_ms: 120}). Knob gestures are ccw, press, cw, hold_twist_l \
+                          and hold_twist_r.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -176,18 +180,25 @@ pub fn all_tools() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "read_slots",
-            description: "Read slot table memory dump from the Anticater VK01 device.",
+            description: "Read the device's slot table. Pass full=true to get the WHOLE \
+                          table in three burst queries -- every key on every layer, \
+                          including keys past whatever the declared layout mentions. The \
+                          per-slot form is a diagnostic for protocol work.",
             input_schema: json!({
                 "type": "object",
                 "properties": {
+                    "full": {
+                        "type": "boolean",
+                        "description": "Read every key on every layer (recommended)"
+                    },
                     "group": {
                         "type": "integer",
-                        "description": "Optional slot table group (default 0x0F = 15; alternate 0x19 = 25)"
+                        "description": "Per-slot form: the width to walk the table at"
                     },
                     "counters": {
                         "type": "array",
                         "items": { "type": "integer" },
-                        "description": "Optional list of slot counters to read (defaults to [1, 2, 3])"
+                        "description": "Per-slot form: which counters to read"
                     }
                 }
             }),
@@ -205,6 +216,53 @@ pub fn all_tools() -> Vec<ToolDef> {
                     }
                 },
                 "required": ["bytes"]
+            }),
+        },
+        ToolDef {
+            name: "bind_sequence",
+            description: "Bind ONE knob gesture to a sequence of actions, with an optional \
+                          wait between steps. This is what lets a gesture type a string or \
+                          drive an application: `[\"cmd-c\", \"cmd-v\"]` copies then pastes. \
+                          Key ids on this device are 2=twist CCW, 3=press, 4=twist CW, \
+                          5=hold+twist left, 6=hold+twist right. A slot holds 19 entries and \
+                          a chord costs one entry per modifier plus one for the key, so \
+                          `cmd-c` is two. Keyboard actions chain; the firmware stores only \
+                          ONE media action per slot, so a media list is refused rather than \
+                          silently truncated. Call show_keys for the action vocabulary.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "integer",
+                        "description": "Slot key id. 2=CCW, 3=press, 4=CW, 5=hold+twist L, 6=hold+twist R"
+                    },
+                    "layer": {
+                        "type": "integer",
+                        "description": "Device layer 0-2 (default 0)"
+                    },
+                    "actions": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Action names in order, e.g. [\"cmd-c\", \"cmd-v\"]"
+                    },
+                    "delay_ms": {
+                        "type": "integer",
+                        "description": "Milliseconds to wait before each step after the first"
+                    }
+                },
+                "required": ["key", "actions"]
+            }),
+        },
+        ToolDef {
+            name: "show_keys",
+            description: "List every action name this device understands: keyboard keys, \
+                          modifiers, media usages and mouse actions. Call this before \
+                          bind_sequence or upload_keymap rather than guessing a name -- an \
+                          unknown name is refused, and the vocabulary is not the same as a \
+                          macOS key name.",
+            input_schema: json!({
+                "type": "object",
+                "properties": {}
             }),
         },
         ToolDef {
@@ -332,10 +390,28 @@ pub enum Command {
     ReadSlots {
         group: Option<u8>,
         counters: Option<Vec<u8>>,
+        /// Read the WHOLE table in three burst queries instead of walking
+        /// slots one at a time. Sees every key, not just the ones the
+        /// declared layout admits to.
+        #[serde(default)]
+        full: bool,
     },
 
     #[serde(rename = "send_raw")]
     SendRaw { bytes: Vec<String> },
+
+    #[serde(rename = "bind_sequence")]
+    BindSequence {
+        key: u8,
+        #[serde(default)]
+        layer: u8,
+        actions: Vec<String>,
+        #[serde(default)]
+        delay_ms: u16,
+    },
+
+    #[serde(rename = "show_keys")]
+    ShowKeys {},
 }
 
 /// Format human-readable LED mode string.

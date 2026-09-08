@@ -8,3 +8,4 @@ pub mod host;
 pub mod led;
 pub mod presets;
 pub mod protocol;
+pub mod vocabulary;

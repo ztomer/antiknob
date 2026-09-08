@@ -63,6 +63,10 @@ fn installed_button_count() -> Result<usize> {
     Ok(DeviceConfig::load_from_file(&path)?.button_count())
 }
 
+#[path = "device_cmds.rs"]
+mod device_cmds;
+use device_cmds::{bind_sequence, read_slots, vocabulary_reply};
+
 pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
     match cmd {
         Command::GetStatus {} => {
@@ -399,47 +403,20 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
             }))
         }
 
-        Command::ReadSlots { group, counters } => {
-            let ctrs = counters.unwrap_or_else(|| vec![1, 2, 3]);
-            if ctrs.len() > 16 {
-                anyhow::bail!("Slot counters query exceeds limit of 16 entries");
-            }
-            let grp = group.unwrap_or(0x0F);
-            let results = device::with_device(move |dev| {
-                let mut results = Vec::new();
-                for c in ctrs {
-                    match device::read_slot(dev, grp, c) {
-                        Ok(bytes) => {
-                            let hex: Vec<String> =
-                                bytes.iter().map(|b| format!("{:02x}", b)).collect();
-                            results.push(json!({
-                                "group": grp,
-                                "counter": c,
-                                "length": bytes.len(),
-                                "hex": hex.join(" "),
-                                "ok": true
-                            }));
-                        }
-                        Err(e) => {
-                            results.push(json!({
-                                "group": grp,
-                                "counter": c,
-                                "error": e.to_string(),
-                                "ok": false
-                            }));
-                        }
-                    }
-                    sleep(Duration::from_millis(30));
-                }
-                Ok(results)
-            })
-            .context("Cannot read slots from the Anticater USB device")?;
+        Command::ReadSlots {
+            group,
+            counters,
+            full,
+        } => read_slots(group, counters, full),
 
-            Ok(json!({
-                "group": grp,
-                "slots": results
-            }))
-        }
+        Command::ShowKeys {} => Ok(vocabulary_reply()),
+
+        Command::BindSequence {
+            key,
+            layer,
+            actions,
+            delay_ms,
+        } => bind_sequence(key, layer, &actions, delay_ms),
 
         Command::SendRaw { bytes } => {
             if bytes.len() > 64 {

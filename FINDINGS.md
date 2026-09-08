@@ -1,5 +1,12 @@
 # Antiknob / ANTICATER Porting & Architecture Findings
 
+> **Historical.** This is the original feasibility analysis that started the
+> project, kept for the reasoning about Rosetta, Qt and code signing. Its
+> device identifiers are the `1189:884x` CH57x family; this project's knob is
+> a `514c:8850`, whose protocol was measured later and is documented in
+> [VENDOR_UI_MAP.md](VENDOR_UI_MAP.md). Where the two disagree, the
+> measurement wins.
+
 This document details the reverse-engineering and architecture analysis of `/Applications/ANTICATER.app` (the configuration utility for the Anticater VK01 Knob mechanical keyboard) and outlines the feasibility and requirements for porting it natively to Apple Silicon (ARM64).
 
 ---

@@ -53,6 +53,26 @@ hardware. Two ways in, both used:
 `_KeyBoard_KeyLed`, `_RgbLED_Change_Flag`. This gives the packet layout and
 the mode bound (`cmpq $0x5; ja invalid`, so modes are 0..=5).
 
+**Driven, not just watched.** Qt exposes a full accessibility tree, so the
+app can be scripted: System Events reads state (every gesture zone is an
+`AXCheckBox` whose TITLE is its current binding) and `cliclick` supplies the
+input. Two traps, both cost time here:
+
+* Qt widgets ignore `AXPress` and reject AX value writes. Clicking a checkbox
+  from AppleScript flips the AX value without running Qt's handler, so a
+  later `clear` cleared a DIFFERENT gesture -- the one a human had last
+  selected with a real mouse. Real mouse events are required, and every
+  action must be verified by reading the titles back.
+* `tell application "ANTICATER" to activate` resolves by NAME to
+  `/Applications`, not to the instrumented copy. It launches a second
+  instance, which dies instantly in `Widget::Read_KeyBoard_KeyNum()` because
+  the first holds the device exclusively and the vendor does not null-check a
+  failed `hid_read`. Target the process by unix id instead.
+
+This is what turned a packet capture into a MAP: change one thing, press
+**Save settings**, diff the log. Nothing reaches the device before Save, so
+every other click is free. The result is [VENDOR_UI_MAP.md](VENDOR_UI_MAP.md).
+
 **Dynamic — capture the traffic.** Hardened runtime blocks lldb and
 `DYLD_INSERT_LIBRARIES`, so work on a COPY:
 

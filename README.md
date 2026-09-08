@@ -16,11 +16,11 @@ Antiknob is written in 100% pure Rust and native SwiftUI, permissively licensed 
   * **Column Layout**: Property rows, status rows and record lists are laid out on shared column edges (`PropertyGrid` / `StatusRow` / `PropertyRow`), so labels, values, state lights and controls each read down one straight edge instead of ragging against the trailing margin. HID endpoints are a four-column table; state lights sit in their own column right of the text.
   * **System Settings Capsule Chord Recorder**: One-click shortcut capture displaying macOS native glyphs (`⌃`, `⌥`, `⇧`, `⌘`).
   * **Macro Sequence Editor**: Sheet modal supporting multi-step macros, millisecond wait steps, and drag-to-reorder.
-  * **Dynamic Hardware Lighting**: Real-time LED mode controls (Off, Static, Reactive, Ripple, Rainbow) per device layer. This knob has a single fixed colour — layers are told apart by effect, not colour.
+  * **Dynamic Hardware Lighting**: Real-time LED mode controls (Off, Red, Green, Ripple, Rainbow, RGB) per device layer. Modes 1 and 2 are fixed COLOURS on this device rather than effects, so layers are told apart by colour — which is what the colour bytes never achieved.
   * **Bottom Status Bar**: Connection, transport and power source read as SF Symbol glyphs in the lower-right corner (words in the tooltip), next to a manual refresh and the transient autosave badge.
   * **One Mapping Per Question**: Transport is a `Transport` enum, not a string compared at each call site, so every switch over it is exhaustive and adding a link is a compile error at each place that must render it. Power source, transport glyph and LED mode name each have exactly one definition.
-* **Single Source of Truth (`src/api/`)**:
-  * Unified schema and tool definitions shared across the Unix socket interface and the MCP server.
+* **Single Source of Truth (`src/api/registry.rs`)**:
+  * Every command declared once: name, description, and each parameter with its kind, whether it is required, and which surfaces it appears on. The CLI's clap tree and the MCP tool list are both GENERATED from it, so a command cannot exist on one surface and not the other unless the table says why. A parameter can differ per surface where it must — `upload` takes a file path on the command line and a YAML string over MCP, because an agent has no filesystem the daemon can see.
 * **Unix Domain Socket Interface (`/tmp/antiknob.sock`)**:
   * Fast JSON-RPC 2.0 communication between UI, CLI, and Daemon.
   * Dynamically hot-reloads the daemon tap engine in memory without restarting.
@@ -107,39 +107,81 @@ antiknob-daemon --mcp
 ```
 
 ### Command-Line Interface
+
+Every command below is declared once in [`src/api/registry.rs`](src/api/registry.rs);
+the CLI and the MCP tool list are both generated from it, so they cannot
+describe different devices.
+
 ```bash
-# 1. Probe connected USB device
+# Probe the connected device
 antiknob status
 antiknob status --json
 
-# 2. List supported keys, media keys, and mouse actions
+# What the device understands. Ask rather than guess -- an unknown action
+# name is refused, and the vocabulary is not macOS key names.
 antiknob show-keys
 
-# 3. Validate configuration file
+# Flash a layout
 antiknob validate config.yaml
-
-# 4. Flash configuration to hardware (No sudo required)
 antiknob upload config.yaml
-antiknob upload config.yaml --layer 0   # flash one layer only
+antiknob upload config.yaml --layer 0        # one layer only
 
-# 5. Set LED lighting dynamically
-antiknob led 0 static           # steady
+# Bind ONE gesture to a sequence, with a wait between steps.
+# Key ids: 2=twist CCW, 3=press, 4=twist CW, 5=hold+twist L, 6=hold+twist R
+antiknob bind-seq --key 5 cmd-c cmd-v
+antiknob bind-seq --key 5 --delay-ms 120 cmd-a cmd-c
+antiknob bind-seq --key 5 --dry-run h e l l o     # see the packet first
+
+# LED. Modes 1 and 2 are fixed COLOURS on this device, not effects.
+antiknob led 0 red
+antiknob led 0 green
 antiknob led 0 rainbow          # cycling multicolour, the shipped effect
+antiknob led 0 rgb              # a second multicolour effect
 antiknob led 0 off
+antiknob led-read 0
 
-# 6. One-time host-translate slot binding (flash once, translate forever)
-antiknob bind-slots --dry-run   # inspect the 9-packet plan first
-antiknob bind-slots             # CCW=ctrl-alt-F16, Press=F17, CW=F18
+# Read the device back. --full uses the vendor's burst read: three queries
+# for every key on every layer, instead of eighteen for the first six.
+antiknob read-slots --full
 
-# 7. Verify what the knob actually sends
-antiknob listen --timeout-secs 10   # twist/press the knob, watch reports
+# Which key does each gesture actually drive? Arms keys 1-6 with distinct
+# markers, asks for all five gestures, restores everything afterwards.
+antiknob probe-gestures --map
 
-# 8. Migrate presets to daemon host layers
+# Verify what the knob sends
+antiknob listen --timeout-secs 10
+
+# Host-translate slot binding, and the daemon's presets
+antiknob bind-slots --dry-run
 antiknob import-presets --out ~/Library/Application\ Support/antiknob/host.json
-
-# 9. List installed apps (bundle IDs for launch/quit actions)
 antiknob list-apps
 ```
+
+#### Gestures and sequences
+
+A knob is **five** gestures, and a gesture can run a **sequence** with a wait
+between steps -- that is the vendor's `0xFD` command, which `0xFE` has no
+field for. In a layout:
+
+```yaml
+knobs:
+  - ccw: "volumedown"                 # one action
+    press: "mute"
+    cw: "volumeup"
+    hold_twist_l: ["cmd-c", "cmd-v"]  # a sequence
+    hold_twist_r:                     # a sequence that waits between steps
+      steps: ["cmd-a", "cmd-c"]
+      delay_ms: 120
+```
+
+A slot holds 19 entries; a chord costs one entry per modifier plus one for
+the key, so `cmd-c` is two. Only KEYBOARD sequences chain -- the firmware
+stores one media action per slot, so a media list is refused when the config
+loads rather than silently truncated when it flashes.
+
+That is enough to type a string or drive an application: the vendor's own
+Procreate menu is nothing but named chords, and its Undo encodes as
+`F4 1D` -- Cmd+Z. The wire format is in [VENDOR_UI_MAP.md](VENDOR_UI_MAP.md).
 
 ### Host Translation Daemon
 ```bash
@@ -212,9 +254,10 @@ what its 4% coverage floor does and does not mean.
 | Path | What it is |
 | --- | --- |
 | [config.yaml](config.yaml) | Full three-layer starter config, installed to `/Applications/Antiknob/config.yaml` on first install (never overwritten afterwards). |
-| [config_knob_only.yaml](config_knob_only.yaml) | Minimal template for a knob with no keypad -- a starting point for `antiknob upload`. |
 | [PLAN.md](PLAN.md) | Forward-looking backlog. Shipped work lives in git history, not here. |
-| [FINDINGS.md](FINDINGS.md) | Reverse-engineering record for `/Applications/ANTICATER.app` and the VK01 wire protocol. |
+| [VENDOR_UI_MAP.md](VENDOR_UI_MAP.md) | The wire protocol, measured by driving the vendor app under an HID interposer. The `0xFD` record format, the gesture-to-key map, the delay encoding, the LED modes. Measurement, not plan — it does not get pruned. |
+| [FINDINGS.md](FINDINGS.md) | The original 2026 porting analysis of `/Applications/ANTICATER.app`. Historical: its device IDs are the `1189:884x` family, not this `514c:8850` knob. |
+| [REFERENCES.md](REFERENCES.md) | Where each fact came from, and what each source is NOT good for. |
 | [BATTERY_RESEARCH.md](BATTERY_RESEARCH.md) | Research notes on radio-mode drain and power reporting. No code depends on it. |
 | [.cargo/audit.toml](.cargo/audit.toml) | `cargo audit` deny list and the advisory-ignore ratchet. |
 | [ui/Package.swift](ui/Package.swift) | The SwiftUI app as an SPM package, so the house Swift gate can reach it. |

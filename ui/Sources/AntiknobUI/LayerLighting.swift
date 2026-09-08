@@ -12,51 +12,25 @@
 // daemon writes it on every switch (`host::led_sync`). So the control lives
 // in the layer it describes.
 //
-// The six-row list with a description each is a row of glyphs. The preview
-// under it shows what the mode does, which is what the descriptions were
-// for -- "Cycling colours" beside an animation of cycling colours is a
-// caption for a picture of itself.
+// The six-row list with a description each is a row of glyphs, and the
+// preview it used to carry moved onto the knob at the top of the pane --
+// the same knob these gestures are bound on, which is the object the light
+// is actually on. Two drawings of one knob, one of them lit and one of them
+// clickable, was a picture of the same thing twice.
 
 import SwiftUI
 
-struct LayerLighting: View {
+struct LayerLightingRow: View {
     @ObservedObject var store: ConfigStore
     let idx: Int
 
-    /// What the firmware holds on the bound device layer right now, so the
-    /// section can say whether this layer's choice is the one on the knob.
-    /// `nil` until read; failure and "not read yet" are different states and
-    /// neither is a mode.
-    @State private var firmwareMode: Int?
-    @State private var isReading = false
-
     private var selection: LedMode? {
-        store.cfg.layers[idx].led.flatMap(LedMode.named)
-    }
-
-    /// True when this layer's mode is what the knob is currently wearing.
-    private var isLive: Bool {
-        guard let selection, let firmwareMode else { return false }
-        return selection.number == firmwareMode && store.activeLayerIdx == idx
+        store[layer: idx]?.led.flatMap(LedMode.named)
     }
 
     var body: some View {
-        Section {
-            glyphRow
-            if let selection {
-                VStack(spacing: 8) {
-                    LedPreview(mode: selection, isLive: isLive)
-                    LedPreviewCaption(mode: selection, isLive: isLive)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 4)
-            }
-        } header: {
-            Text("Lighting")
-        } footer: {
-            footer
-        }
-        .onAppear(perform: readFirmware)
+        glyphRow
+            .onAppear { store.refreshFirmwareLedMode() }
     }
 
     // MARK: - Glyphs
@@ -84,7 +58,7 @@ struct LayerLighting: View {
     private func glyph(_ mode: LedMode?) -> some View {
         let isSelected = selection?.id == mode?.id
         Button {
-            store.cfg.layers[idx].led = mode?.id
+            store[layer: idx]?.led = mode?.id
         } label: {
             Image(systemName: mode?.icon ?? "minus")
                 .frame(width: 28, height: 24)
@@ -109,34 +83,5 @@ struct LayerLighting: View {
         .help(mode.map { "\($0.name) — \($0.desc)" } ?? "Leave the backlight as it is")
         .accessibilityLabel(mode?.name ?? "No change")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-    }
-
-    // MARK: - Honesty about whether it can happen
-
-    @ViewBuilder
-    private var footer: some View {
-        if selection == nil {
-            Text("This layer leaves the knob's backlight as it is.")
-        } else if !store.modePresentation.hostLayersCanFire {
-            // The daemon writes this on a layer switch, and it only switches
-            // layers when it can hear the knob. Saying so here beats the
-            // colour silently never appearing.
-            Text("Set when this layer becomes active — once the knob's slot bindings "
-               + "are flashed. It is not bound yet, so this colour will not appear.")
-        } else {
-            Text("The daemon puts this mode on the knob whenever this layer is active.")
-        }
-    }
-
-    private func readFirmware() {
-        guard store.hardwareConnected, let bound = store.boundDeviceLayer else {
-            firmwareMode = nil
-            return
-        }
-        isReading = true
-        store.getHardwareLedMode(layer: bound) { mode in
-            isReading = false
-            firmwareMode = mode
-        }
     }
 }

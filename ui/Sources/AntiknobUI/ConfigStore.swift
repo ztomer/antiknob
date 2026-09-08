@@ -67,6 +67,10 @@ public final class ConfigStore: ObservableObject {
     /// whose backlight the daemon drives. nil when nothing is bound, which
     /// is a real state: no layer's colour can appear until one is.
     @Published var boundDeviceLayer: Int?
+    /// The mode the firmware reports on the bound device layer -- what the
+    /// knob is wearing right now. nil when unread, unbound or unreachable,
+    /// which are all "we do not know" and none of which is a mode.
+    @Published var firmwareLedMode: Int?
     @Published var startOnLogin: Bool = false
     /// The socket path the last successful call actually went to. nil when
     /// nothing has answered. Three panes printed `/tmp/antiknob.sock` as a
@@ -81,9 +85,32 @@ public final class ConfigStore: ObservableObject {
     private let client = SocketClient.shared
     private nonisolated(unsafe) var pollTimer: Timer?
 
+    /// Whether this store is wired to the daemon and the config file.
+    ///
+    /// False only in tests. `init()` loads the real config and every `cfg`
+    /// assignment writes it back, so a test that builds a store and sets
+    /// `cfg` to a fixture EDITS THE USER'S CONFIGURATION -- which is not a
+    /// hypothesis. A test of this file's own index safety renamed a layer to
+    /// "Browse", set it green, and pushed both to the running daemon; the
+    /// evidence is a `host.json.4` backup holding a layer nobody created.
+    /// Three restores were destroyed before the backups made it visible.
+    private let persists: Bool
+
     init() {
+        persists = true
         loadInitial()
         startPolling()
+    }
+
+    /// A store that touches nothing: no load, no poll, no write.
+    ///
+    /// The only way to exercise this type without a daemon and a real
+    /// `host.json` behind it.
+    init(inMemory config: Config) {
+        persists = false
+        syncing = true
+        cfg = config
+        syncing = false
     }
 
     deinit {
@@ -130,7 +157,21 @@ public final class ConfigStore: ObservableObject {
                 self?.knobButtons = buttons
                 self?.knobKeyIds = keyIds
                 self?.boundDeviceLayer = bound
+                self?.refreshFirmwareLedMode()
             }
+        }
+    }
+
+    /// Read the bound device layer's mode. Deliberately not on the status
+    /// poll: it opens the HID device, and the answer only changes when
+    /// something writes it.
+    func refreshFirmwareLedMode() {
+        guard hardwareConnected, let bound = boundDeviceLayer else {
+            firmwareLedMode = nil
+            return
+        }
+        getHardwareLedMode(layer: bound) { [weak self] mode in
+            self?.firmwareLedMode = mode
         }
     }
 
@@ -148,8 +189,31 @@ public final class ConfigStore: ObservableObject {
             Task { @MainActor [weak self] in
                 self?.refreshStatus()
                 self?.refreshKnobMode()
+                self?.adoptDaemonConfigIfChanged()
             }
         }
+    }
+
+    /// Take the daemon's config if it has changed while this window was in
+    /// the background.
+    ///
+    /// This store held its copy for the app's whole life and wrote it back
+    /// on every edit, so a config changed underneath it -- by the CLI, by a
+    /// hand edit, by another copy of this app -- was silently overwritten
+    /// the next time anything here was touched. That is not theoretical: a
+    /// restored config was destroyed exactly this way on 2026-09-08, by a
+    /// window sitting in the background holding a stale copy.
+    ///
+    /// Only on activation, and only when it differs. Every edit here saves
+    /// immediately, so this store is never AHEAD of the daemon -- there is
+    /// no unsaved work to protect, and doing it on the two-second poll would
+    /// race a keystroke's own save and yank the text field out from under
+    /// the person typing.
+    func adoptDaemonConfigIfChanged() {
+        guard let fromDaemon = try? client.getConfig(), fromDaemon != cfg else { return }
+        syncing = true
+        defer { syncing = false }
+        cfg = fromDaemon
     }
 
     func refreshStatus() {
@@ -252,49 +316,22 @@ public final class ConfigStore: ObservableObject {
         }
     }
 
-    func checkStartOnLogin() {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let plistPath = "\(home)/Library/LaunchAgents/com.antiknob.daemon.plist"
-        self.startOnLogin = FileManager.default.fileExists(atPath: plistPath)
-    }
-
-    func toggleStartOnLogin(enabled: Bool) {
-        Task.detached(priority: .userInitiated) {
-            let daemonPath = Self.resolveDaemonPath()
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: daemonPath)
-            task.arguments = [enabled ? "--install-login-item" : "--uninstall-login-item"]
-            try? task.run()
-            task.waitUntilExit()
-            await MainActor.run { [weak self] in
-                self?.checkStartOnLogin()
-            }
-        }
-    }
-
-    /// Where the daemon binary is on THIS machine, for the MCP config the
-    /// Services pane hands out. It was hardcoded to
-    /// `/Applications/Antiknob/bin/antiknob-daemon`, which is one of the
-    /// four places `resolveDaemonPath` already looks -- so the config the
-    /// pane copied could name a binary that is not there.
-    var daemonBinaryPath: String { Self.resolveDaemonPath() }
-
-    nonisolated static func resolveDaemonPath() -> String {
-        let possiblePaths = [
-            "/Applications/Antiknob/bin/antiknob-daemon",
-            "\(FileManager.default.homeDirectoryForCurrentUser.path)/.local/bin/antiknob-daemon",
-            "\(FileManager.default.homeDirectoryForCurrentUser.path)/.cargo/bin/antiknob-daemon",
-            "/usr/local/bin/antiknob-daemon"
-        ]
-        if let found = possiblePaths.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
-            return found
-        }
-        return "/Applications/Antiknob/bin/antiknob-daemon"
-    }
-
     // MARK: - Config Persistence & Mutation
 
+    /// How many times this store has set out to persist its config.
+    ///
+    /// Counted SYNCHRONOUSLY, because the write itself is a detached Task
+    /// and a test that reads `host.json` straight afterwards sees the file
+    /// as it was -- which is how the first version of the guard against this
+    /// passed with the guard deleted. A counter the write increments before
+    /// it goes async is a signal a test can actually see.
+    private(set) var persistAttempts = 0
+
     func applyConfig(_ newConfig: Config) {
+        // An in-memory store never reaches the daemon or the disk. Without
+        // this, every test that assigns `cfg` rewrites the user's config.
+        guard persists else { return }
+        persistAttempts += 1
         let connected = self.daemonConnected
         Task.detached(priority: .userInitiated) {
             let client = SocketClient.shared

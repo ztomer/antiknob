@@ -8,75 +8,10 @@ struct GeneralPane: View {
 
     var body: some View {
         Form {
-            slotBindingSection
             startupSection
             systemStatusSection
         }
         .formStyle(.grouped)
-    }
-
-    private var slotBindingSection: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 8) {
-                // The old line named the mechanism -- "binds the knob's five
-                // gesture slots to ⌃⌥F16..F20" -- to a reader who wanted to
-                // know what the button was for. The chords are still spelled
-                // out, on the Hardware pane, next to the control that picks
-                // which device layer gets them.
-                Text("Out of the box the knob talks straight to macOS, so nothing you "
-                   + "configure here can run. Flashing it once, over USB, hands its "
-                   + "gestures to Antiknob instead.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                // Whether the flash has actually taken, said here rather
-                // than only on every layer tab. `bind-slots` wrote three of
-                // the five chords until this session, so a knob could be
-                // bound and still have two gestures that reached nothing.
-                if let banner = store.modePresentation.banner {
-                    Label(banner, systemImage: store.modePresentation.icon)
-                        .font(.caption)
-                        .foregroundStyle(store.modePresentation.mode == .standalone
-                                         ? Color.orange : Color.secondary)
-                        .help(store.modePresentation.detail ?? banner)
-                }
-                // Which DEVICE layer carries the chords -- shown only when
-                // one does. With nothing bound, this line said "no host
-                // layer can fire", which is what the warning directly above
-                // it already says; two sentences for one fact, the second
-                // one longer.
-                if store.modePresentation.hostLayersCanFire,
-                   let arrangement = store.deviceBindingSummary {
-                    Text(arrangement)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                HStack {
-                    Button {
-                        store.bindSlots()
-                    } label: {
-                        if store.isBindingSlots {
-                            HStack(spacing: 6) {
-                                ProgressView().controlSize(.small)
-                                Text("Flashing slots…")
-                            }
-                        } else {
-                            Label("Flash the Knob", systemImage: "bolt.fill")
-                        }
-                    }
-                    .disabled(store.isBindingSlots || !store.hardwareConnected)
-                    .help(store.hardwareConnected ? "" : "No knob detected")
-
-                    Spacer()
-                }
-                .padding(.top, 4)
-            }
-            .padding(.vertical, 4)
-        } header: {
-            Text("Knob Control")
-        }
     }
 
     private var startupSection: some View {

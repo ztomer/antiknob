@@ -102,10 +102,14 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
         }
 
         Command::SetConfig { config } => {
-            if let Some(parent) = ctx.config_path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            std::fs::write(&ctx.config_path, config.to_json_pretty())?;
+            // Keeps the version it replaces, and writes through a rename.
+            // `fs::write` truncated first and kept nothing, so a bad writer
+            // -- a UI bug, a half-finished edit, a crash mid-save -- took
+            // the config with it and left no way back. One did.
+            crate::host::config_backup::write_with_backup(
+                &ctx.config_path,
+                &config.to_json_pretty(),
+            )?;
 
             if let Some(engine) = &ctx.tap_engine {
                 let mut lock = engine.lock().unwrap();

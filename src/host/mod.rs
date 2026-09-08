@@ -7,6 +7,7 @@
 //! HID, no TCC, no threads.
 
 pub mod bind;
+pub mod config_backup;
 pub use gesture::{gesture_for_chord, is_slot_chord, slot_chord, ChordSpec, Gesture};
 pub mod device_binding;
 pub mod engine;

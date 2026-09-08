@@ -1,21 +1,41 @@
-// KnobHeader.swift — Skeuomorphic interactive knob centerpiece.
-// Clickable gesture zones highlight corresponding rows in the settings form.
+// KnobHeader.swift — the knob, lit, with its five gestures around it.
+//
+// One picture of the knob per pane. The lighting section used to draw a
+// second one directly below this, so the pane showed the same knob twice --
+// once with clickable gesture zones and no light, once with the light and
+// nothing to click. They are the same object, so this one is lit.
+//
+// That also puts the colour where it belongs: the ring is what the layer's
+// mode does, drawn around the gestures the layer binds, in the layer that
+// owns both.
 
 import SwiftUI
 
 struct KnobHeader: View {
     @Binding var selected: Gesture?
+    /// The mode this layer puts on the knob, if it sets one. `nil` draws the
+    /// knob unlit -- which is what "leave the backlight alone" looks like,
+    /// and must not be confused with mode `off`.
+    var mode: LedMode?
+    /// True when the knob is wearing this mode right now, rather than when
+    /// it is a choice not yet applied.
+    var isLive: Bool = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: 20) {
-            VStack(spacing: 12) {
-                zone(.twistL, "arrow.counterclockwise", "Twist Left")
-                zone(.holdTwistL, "arrow.counterclockwise.circle", "Hold + Twist L")
+        VStack(spacing: 10) {
+            HStack(alignment: .center, spacing: 20) {
+                VStack(spacing: 12) {
+                    zone(.twistL, "arrow.counterclockwise", "Twist Left")
+                    zone(.holdTwistL, "arrow.counterclockwise.circle", "Hold + Twist L")
+                }
+                knobBody
+                VStack(spacing: 12) {
+                    zone(.twistR, "arrow.clockwise", "Twist Right")
+                    zone(.holdTwistR, "arrow.clockwise.circle", "Hold + Twist R")
+                }
             }
-            knobBody
-            VStack(spacing: 12) {
-                zone(.twistR, "arrow.clockwise", "Twist Right")
-                zone(.holdTwistR, "arrow.clockwise.circle", "Hold + Twist R")
+            if let mode {
+                LedPreviewCaption(mode: mode, isLive: isLive)
             }
         }
         .padding(.vertical, 8)
@@ -24,6 +44,12 @@ struct KnobHeader: View {
     private var knobBody: some View {
         VStack(spacing: 6) {
             ZStack {
+                // The lit ring, when this layer sets a mode. Sized to sit
+                // just outside the knob body so the two read as one object.
+                if let mode {
+                    LedRing(mode: mode)
+                }
+
                 Circle()
                     .fill(LinearGradient(
                         colors: [
@@ -55,6 +81,8 @@ struct KnobHeader: View {
                 .fontWeight(selected == .press ? .semibold : .regular)
                 .foregroundStyle(selected == .press ? Color.accentColor : Color.secondary)
         }
+        // Room for the ring, so the knob does not shift when a mode is set.
+        .frame(width: 116)
     }
 
     private func zone(_ g: Gesture, _ symbol: String, _ label: String) -> some View {

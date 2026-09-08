@@ -20,15 +20,13 @@ extension RGB {
     var color: Color { Color(red: red, green: green, blue: blue) }
 }
 
-/// The knob, lit the way the given mode lights it.
+/// The lit ring, animated the way the given mode animates.
 ///
-/// `isLive` says whether this is what the hardware is doing right now or a
-/// preview of a selection not yet sent. The two are drawn differently on
-/// purpose: an unsent selection is an intention, and an intention rendered
-/// identically to a fact is the defect this app keeps finding in itself.
-struct LedPreview: View {
+/// Was a whole second knob -- body, notch, ring -- drawn under the header's
+/// knob in its own section, so a layer's pane showed the same object twice.
+/// Only the ring was ever the point; it goes around the real one.
+struct LedRing: View {
     let mode: LedMode
-    var isLive: Bool = false
 
     /// Seconds per full cycle for the animated modes.
     private static let cyclePeriod: Double = 4.0
@@ -37,10 +35,25 @@ struct LedPreview: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animates)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
-            ring(color: colour(at: t), glow: glow(at: t))
+            let colour = colour(at: t)
+            let glow = glow(at: t)
+            // Two passes: a soft bloom under a bright band. One stroke with
+            // a shadow read as a dim indicator rather than as a lit knob.
+            ZStack {
+                Circle()
+                    .strokeBorder(colour.opacity(0.55 * glow), lineWidth: 16)
+                    .frame(width: 108, height: 108)
+                    .blur(radius: 9)
+                Circle()
+                    .strokeBorder(colour.opacity(0.55 + 0.45 * glow), lineWidth: 8)
+                    .frame(width: 104, height: 104)
+                    .shadow(color: colour.opacity(0.9 * glow), radius: 14)
+                    .shadow(color: colour.opacity(0.5 * glow), radius: 26)
+            }
+            .animation(.easeInOut(duration: 0.35), value: colour)
         }
-        .frame(width: 132, height: 132)
-        .accessibilityLabel("\(mode.name) preview")
+        .allowsHitTesting(false)
+        .accessibilityLabel("\(mode.name) lighting")
     }
 
     /// Only the effects need a clock. A steady colour redrawn thirty times a
@@ -80,39 +93,9 @@ struct LedPreview: View {
             return 1
         }
     }
-
-    private func ring(color: Color, glow: Double) -> some View {
-        ZStack {
-            // The lit ring: one band of colour, which is all this device has.
-            Circle()
-                .strokeBorder(color.opacity(0.25 + 0.75 * glow), lineWidth: 9)
-                .frame(width: 108, height: 108)
-                .shadow(color: color.opacity(0.75 * glow), radius: 12)
-
-            // The knob body sitting inside it.
-            Circle()
-                .fill(LinearGradient(
-                    colors: [
-                        Color(nsColor: .controlBackgroundColor),
-                        Color(nsColor: .windowBackgroundColor)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ))
-                .overlay(Circle().strokeBorder(.separator, lineWidth: 1))
-                .frame(width: 84, height: 84)
-
-            Capsule()
-                .fill(Color.secondary.opacity(0.6))
-                .frame(width: 4, height: 13)
-                .offset(y: -25)
-        }
-        .animation(.easeInOut(duration: 0.35), value: color)
-    }
 }
 
-/// The caption under the preview: what it is showing, and how much of it is
-/// a reproduction rather than a stand-in.
+/// The line under the knob: which mode, and whether it is on the knob now.
 struct LedPreviewCaption: View {
     let mode: LedMode
     let isLive: Bool
@@ -125,13 +108,6 @@ struct LedPreviewCaption: View {
                 .font(.caption)
                 .foregroundStyle(isLive ? Color.primary : Color.secondary)
 
-            if mode.appearance.isApproximate {
-                Text("Preview is a stand-in — this mode's exact pattern has not been recorded.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         }
     }
 }

@@ -39,3 +39,36 @@ extension ConfigStore {
         }
     }
 }
+
+// MARK: - Reaching a layer by index, safely
+
+extension ConfigStore {
+    /// The layer at `idx`, or `nil` when that index no longer exists.
+    ///
+    /// Views hold an index, and SwiftUI re-evaluates a body with the index
+    /// it captured. Delete a layer and the removed view's body can run once
+    /// more against the shortened array before the parent drops it -- and
+    /// `cfg.layers[idx]` TRAPS there rather than returning nothing. That is
+    /// not a hypothetical: it crashed the app on the delete confirmation,
+    /// from `LayerLighting.selection`, with 39 more subscripts behind it
+    /// waiting for the same moment.
+    ///
+    /// Writing through a stale index is a no-op for the same reason: the
+    /// layer that write was meant for is gone.
+    subscript(layer idx: Int) -> LayerConfig? {
+        get { cfg.layers.indices.contains(idx) ? cfg.layers[idx] : nil }
+        set {
+            guard let newValue, cfg.layers.indices.contains(idx) else { return }
+            cfg.layers[idx] = newValue
+        }
+    }
+
+    /// A binding to one layer's name that survives the layer being deleted
+    /// while the field is on screen.
+    func layerName(_ idx: Int) -> Binding<String> {
+        Binding(
+            get: { self[layer: idx]?.name ?? "" },
+            set: { self[layer: idx]?.name = $0 }
+        )
+    }
+}

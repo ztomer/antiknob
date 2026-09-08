@@ -26,7 +26,6 @@ struct LayerDetail: View {
     @Binding var selectedLayer: Int
 
     @State private var selected: Gesture?
-    @State private var confirmingDelete = false
 
     // Module-internal rather than private: the binding plumbing in
     // LayerBindings.swift is an extension on this type, and an extension in
@@ -35,31 +34,45 @@ struct LayerDetail: View {
     @State var editingSequence: Gesture?
 
     var body: some View {
-        if idx < store.cfg.layers.count {
+        if store.cfg.layers.indices.contains(idx) {
             Form {
+                // Global, so it stands apart from the layer below it.
+                LayerSwitchingSection(store: store)
+
+                // Everything else is ONE section, because everything else is
+                // one layer: which layer, its name and place, the knob it
+                // lights, the gestures it binds, and whether the knob is
+                // sending them here yet. Splitting those across four panes
+                // made a single subject look like four subjects.
                 Section {
-                    KnobHeader(selected: $selected)
-                        .frame(maxWidth: .infinity)
-                        .listRowBackground(Color.clear)
-                }
+                    LayerTabBar(store: store, selected: $selectedLayer, idx: idx)
+                    LayerEditRow(store: store, selectedLayer: $selectedLayer, idx: idx)
 
-                layerSection
+                    KnobHeader(
+                        selected: $selected,
+                        mode: lightingMode,
+                        isLive: lightingIsLive
+                    )
+                    .frame(maxWidth: .infinity)
 
-                ReachabilityNotice(mode: store.modePresentation, store: store)
+                    // Directly under the knob it lights, so picking a mode
+                    // and seeing what it does are one movement of the eye.
+                    LayerLightingRow(store: store, idx: idx)
 
-                Section("Gestures") {
                     PropertyGrid(horizontalSpacing: 12, verticalSpacing: 2) {
                         ForEach(Gesture.allCases) { g in
                             gestureRow(g)
                         }
                     }
+
+                    PropertyGrid {
+                        LayerFlashRow(store: store)
+                    }
+                } header: {
+                    Text("Layers")
+                } footer: {
+                    lightingFooter
                 }
-
-                LayerLighting(store: store, idx: idx)
-
-                // Global rather than per-layer, so it sits last: the
-                // sections above are this layer, this one is all of them.
-                LayerSwitchingSection(store: store)
             }
             .formStyle(.grouped)
             .sheet(item: $editingSequence) { g in
@@ -71,90 +84,31 @@ struct LayerDetail: View {
         }
     }
 
-    // MARK: - Layer Name, Order, and Removal
-
-    private var layerSection: some View {
-        Section {
-            PropertyGrid {
-                LayerChooser(store: store, selected: $selectedLayer, idx: idx)
-
-                GridRow {
-                    Text("Name")
-                        .foregroundStyle(.secondary)
-                        .gridColumnAlignment(.leading)
-                    TextField("Layer name", text: $store.cfg.layers[idx].name)
-                        .labelsHidden()
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 260)
-                        .gridColumnAlignment(.leading)
-                }
-
-                GridRow {
-                    Text("Order")
-                        .foregroundStyle(.secondary)
-                        .gridColumnAlignment(.leading)
-                    HStack(spacing: 6) {
-                        Button { move(by: -1) } label: {
-                            Image(systemName: "chevron.left")
-                        }
-                        .disabled(idx == 0)
-                        .help("Move this layer left")
-
-                        Button { move(by: 1) } label: {
-                            Image(systemName: "chevron.right")
-                        }
-                        .disabled(idx >= store.cfg.layers.count - 1)
-                        .help("Move this layer right")
-
-                        Text("\(idx + 1) of \(store.cfg.layers.count)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.leading, 4)
-                    }
-                    .gridColumnAlignment(.leading)
-                }
-            }
-
-            Button("Delete Layer…", role: .destructive) { confirmingDelete = true }
-                .disabled(store.cfg.layers.count <= 1)
-                .help(store.cfg.layers.count <= 1
-                      ? "The last layer cannot be deleted"
-                      : "Delete this layer and its gesture bindings")
-                .confirmationDialog(
-                    "Delete \(layerLabel)?",
-                    isPresented: $confirmingDelete
-                ) {
-                    Button("Delete Layer", role: .destructive) { delete() }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text("Its gesture bindings are removed. This cannot be undone.")
-                }
+    /// What this layer's lighting choice will and will not do. Sits in the
+    /// section footer rather than as another row, because it is a caveat
+    /// about the row above and not a control.
+    @ViewBuilder
+    private var lightingFooter: some View {
+        if lightingMode == nil {
+            Text("This layer leaves the knob's backlight as it is.")
+        } else if !store.modePresentation.hostLayersCanFire {
+            Text("The backlight follows the active layer once the knob is flashed.")
+        } else {
+            Text("The knob wears this mode whenever this layer is active.")
         }
     }
 
-    private var layerLabel: String {
-        let name = store.cfg.layers[idx].name
-        return name.isEmpty ? "Layer \(idx + 1)" : name
+    /// The mode this layer sets, if it sets one. Drawn as the knob's ring.
+    private var lightingMode: LedMode? {
+        store[layer: idx]?.led.flatMap(LedMode.named)
     }
 
-    /// Swaps this layer with its neighbour and keeps the tab selection on it.
-    private func move(by delta: Int) {
-        let dest = idx + delta
-        guard store.cfg.layers.indices.contains(dest) else { return }
-        withAnimation {
-            store.cfg.layers.swapAt(idx, dest)
-            selectedLayer = dest
-        }
-    }
-
-    /// Removes this layer and lands the selection on a still-valid tab.
-    private func delete() {
-        guard store.cfg.layers.count > 1,
-              store.cfg.layers.indices.contains(idx) else { return }
-        withAnimation {
-            store.cfg.layers.remove(at: idx)
-            selectedLayer = min(idx, store.cfg.layers.count - 1)
-        }
+    /// True only when the knob is wearing it now: this layer is the active
+    /// one AND the firmware reports its mode. An intention drawn identically
+    /// to a fact is the defect this app keeps finding in itself.
+    private var lightingIsLive: Bool {
+        guard let lightingMode, let firmware = store.firmwareLedMode else { return false }
+        return store.activeLayerIdx == idx && lightingMode.number == firmware
     }
 
     /// Three columns: gesture, its parameter control, its action menu.
@@ -287,7 +241,7 @@ struct LayerDetail: View {
 
     @ViewBuilder
     private func paramControls(_ g: Gesture) -> some View {
-        switch store.cfg.layers[idx][g] {
+        switch self[g] {
         case .scroll?:
             // The label is drawn here rather than passed to `Stepper`, whose
             // built-in label splits to the leading edge of whatever width it

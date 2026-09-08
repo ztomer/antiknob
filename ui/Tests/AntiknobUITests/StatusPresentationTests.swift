@@ -142,7 +142,7 @@ struct LedModeNameTests {
     }
 }
 
-/// The layer view must never present a host layer as live when the firmware
+/// The layer pane must never present a host layer as live when the firmware
 /// cannot produce it. These pin the three cases, including the one that says
 /// "not sure" rather than guessing.
 @Suite("Knob mode presentation")
@@ -154,21 +154,6 @@ struct ModePresentationTests {
         #expect(!ModePresentation(rawMode: "unknown").hostLayersCanFire)
     }
 
-    @Test("host-translate says nothing, because nothing is wrong")
-    func hostTranslateIsQuiet() {
-        let p = ModePresentation(rawMode: "host-translate")
-        #expect(p.banner == nil)
-        #expect(p.callToAction == nil)
-    }
-
-    @Test("standalone says the layers are inactive and offers the way out")
-    func standaloneExplainsItself() {
-        let p = ModePresentation(rawMode: "standalone")
-        #expect(p.mode == .standalone)
-        #expect(p.banner?.contains("inactive") == true, "banner: \(p.banner ?? "nil")")
-        #expect(p.callToAction == "Flash Slot Bindings")
-    }
-
     /// A missing or unrecognised reading is its own state. Falling back to
     /// either real mode would be the app inventing a fact about hardware it
     /// has not read.
@@ -178,16 +163,38 @@ struct ModePresentationTests {
             let p = ModePresentation(rawMode: raw)
             #expect(p.mode == .unknown, "raw: \(raw ?? "nil")")
             #expect(!p.hostLayersCanFire)
-            #expect(p.banner != nil)
-            #expect(p.callToAction == nil)
         }
     }
 
-    @Test("each mode has its own glyph")
-    func glyphsAreDistinct() {
-        let icons = ["host-translate", "standalone", "unknown"]
-            .map { ModePresentation(rawMode: $0).icon }
-        #expect(Set(icons).count == 3, "two modes share a glyph: \(icons)")
+    /// Each state reads differently, and none of them reads as a fault.
+    ///
+    /// This replaces a suite that asserted a `banner` containing the word
+    /// "inactive" beside a "Flash Slot Bindings" call to action -- an orange
+    /// warning triangle for a knob that had simply not been set up yet,
+    /// which made a working app look broken on first run. The three states
+    /// still have to be distinguishable; they no longer have to alarm.
+    @Test("every state has its own line, and none of them is a warning")
+    func statusLinesAreDistinctAndCalm() {
+        let lines = ["host-translate", "standalone", "unknown"]
+            .map { ModePresentation(rawMode: $0).statusText }
+        #expect(Set(lines).count == 3, "two states share a line: \(lines)")
+        for line in lines {
+            #expect(!line.isEmpty)
+            for alarming in ["inactive", "cannot", "never", "fail", "error", "!"] {
+                #expect(
+                    !line.lowercased().contains(alarming),
+                    "status reads as a fault (\(alarming)): \(line)"
+                )
+            }
+        }
+    }
+
+    /// A flashed knob is offered a reflash, not the first-run wording.
+    @Test("the action reads for the state it is in")
+    func theActionMatchesTheState() {
+        #expect(ModePresentation(rawMode: "host-translate").flashActionTitle == "Reflash")
+        #expect(ModePresentation(rawMode: "standalone").flashActionTitle == "Flash Knob")
+        #expect(ModePresentation(rawMode: "unknown").flashActionTitle == "Flash Knob")
     }
 }
 
@@ -273,8 +280,6 @@ struct DeviceBindingPresentationTests {
         )
         #expect(p.hostLayersCanFire)
         #expect(p.deviceBinding?.contains("layer 2") == true)
-        // Nothing is wrong, so there is still no warning banner.
-        #expect(p.banner == nil)
     }
 
     /// A blank summary is not a summary. Rendering one would put an empty
@@ -300,45 +305,8 @@ struct DeviceBindingPresentationTests {
             rawMode: "standalone",
             deviceBinding: "No device layer is bound to slot chords."
         )
-        #expect(p.banner != nil)
+        #expect(!p.hostLayersCanFire)
         #expect(p.deviceBinding != nil)
-        #expect(p.callToAction == "Flash Slot Bindings")
-    }
-}
-
-/// The reachability warning is TRUE and stays. Its length does not.
-///
-/// It used to render as four lines at the top of every layer tab: a
-/// paragraph, then a line naming a button on another pane, then a
-/// device-layer summary belonging to the hardware pane. Three restatements
-/// of one fact, repeated per layer. These pin the split -- a short line the
-/// user reads, and the explanation on hover.
-@Suite("Reachability notice length")
-struct ReachabilityNoticeTests {
-    /// A hard cap, because "keep it short" is not a mechanism. 90 characters
-    /// is roughly one line at the pane's width; the old banner was 137 and
-    /// carried two more lines under it.
-    @Test("the banner is one line")
-    func bannerIsOneLine() {
-        for raw in ["standalone", "unknown"] {
-            let banner = ModePresentation(rawMode: raw).banner
-            #expect(banner != nil, "raw: \(raw)")
-            #expect(banner?.count ?? 999 <= 90, "banner is \(banner?.count ?? 0) chars: \(banner ?? "")")
-            #expect(banner?.contains("\n") != true)
-        }
-    }
-
-    /// The explanation is not deleted, only moved. A warning with no way to
-    /// find out what it means is the other failure.
-    @Test("the explanation survives, on hover")
-    func detailCarriesTheExplanation() {
-        let standalone = ModePresentation(rawMode: "standalone")
-        #expect(standalone.detail?.isEmpty == false)
-        #expect(standalone.detail?.count ?? 0 > standalone.banner?.count ?? 0)
-        #expect(standalone.banner?.contains("inactive") == true)
-
-        // Nothing to warn about, nothing to explain.
-        #expect(ModePresentation(rawMode: "host-translate").detail == nil)
     }
 }
 

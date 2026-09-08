@@ -62,7 +62,13 @@ enum LedAppearance: Hashable, Sendable {
     case sweep
 
     /// True when the preview is a stand-in rather than a reproduction.
-    /// The pane labels these so nobody reads the animation as evidence.
+    ///
+    /// Nothing renders a caveat for it any more -- a footnote about how
+    /// faithfully one of six modes is reproduced was more words than the
+    /// preview it qualified. Kept because it is a true fact about `sweep`
+    /// and `previewsAreHonest` reads it: this build has never captured that
+    /// mode's pattern off the wire, and the day someone does, this is where
+    /// they will look.
     var isApproximate: Bool { self == .sweep }
 }
 

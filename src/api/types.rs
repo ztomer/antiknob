@@ -347,13 +347,16 @@ pub enum Command {
 pub fn led_mode_name(mode: u8) -> &'static str {
     match mode {
         0 => "off",
-        1 => "static",
-        2 => "reactive",
+        // Modes 1 and 2 are fixed colours on this device, not the effects
+        // the reference project's table names them for.
+        1 => "red",
+        2 => "green",
         3 => "ripple",
         4 => "rainbow",
-        // Never sent by this build: it crashes the firmware, and doing so
-        // wedged a real device's LED renderer until it was power-cycled.
-        5 => "unsupported (crashes this firmware)",
+        // Sent by the vendor app like any other mode, captured on this
+        // hardware. It was reported here as unsupported on the strength of
+        // one wedged LED renderer that mode 5 did not cause.
+        5 => "rgb",
         _ => "unknown",
     }
 }

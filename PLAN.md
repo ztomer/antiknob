@@ -288,12 +288,13 @@ translates slot chords into. The shape wanted is:
 * **The MCP server exposes the swap**, so an agent can set or define the
   active virtual layer the same way a user can.
 
-LED identity per layer: **by effect, not colour.** This knob has a single
-fixed colour -- mode 1 was set with blue, red and green in turn and stayed
-red every time -- so "breathing red / breathing green / multicoloured
-breathing" is not achievable as asked. The shipped layout uses
-`static` / `ripple` / `rainbow`, and mode 4 (rainbow) is the multicoloured
-effect the device arrives in. See item 5 for the protocol.
+LED identity per layer: **by colour, which is what was asked for.** This
+paragraph used to say the opposite -- that the knob has a single fixed
+colour, so red / green / multicoloured "is not achievable as asked". Wrong,
+and wrong from the right observation: setting mode 1 to blue, red and green
+in turn really did produce red three times. Mode 1 IS red. Mode 2 IS green.
+Each mode carries its own colour, which is why the colour bytes never
+mattered. The shipped layout is now `red` / `green` / `rainbow`.
 
 **Decided 2026-09-07: the virtual layer lives on the current device layer.**
 Media and Navigate stay hardware layers and keep their no-daemon property;
@@ -386,10 +387,13 @@ accepted and ignored:
    second copy of the old table, so `led-read` kept printing the wrong names
    after the shared one was fixed.
 
-**This knob ignores the colour bytes.** Measured with three distinct colours.
-They are still sent, correctly placed, because the 16-key device sharing this
-product id does honour them -- but nothing in this repo may promise colour on
-the knob, which is why the GUI's swatches now carry a notice.
+**This knob ignores the colour bytes, because each MODE carries its own
+colour.** Measured with three distinct colours on mode 1, which came back red
+every time -- mode 1 is red. They are still sent, correctly placed, because
+the 16-key device sharing this product id does honour them, and the GUI's
+swatches still carry a notice. What changed is the conclusion drawn from it:
+a device whose modes are red, green and two multicoloured effects can carry a
+per-layer colour identity perfectly well.
 
 Known firmware bug (#175): LEDs freeze after 2s-2m and only a replug
 recovers. If a mode change appears to do nothing, replug before debugging.

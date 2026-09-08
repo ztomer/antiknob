@@ -108,14 +108,27 @@ fn test_e2e_invalid_action_syntax_rejected() {
 #[test]
 fn test_e2e_invalid_led_syntax_rejected() {
     assert!(build_led_packet(0, "unknown_mode").is_err());
-    // Mode 5 is REFUSED. The vendor app does send it, and it crashes this
-    // firmware: doing so wedged a real knob's LED renderer until the device
-    // was power-cycled, sitting lit on battery meanwhile. "The vendor sends
-    // it" is not "it is safe to send", and this test exists because an
-    // earlier version of this file argued the opposite twice.
-    for spec in ["mode5", "custom", "custom rainbow"] {
-        let err = build_led_packet(0, spec).expect_err(spec);
-        assert!(err.to_string().contains("crashes"), "{err}");
+    // Mode 5 is ALLOWED, reversing the refusal this test used to pin.
+    //
+    // The refusal was right to resist the argument it was resisting. "The
+    // vendor app sends it" is not "it is safe to send", and that inference
+    // had been made and reverted twice. It is not the evidence now: the
+    // OWNER OF THE DEVICE reported watching mode 5 render a second
+    // multicoloured effect on this knob. An observation of the hardware
+    // outranks an inference about the hardware, in both directions.
+    //
+    // What most likely happened the night mode 5 was blamed: the known
+    // freeze bug (kriomant/ch57x-keyboard-tool#175) strikes 2s-2m after ANY
+    // mode change and needs a replug. A mode change followed by a frozen
+    // renderer is exactly what that looks like, and mode 5 was the mode
+    // being changed to at the time.
+    //
+    // If a mode-5 write is ever seen to wedge a knob again, restore the
+    // refusal -- but record what distinguished that run from this report,
+    // because "it crashed once" is what was believed for weeks.
+    for spec in ["mode5", "custom", "rgb"] {
+        let p = build_led_packet(0, spec).unwrap_or_else(|e| panic!("{spec}: {e}"));
+        assert_eq!(p[4], 5, "{spec}");
     }
     // The multicoloured effect is mode 4.
     assert_eq!(build_led_packet(0, "rainbow").expect("rainbow")[4], 4);

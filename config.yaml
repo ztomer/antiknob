@@ -19,11 +19,13 @@ layers:
   # ----------------------------------------------------------------------------
   # Layer 0: Default Media & Audio Controls
   # ----------------------------------------------------------------------------
-  # LED identity per layer. This knob has ONE colour -- setting three
-  # different colours was tried and every one came out red -- so layers are
-  # told apart by EFFECT, not colour. Mode 4 (rainbow) is the multicoloured
-  # effect the device ships in. Mode 5 crashes the firmware; never use it.
-  - led: "static"
+  # LED identity per layer, by COLOUR -- which is what was asked for
+  # originally and was wrongly recorded as impossible. Setting mode 1 to
+  # three different colours produced red every time, and that was read as
+  # "this knob has one colour". It is not: mode 1 IS red and mode 2 IS
+  # green, each carrying its own colour whatever bytes are sent. So the
+  # layers are red, green and multicoloured.
+  - led: "red"
     buttons:
       - ["play", "prev", "next"]
     knobs:
@@ -34,7 +36,7 @@ layers:
   # ----------------------------------------------------------------------------
   # Layer 1: Navigation & Productivity Shortcuts
   # ----------------------------------------------------------------------------
-  - led: "ripple"
+  - led: "green"
     buttons:
       - ["cmd-c", "cmd-v", "cmd-z"]
     knobs:

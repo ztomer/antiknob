@@ -14,20 +14,27 @@ struct LedMode: Identifiable, Hashable {
     /// The selectable modes, in display order.
     ///
     /// These are the 514c:8850's own modes, watched one by one on real
-    /// hardware. The previous list carried the 1189:884x names -- it offered
-    /// "Shock (Breathe)" and "Press (Reactive)" for modes that are reactive
-    /// and rainbow here, so picking one gave an effect the label did not
-    /// describe. Mode 5 is deliberately absent: it crashes this firmware.
+    /// hardware. Two rounds of correction got here. The list first carried
+    /// the 1189:884x names, offering "Shock (Breathe)" and "Press
+    /// (Reactive)" for modes that are nothing of the sort; it then carried
+    /// effect names for modes 1 and 2, which are fixed COLOURS on this
+    /// device -- red and green, whatever colour bytes are sent.
+    ///
+    /// Mode 5 is here now. It was left out as "crashes this firmware", which
+    /// it does not: the owner watched it render a second multicoloured
+    /// effect, and the vendor app sends it while walking its own buttons.
     static let all: [LedMode] = [
-            LedMode(id: "static", name: "Static",
-                    desc: "Steady illumination", icon: "lightbulb.fill"),
-            LedMode(id: "reactive", name: "Reactive",
-                    desc: "Lights up in response to input", icon: "hand.tap.fill"),
+            LedMode(id: "red", name: "Red",
+                    desc: "Steady red", icon: "lightbulb.fill"),
+            LedMode(id: "green", name: "Green",
+                    desc: "Steady green", icon: "lightbulb.led.wide.fill"),
             LedMode(id: "ripple", name: "Ripple",
                     desc: "Ripple effect on input", icon: "waveform.path.ecg"),
             LedMode(id: "rainbow", name: "Rainbow",
                     desc: "Cycling multicolour — the effect the knob ships in",
                     icon: "rainbow"),
+            LedMode(id: "rgb", name: "RGB",
+                    desc: "A second multicolour effect", icon: "sparkles"),
             LedMode(id: "off", name: "Off",
                     desc: "Disable LEDs to conserve power", icon: "power")
         ]

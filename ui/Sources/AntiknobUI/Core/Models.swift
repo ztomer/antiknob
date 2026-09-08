@@ -50,15 +50,20 @@ enum MouseButton: String, Codable, CaseIterable, Hashable, Sendable {
 ///
 /// Mirrors `led_mode_name` on the Rust side; the Inspector prints the number
 /// beside the name so a drift between the two is visible rather than silent.
-/// The previous inline ternary chain fell through to "Press" for anything
-/// above 3, which mislabelled mode 5 (custom).
+/// It drifted anyway: this table kept the 1189:884x family names
+/// ("Backlight", "Shock") for months after the Rust side was corrected,
+/// while its own comment claimed to mirror it. A comment is not a mechanism.
+///
+/// These are the 514c:8850's modes as the knob actually renders them: 1 and
+/// 2 are fixed COLOURS, not effects, and 5 is a second multicoloured mode
+/// that was wrongly believed to crash the firmware.
 let ledModeNames: [Int: String] = [
     0: "Off",
-    1: "Backlight",
-    2: "Shock (Breathe)",
-    3: "Shock 2 (Rapid)",
-    4: "Press (Reactive)",
-    5: "Custom"
+    1: "Red",
+    2: "Green",
+    3: "Ripple",
+    4: "Rainbow",
+    5: "RGB"
 ]
 
 /// The link the knob is on.

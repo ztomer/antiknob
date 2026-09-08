@@ -302,26 +302,30 @@ layers: []
     #[test]
     fn the_starter_layout_gives_each_layer_its_own_effect() {
         let cfg: DeviceConfig = serde_yaml::from_str(STARTER_CONFIG).expect("starter parses");
-        // Layers are told apart by EFFECT: this knob has one colour, proven
-        // by setting three different ones and getting red every time.
-        assert_eq!(cfg.layers[0].led.as_deref(), Some("static"));
-        assert_eq!(cfg.layers[1].led.as_deref(), Some("ripple"));
-        let a = crate::protocol::build_led_packet(0, "static").expect("static");
+        // Layers are told apart by COLOUR. The note this replaces said that
+        // was impossible because the knob has one colour -- it does not:
+        // mode 1 is red and mode 2 is green, which is why setting mode 1 to
+        // three different colours produced red three times.
+        assert_eq!(cfg.layers[0].led.as_deref(), Some("red"));
+        assert_eq!(cfg.layers[1].led.as_deref(), Some("green"));
+        let a = crate::protocol::build_led_packet(0, "red").expect("red");
         assert_eq!(&a[2..5], &[0xB0, 0x00, 0x01]);
-        let b = crate::protocol::build_led_packet(1, "ripple").expect("ripple");
-        assert_eq!(&b[2..5], &[0xB0, 0x01, 0x03]);
+        let b = crate::protocol::build_led_packet(1, "green").expect("green");
+        assert_eq!(&b[2..5], &[0xB0, 0x01, 0x02]);
     }
 
-    /// Mode 4 is the multicoloured effect the device ships in. Mode 5, which
-    /// an earlier version of this used for it, CRASHES the firmware -- doing
-    /// so wedged a real knob's LED until it was power-cycled.
+    /// Mode 4 is the multicoloured effect the device ships in. Mode 5 is a
+    /// second one and is no longer refused -- the vendor app sends it.
     #[test]
-    fn the_third_layer_uses_the_multicoloured_mode_and_never_mode_five() {
+    fn the_third_layer_uses_the_multicoloured_mode() {
         let cfg: DeviceConfig = serde_yaml::from_str(STARTER_CONFIG).expect("starter parses");
         assert_eq!(cfg.layers[2].led.as_deref(), Some("rainbow"));
         let packet = crate::protocol::build_led_packet(2, "rainbow").expect("rainbow packet");
         assert_eq!(&packet[2..5], &[0xB0, 0x02, 0x04]);
-        assert!(crate::protocol::build_led_packet(2, "mode5").is_err());
+        assert_eq!(
+            crate::protocol::build_led_packet(2, "mode5").expect("mode5")[4],
+            5
+        );
     }
 
     #[test]

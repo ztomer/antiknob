@@ -8,15 +8,25 @@ use anyhow::{anyhow, Result};
 
 /// Every LED mode name this build can send, in mode order.
 ///
-/// The request was a *breathing* colour per layer and none of these is
-/// known to be one -- the vendor mode table is only partly mapped and
-/// `led_mode_name` reports a mode 5 ("custom") nothing here can produce.
-/// `antiknob led-probe` walks this list against the hardware so the
-/// question can be answered by looking rather than by guessing.
-/// Mode names, in mode order, from hardware testing on a 514c:8850
-/// (kriomant/ch57x-keyboard-tool#173). Mode 5 is omitted deliberately: it
-/// crashes this firmware.
-pub const LED_MODE_NAMES: [&str; 5] = ["off", "static", "reactive", "ripple", "rainbow"];
+/// Named for what the knob DOES, because that is what was finally looked
+/// at. The previous names came from `kriomant/ch57x-keyboard-tool#173` and
+/// describe effects (`static`, `reactive`) rather than this device's
+/// behaviour: on a `514c:8850` mode 1 is red and mode 2 is green, fixed,
+/// whatever colour bytes are sent. That is why setting mode 1 to blue, red
+/// and green in turn produced red three times -- not a device that ignores
+/// colour arbitrarily, but a mode that IS red.
+///
+/// Mode 5 is here. It was refused for weeks as "crashes the firmware", and
+/// it does not: a capture of ANTICATER.app walking its own mode buttons
+/// shows `03 FE B0 00 05` sent like any other, and the knob renders a
+/// second multicoloured effect. Whatever wedged the LED renderer once was
+/// not mode 5 -- the likeliest candidate is the known freeze bug
+/// (kriomant/ch57x-keyboard-tool#175), which strikes 2s-2m after ANY mode
+/// change and needs a replug.
+///
+/// Mode 3 is the one name here still taken on trust from #173; nobody has
+/// reported what this device shows for it.
+pub const LED_MODE_NAMES: [&str; 6] = ["off", "red", "green", "ripple", "rainbow", "rgb"];
 
 pub fn build_led_packet(layer: u8, mode: &str) -> Result<Vec<u8>> {
     let mut packet = vec![0u8; 64];
@@ -32,30 +42,32 @@ pub fn build_led_packet(layer: u8, mode: &str) -> Result<Vec<u8>> {
         return Err(anyhow!("Empty LED mode"));
     }
 
-    // Mode table for the 514c:8850, from hardware testing in
-    // kriomant/ch57x-keyboard-tool#173 and confirmed on a real knob by
-    // watching each one:
+    // Mode table for the 514c:8850, from watching the knob:
     //
-    //   0 off   1 static   2 reactive   3 ripple   4 rainbow   5 CRASHES
+    //   0 off   1 red   2 green   3 ripple(*)   4 rainbow   5 rgb
     //
-    // The older names (`backlight`, `shock`, `shock2`, `press`) came from
-    // the 1189:884x family and are kept as aliases so existing configs load,
-    // but they are not what this device calls these effects -- `press` in
-    // particular is mode 4, which is the rainbow.
+    // (*) mode 3 is the one entry still taken from
+    // kriomant/ch57x-keyboard-tool#173 rather than observed here.
     //
-    // Colour arguments are parsed and sent, and THIS knob ignores them:
-    // mode 1 was set with blue, red and green in turn and stayed red every
-    // time. The 16-key variant sharing this product id does honour them.
+    // Two names in the old table were wrong about this device rather than
+    // merely vague. `static` and `reactive` describe effects; modes 1 and 2
+    // are fixed COLOURS, red and green. That also explains the standing note
+    // that this knob "ignores the colour bytes": it does, but the reason is
+    // that each mode carries its own colour, not that the renderer discards
+    // them. The 16-key variant sharing this product id does honour them.
+    //
+    // The older names (`backlight`, `shock`, `shock2`, `press`, `static`,
+    // `reactive`) are kept as aliases so existing configs keep loading.
     match parts[0] {
         "off" | "mode0" => {
             packet[4] = 0;
         }
-        "static" | "backlight" | "steady" | "mode1" => {
+        "red" | "static" | "backlight" | "steady" | "mode1" => {
             let entries = parse_palette(parts.get(1).copied().unwrap_or("white"))?;
             packet[4] = 1;
             fill_palette_entries(&mut packet, &entries);
         }
-        "reactive" | "shock" | "mode2" => {
+        "green" | "reactive" | "shock" | "mode2" => {
             let entries = parse_palette(parts.get(1).copied().unwrap_or("red"))?;
             packet[4] = 2;
             fill_palette_entries(&mut packet, &entries);
@@ -71,20 +83,20 @@ pub fn build_led_packet(layer: u8, mode: &str) -> Result<Vec<u8>> {
             packet[4] = 4;
             fill_palette_entries(&mut packet, &entries);
         }
-        // Refused, not supported. Mode 5 crashes this firmware -- sending it
-        // wedged a real knob's LED renderer until the device was
-        // power-cycled, and it had been sitting lit on battery meanwhile.
-        "custom" | "mode5" => {
-            return Err(anyhow!(
-                "LED mode 5 crashes the firmware on this device (see \
-                 kriomant/ch57x-keyboard-tool#173); use `rainbow` (mode 4) \
-                 for the multicoloured effect"
-            ));
+        // The second multicoloured effect. Refused for weeks as "crashes the
+        // firmware", which it does not: the vendor app sends `03 FE B0 00
+        // 05` while walking its own mode buttons, captured on this exact
+        // hardware, and the knob renders it.
+        "rgb" | "custom" | "mode5" => {
+            let entries = parse_palette(parts.get(1).copied().unwrap_or("rainbow"))?;
+            packet[4] = 5;
+            fill_palette_entries(&mut packet, &entries);
         }
         other => {
             return Err(anyhow!(
-                "Unknown LED mode '{}'. Available: off, static, reactive, ripple, rainbow \
-                 (mode0..mode4). Note this device ignores colour arguments.",
+                "Unknown LED mode '{}'. Available: off, red, green, ripple, rainbow, rgb \
+                 (mode0..mode5). Each mode carries its own colour on this device, so \
+                 colour arguments are sent but not honoured.",
                 other
             ))
         }
@@ -241,12 +253,50 @@ mod palette_tests {
         assert!(parse_palette("").is_err());
     }
 
-    /// Mode 5 crashed a real device's LED renderer. It must never build.
+    /// Mode 5 was refused for weeks as "crashes the firmware". It does not:
+    /// a capture of ANTICATER.app walking its own mode buttons shows
+    /// `03 FE B0 00 05` sent like any other mode, and the knob renders a
+    /// second multicoloured effect. This test used to pin the refusal, which
+    /// made it part of the defect rather than a guard against one.
     #[test]
-    fn mode_five_is_refused_and_says_why() {
-        for spec in ["mode5", "custom", "custom rainbow"] {
-            let err = build_led_packet(0, spec).expect_err(spec);
-            assert!(err.to_string().contains("crashes"), "{err}");
+    fn mode_five_builds_because_the_vendor_app_sends_it() {
+        for spec in ["mode5", "custom", "rgb", "rgb rainbow"] {
+            let p = build_led_packet(0, spec).unwrap_or_else(|e| panic!("{spec}: {e}"));
+            assert_eq!(p[4], 5, "{spec}");
+            assert_eq!(&p[..4], &[0x03, 0xFE, 0xB0, 0x00]);
+        }
+    }
+
+    /// Modes 1 and 2 are fixed COLOURS on this device, not the effects the
+    /// reference project's table names. The old names stay as aliases so
+    /// configs written against them keep loading.
+    #[test]
+    fn the_colour_names_and_their_legacy_aliases_reach_the_same_modes() {
+        for (spec, mode) in [
+            ("red", 1u8),
+            ("static", 1),
+            ("backlight", 1),
+            ("green", 2),
+            ("reactive", 2),
+            ("shock", 2),
+            ("rainbow", 4),
+            ("press", 4),
+            ("rgb", 5),
+            ("custom", 5),
+        ] {
+            let p = build_led_packet(0, spec).unwrap_or_else(|e| panic!("{spec}: {e}"));
+            assert_eq!(p[4], mode, "{spec}");
+        }
+    }
+
+    /// Every mode the device has must be nameable, or `led-read` reports a
+    /// live mode as unknown and `led-probe` cannot walk them all.
+    #[test]
+    fn every_mode_the_device_has_is_named_and_buildable() {
+        assert_eq!(LED_MODE_NAMES.len(), 6);
+        for (mode, name) in LED_MODE_NAMES.iter().enumerate() {
+            let p = build_led_packet(0, name).unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_eq!(p[4] as usize, mode, "{name}");
         }
     }
 
@@ -261,16 +311,19 @@ mod palette_tests {
 
     #[test]
     fn the_mode_table_matches_the_hardware_tested_one() {
+        // Named for what the knob shows, not for the reference project's
+        // effect names: mode 1 is red and mode 2 is green on this device.
         assert_eq!(
             LED_MODE_NAMES,
-            ["off", "static", "reactive", "ripple", "rainbow"]
+            ["off", "red", "green", "ripple", "rainbow", "rgb"]
         );
         for (name, want) in [
             ("off", 0u8),
-            ("static", 1),
-            ("reactive", 2),
+            ("red", 1),
+            ("green", 2),
             ("ripple", 3),
             ("rainbow", 4),
+            ("rgb", 5),
         ] {
             let p = build_led_packet(0, name).unwrap_or_else(|e| panic!("{name}: {e}"));
             assert_eq!(p[4], want, "{name}");

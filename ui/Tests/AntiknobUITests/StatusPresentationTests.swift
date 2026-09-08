@@ -87,12 +87,23 @@ struct LedModeNameTests {
         #expect(Set(names.compactMap { $0 }).count == 6, "two modes share a name: \(names)")
     }
 
-    /// The inline chain this replaced fell through to "Press" for anything
-    /// above 3, so mode 5 rendered as "Press (Reactive)".
-    @Test("custom mode is not mislabelled as press")
-    func customIsNotPress() {
-        #expect(ledModeNames[5] == "Custom")
-        #expect(ledModeNames[4] == "Press (Reactive)")
+    /// This test used to pin "Press (Reactive)" for mode 4 and "Custom" for
+    /// mode 5 -- the 1189:884x family's names, on a 514c:8850. So the table
+    /// drifted from the Rust side for months while a test held it there: the
+    /// assertion was not guarding the mapping, it was enforcing the defect.
+    ///
+    /// The names now say what the knob shows. Modes 1 and 2 are fixed
+    /// colours, and mode 5 is a second multicoloured effect rather than
+    /// something unsupported.
+    @Test("the mode names are this device's, not the 884x family's")
+    func modeNamesAreThisDevices() {
+        #expect(ledModeNames[1] == "Red")
+        #expect(ledModeNames[2] == "Green")
+        #expect(ledModeNames[4] == "Rainbow")
+        #expect(ledModeNames[5] == "RGB")
+        for stale in ["Backlight", "Shock (Breathe)", "Shock 2 (Rapid)", "Press (Reactive)"] {
+            #expect(!ledModeNames.values.contains(stale), "884x name survives: \(stale)")
+        }
     }
 
     @Test("a mode number the firmware should never send has no name")
@@ -157,19 +168,23 @@ struct LedModeTests {
     @Test("the modes are the 8850's, not the 884x names")
     func modesMatchTheDevice() {
         let ids = LedMode.all.map(\.id)
-        #expect(ids == ["static", "reactive", "ripple", "rainbow", "off"], "\(ids)")
-        // The old list's names described effects this device does not have.
-        #expect(!ids.contains("backlight"))
-        #expect(!ids.contains("shock"))
-        #expect(!ids.contains("press"))
+        #expect(ids == ["red", "green", "ripple", "rainbow", "rgb", "off"], "\(ids)")
+        // The old lists named effects this device does not have, and then
+        // named effects for modes that are fixed colours.
+        for stale in ["backlight", "shock", "press", "static", "reactive"] {
+            #expect(!ids.contains(stale), "stale mode id survives: \(stale)")
+        }
     }
 
-    /// Mode 5 crashes the firmware. It must not be reachable from the UI.
-    @Test("mode 5 is not offered anywhere in the picker")
-    func modeFiveIsAbsent() {
-        for m in LedMode.all {
-            #expect(m.id != "custom" && m.id != "mode5", "mode 5 is selectable: \(m.id)")
-        }
+    /// Mode 5 is offered. It was hidden as "crashes the firmware", which it
+    /// does not -- the owner watched it render, and the vendor app sends it
+    /// while walking its own mode buttons. Every mode the device has should
+    /// be reachable, or the picker quietly withholds one.
+    @Test("every mode the device has is offered, mode 5 included")
+    func everyModeIsOffered() {
+        let ids = Set(LedMode.all.map(\.id))
+        #expect(ids.contains("rgb"), "mode 5 is not selectable: \(ids)")
+        #expect(ids.count == 6)
     }
 
     @Test("the colour notice says colour is ignored, not that it is broken")

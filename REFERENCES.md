@@ -95,11 +95,17 @@ not opened until much later.
   accepts the write, stores the mode, reads it back correctly, and changes
   nothing. Confirmed here: mode 0 turned the light off only once the init
   preceded it.
-* **Mode table for this device**: `0 off, 1 static, 2 reactive, 3 ripple,
-  4 rainbow`. Mode 4 is the multicoloured effect the knob ships in.
-* **Mode 5 CRASHES the firmware.** It wedged this knob's LED renderer until
-  the device was power-cycled -- and this model has no power switch and stays
-  lit on battery when unplugged.
+* **Mode table for this device**: `0 off, 1 red, 2 green, 3 ripple,
+  4 rainbow, 5 rgb`. Modes 1 and 2 are fixed COLOURS, not the effects #173
+  names them for; mode 3 is the one entry still taken from #173 rather than
+  watched here. Mode 4 is the multicoloured effect the knob ships in.
+* **Mode 5 does NOT crash the firmware.** This file said it did for weeks,
+  and the claim reached a refusal in `led.rs`, a refusal in the GUI, and
+  three tests that pinned it. Two things retired it: the owner watched mode 5
+  render a second multicoloured effect, and a capture of ANTICATER.app
+  walking its own mode buttons shows `03 FE B0 00 05` sent like any other.
+  The wedged renderer that started the claim was most likely the known freeze
+  bug below, which strikes after ANY mode change.
 * **The 3-button knob ignores the colour bytes.** Mode 1 was set with blue,
   red and green in turn and stayed red every time. The 16-key device sharing
   this product id does honour them, which is why they are still sent.

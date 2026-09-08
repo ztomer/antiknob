@@ -211,7 +211,19 @@ breathing" is not achievable as asked. The shipped layout uses
 `static` / `ripple` / `rainbow`, and mode 4 (rainbow) is the multicoloured
 effect the device arrives in. See item 5 for the protocol.
 
-Open questions before this is buildable:Open questions before this is buildable:
+**Decided 2026-09-07: the virtual layer lives on the current device layer.**
+Media and Navigate stay hardware layers and keep their no-daemon property;
+the virtual layer is carried by whichever device layer is bound to slot
+chords, which is what `bind-slots --layer N` already flashes. No device-layer
+switching is attempted, because this knob cannot do it (below) -- the user
+picks the layer once and that is the one the daemon drives.
+
+What that leaves to build: the daemon has to KNOW which device layer carries
+the virtual layer rather than assuming, `host.json` has to record it, and the
+GUI has to say plainly that the other two layers are standalone and
+unaffected by the daemon.
+
+The reasoning that was open before that decision:
 
 * The virtual layer only fires when the knob sends slot chords, so it
   presupposes host-translate mode -- and this hardware currently cannot be

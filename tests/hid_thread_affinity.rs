@@ -67,6 +67,33 @@ fn api_get_status_from_a_worker_thread_never_traps() {
         .expect("socket-style worker panicked in get_status");
 }
 
+/// The enumeration must be refreshed before EVERY job, not once at startup.
+///
+/// `HidApi::new` snapshots the bus. A daemon that never re-enumerates keeps
+/// answering from that snapshot for its whole life, so the first replug
+/// gives the knob a new device path and every subsequent open fails against
+/// the old one -- while `get_status` cheerfully reports the stale list as
+/// connected. Observed 2026-09-08: the daemon held `DevSrvsID:4315664188`
+/// and a fresh CLI saw `DevSrvsID:4316393885`, and LED writes through the
+/// daemon had been failing silently since whenever the cable last moved.
+///
+/// Counted rather than inspected, because "did the process notice a replug"
+/// is otherwise only answerable by unplugging something. Removing the
+/// `refresh_devices` call in `device::thread` leaves this at zero.
+#[test]
+fn every_hid_job_re_enumerates_the_bus() {
+    let before = antiknob::device::enumeration_refreshes();
+    for _ in 0..3 {
+        // The job body is irrelevant; the refresh happens around it.
+        antiknob::device::with_hid(|_| Ok(())).expect("hid job");
+    }
+    let after = antiknob::device::enumeration_refreshes();
+    assert!(
+        after >= before + 3,
+        "expected one re-enumeration per job, counter went {before} -> {after}"
+    );
+}
+
 /// Structural pin: the `hidapi` crate is reachable only from `src/device/`.
 ///
 /// Naming `device::HidDevice` in a signature is fine -- a handle can only be

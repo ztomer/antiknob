@@ -43,7 +43,7 @@ struct LayerDetail: View {
 
                 layerSection
 
-                ReachabilityNotice(mode: store.modePresentation)
+                ReachabilityNotice(mode: store.modePresentation, store: store)
 
                 Section("Knob Gestures") {
                     PropertyGrid(horizontalSpacing: 12, verticalSpacing: 2) {

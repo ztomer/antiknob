@@ -12,7 +12,7 @@
 //! assumes. Pure: a table in, a mode out.
 
 use super::verify::parse_record;
-use crate::protocol::{key_id_for_knob, KnobEvent};
+use crate::protocol::{key_id_for_knob, KnobEvent, GESTURES_PER_KNOB};
 
 /// What the firmware will do when the knob is turned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,8 +39,12 @@ impl KnobMode {
     }
 }
 
-/// HID keycodes for F16/F17/F18, the three slot chords `bind-slots` writes.
-const SLOT_KEYCODES: [u8; 3] = [0x6B, 0x6C, 0x6D];
+/// HID keycodes for F16..F20, the five slot chords `bind-slots` writes.
+///
+/// Three when `bind-slots` wrote three. A knob whose hold+twist slots
+/// carried F19/F20 and whose other three had been reflashed standalone
+/// would then read as Standalone -- a mode the daemon can in fact hear.
+const SLOT_KEYCODES: [u8; GESTURES_PER_KNOB] = [0x6B, 0x6C, 0x6D, 0x6E, 0x6F];
 /// Control + Alt, the modifier pair those chords carry.
 const SLOT_MODS: u8 = 0x01 | 0x04;
 /// Slot records are keyboard actions.
@@ -52,7 +56,10 @@ const KIND_KEYBOARD: u8 = 1;
 /// decides where bindings are written, so a wrong count here misreads the
 /// table exactly as it would misflash it.
 pub fn classify(records: &[Vec<u8>], button_count: usize) -> KnobMode {
-    let knob_ids: Vec<u8> = [KnobEvent::RotateCCW, KnobEvent::Press, KnobEvent::RotateCW]
+    // All five gestures, not the first three: hold+twist occupies real
+    // slots on this firmware, and a classifier that never looks at them
+    // reports on two thirds of the knob while sounding certain about it.
+    let knob_ids: Vec<u8> = KnobEvent::ALL
         .iter()
         .map(|e| key_id_for_knob(button_count, 0, *e))
         .collect();
@@ -152,9 +159,35 @@ mod tests {
     /// confidently report the mode of rows it never examined.
     #[test]
     fn the_button_count_decides_which_slots_are_read() {
-        // The same table read as a 15-button device looks at 16/17/18.
+        // The same table read as a 15-button device looks at 16..20.
         assert_eq!(classify(&standalone_table(), 15), KnobMode::Unknown);
         assert_eq!(classify(&host_translate_table(), 15), KnobMode::Unknown);
+    }
+
+    /// Hold+twist slots count. A knob bound by the current `bind-slots` --
+    /// which writes all five chords -- must read as host-translate even
+    /// when only the hold+twist pair survives a partial reflash, because
+    /// the daemon really can hear those two.
+    #[test]
+    fn the_hold_twist_slots_are_read_too() {
+        // One button, so gestures sit at keys 2..6 and hold+twist at 5/6.
+        let only_hold_twist = vec![
+            rec(2, 2, 0xEA, 0, 0),         // CCW: volume down, standalone
+            rec(3, 2, 0xE2, 0, 0),         // press: mute, standalone
+            rec(4, 2, 0xE9, 0, 0),         // CW: volume up, standalone
+            rec(5, 1, 0, SLOT_MODS, 0x6E), // hold+twist L: ctrl-alt-F19
+            rec(6, 1, 0, SLOT_MODS, 0x6F), // hold+twist R: ctrl-alt-F20
+        ];
+        assert_eq!(classify(&only_hold_twist, 1), KnobMode::HostTranslate);
+    }
+
+    /// The five slots a fully bound one-button VK01 carries.
+    #[test]
+    fn a_fully_bound_one_button_knob_reads_as_host_translate() {
+        let bound: Vec<Vec<u8>> = (0..GESTURES_PER_KNOB)
+            .map(|i| rec(2 + i as u8, 1, 0, SLOT_MODS, SLOT_KEYCODES[i]))
+            .collect();
+        assert_eq!(classify(&bound, 1), KnobMode::HostTranslate);
     }
 
     /// One chord among ordinary actions still means the daemon can act --

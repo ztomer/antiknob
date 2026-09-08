@@ -13,16 +13,57 @@
 import Foundation
 
 extension ConfigStore {
-    func setLed(layer: Int, mode: String, color: String?) {
+    /// Write a layer's backlight mode and report what the firmware holds
+    /// afterwards.
+    ///
+    /// The completion carries the daemon's READ-BACK, not the fact that a
+    /// packet was sent. This call used to read a `status` key the daemon has
+    /// never sent, so its `?? "OK"` fallback fired every single time -- the
+    /// pane displayed a success string the app made up, for a write nothing
+    /// had confirmed. On a `514c:8850` that is precisely the failure mode:
+    /// without its init packet the firmware accepts an LED write, stores it,
+    /// reads it back, and changes nothing.
+    func setLed(
+        layer: Int,
+        mode: String,
+        completion: @escaping @MainActor @Sendable (Result<AppliedLedMode, Error>) -> Void
+    ) {
         Task.detached(priority: .userInitiated) {
             do {
-                let status = try SocketClient.shared.setLed(layer: layer, mode: mode, color: color)
+                let applied = try SocketClient.shared.setLed(layer: layer, mode: mode)
                 await MainActor.run { [weak self] in
-                    self?.statusMessage = status
+                    self?.statusMessage = "Layer \(layer + 1) backlight: \(applied.name)"
+                    completion(.success(applied))
                 }
             } catch {
                 await MainActor.run { [weak self] in
                     self?.statusMessage = "LED error: \(error.localizedDescription)"
+                    completion(.failure(error))
+                }
+            }
+        }
+    }
+
+    /// Switch the daemon's active host layer.
+    ///
+    /// The menu bar's layer list used to assign `store.activeLayerIdx` and
+    /// stop there -- a `@Published` value nothing else read and nothing ever
+    /// sent. Picking a layer moved a checkmark and changed no behaviour, on
+    /// a menu whose entire purpose is switching layers. `SocketClient.setLayer`
+    /// existed the whole time and had no callers.
+    func setActiveLayer(_ index: Int) {
+        let previous = activeLayerIdx
+        // Moved at once so the menu answers the click, then corrected by the
+        // daemon's reply -- or put back if it refuses.
+        activeLayerIdx = index
+        Task.detached(priority: .userInitiated) {
+            do {
+                try SocketClient.shared.setLayer(index)
+                await MainActor.run { [weak self] in self?.refreshStatus() }
+            } catch {
+                await MainActor.run { [weak self] in
+                    self?.activeLayerIdx = previous
+                    self?.statusMessage = "Layer switch failed: \(error.localizedDescription)"
                 }
             }
         }

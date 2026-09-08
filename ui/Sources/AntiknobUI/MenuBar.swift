@@ -77,7 +77,7 @@ public struct MenuBarView: View {
 
         ForEach(Array(store.cfg.layers.enumerated()), id: \.offset) { idx, layer in
             Button {
-                store.activeLayerIdx = idx
+                store.setActiveLayer(idx)
             } label: {
                 if store.activeLayerIdx == idx {
                     Text("✓ \(layer.name.isEmpty ? "Layer \(idx + 1)" : layer.name)")

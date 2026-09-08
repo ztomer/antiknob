@@ -3,7 +3,9 @@ use hidapi::HidApi;
 use serde::{Deserialize, Serialize};
 
 mod classify;
+mod led_state;
 pub mod mode;
+mod select;
 #[cfg(test)]
 mod slot_address_tests;
 mod slot_read;
@@ -11,8 +13,10 @@ pub mod snoop;
 mod thread;
 pub mod verify;
 pub use classify::classify_device;
+pub use led_state::{read_led_mode, send_led};
+pub use select::{primary_device, primary_transport};
 pub use slot_read::{read_full_table, read_slot, BURST_QUERIES, BURST_WIDTH};
-pub use thread::{with_device, with_hid, HidDevice};
+pub use thread::{enumeration_refreshes, with_device, with_hid, HidDevice};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TransportType {
@@ -173,27 +177,6 @@ pub struct DeviceMatch {
 
 fn default_iface_no() -> i32 {
     -1
-}
-
-pub fn primary_transport(matches: &[DeviceMatch]) -> Option<TransportType> {
-    if matches.is_empty() {
-        return None;
-    }
-    if matches.iter().any(|m| m.transport == TransportType::Usb) {
-        Some(TransportType::Usb)
-    } else if matches
-        .iter()
-        .any(|m| m.transport == TransportType::Wireless24G)
-    {
-        Some(TransportType::Wireless24G)
-    } else if matches
-        .iter()
-        .any(|m| m.transport == TransportType::Bluetooth)
-    {
-        Some(TransportType::Bluetooth)
-    } else {
-        Some(TransportType::Usb)
-    }
 }
 
 /// Enumerates every attached Anticater/CH57x interface, across transports.
@@ -397,51 +380,10 @@ pub fn read_slot_table(dev: &HidDevice, slots_per_layer: u8, layers: u8) -> Vec<
 /// How many device layers the firmware holds.
 pub const DEVICE_LAYERS: u8 = 3;
 
-/// LED state read-back, mirroring the vendor app's
-/// `Widget::Read_RgbLed_DataDsp`: query `[FA B0 layer]` (report 0x03);
-/// the reply's byte 2 is the layer's current LED mode. Read-only.
-pub fn read_led_mode(dev: &HidDevice, layer: u8) -> Result<u8> {
-    let mut payload = [0u8; 64];
-    payload[0] = 0xFA;
-    payload[1] = 0xB0;
-    payload[2] = layer;
-    send_report(dev, &payload)?;
-
-    let mut buf = [0u8; 64];
-    let n = dev
-        .read_timeout(&mut buf, 500)
-        .context("Timed out reading LED state from device")?;
-    if n < 3 {
-        anyhow::bail!("Short LED reply ({} bytes)", n);
-    }
-    Ok(buf[2])
-}
-
 /// Commit staged key writes, mirroring the vendor app's `HID_write`
 /// tail (`[FD FE FF]` + sleep): without it the firmware may ignore
 /// flashed packets. Call once after a batch of key writes, never for
 /// LED-only updates (uncharted; LED path untouched).
-/// Send an LED packet, preceded by the init this firmware requires.
-///
-/// Without `03 FB FB FB` first, a `514c:8850` ACCEPTS the LED write, stores
-/// the mode, reads it back correctly, and changes nothing. A read-back that
-/// confirms a write and says nothing about its effect is the worst kind of
-/// instrument, and it cost most of a debugging session before the vendor
-/// app's own traffic showed the init going out on connect.
-///
-/// Documented from hardware testing in kriomant/ch57x-keyboard-tool#173, and
-/// confirmed here: mode 0 turned this knob's light off only once the init
-/// preceded it, having done nothing for hours before.
-///
-/// No commit follows. The vendor app sends none after LED writes, and the
-/// keymap commit (`FD FE FF`) is a different instruction.
-pub fn send_led(dev: &HidDevice, packet: &[u8]) -> Result<()> {
-    send_report(dev, &crate::led::led_init_packet())?;
-    std::thread::sleep(std::time::Duration::from_millis(20));
-    send_report(dev, packet)?;
-    Ok(())
-}
-
 pub fn send_commit(dev: &HidDevice) -> Result<()> {
     let mut payload = [0u8; 64];
     payload[0] = 0xFD;

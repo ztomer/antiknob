@@ -7,52 +7,13 @@ use crate::apps;
 use crate::config::DeviceConfig;
 use crate::device;
 use crate::host::bind::{flash_slot_bindings, BIND_LAYERS};
-use crate::host::tap::TapEngine;
 use crate::host::HostConfig;
 use crate::protocol::{self, Action};
 use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
-
-/// Tap health status for diagnostics.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct TapHealth {
-    pub active: bool,
-    pub error: Option<String>,
-}
-
-/// Execution context for API commands.
-pub struct ApiContext {
-    pub config_path: PathBuf,
-    pub tap_engine: Option<Arc<Mutex<TapEngine>>>,
-    pub tap_health: Arc<Mutex<TapHealth>>,
-}
-
-impl ApiContext {
-    pub fn new(config_path: PathBuf, tap_engine: Option<Arc<Mutex<TapEngine>>>) -> Self {
-        Self {
-            config_path,
-            tap_engine,
-            tap_health: Arc::new(Mutex::new(TapHealth::default())),
-        }
-    }
-
-    pub fn with_health(
-        config_path: PathBuf,
-        tap_engine: Option<Arc<Mutex<TapEngine>>>,
-        tap_health: Arc<Mutex<TapHealth>>,
-    ) -> Self {
-        Self {
-            config_path,
-            tap_engine,
-            tap_health,
-        }
-    }
-}
 
 /// Execute an API command and return a JSON result.
 /// The button count from the installed layout, which is where every other
@@ -62,6 +23,14 @@ fn installed_button_count() -> Result<usize> {
     let path = crate::config::resolve_device_config_path(&home, None)?;
     Ok(DeviceConfig::load_from_file(&path)?.button_count())
 }
+
+#[path = "context.rs"]
+mod context;
+pub use context::{ApiContext, TapHealth};
+
+#[path = "describe.rs"]
+mod describe;
+use describe::describe_commands;
 
 #[path = "device_cmds.rs"]
 mod device_cmds;
@@ -97,11 +66,19 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
             let health = ctx.tap_health.lock().unwrap().clone();
             let power = PowerStatus::current(&devices);
 
+            // WHICH interface the commands go to, named alongside the full
+            // list. Every caller that wanted "the device" was taking
+            // `devices[0]`, which is whichever HID interface enumerated
+            // first -- a keyboard endpoint on this hardware, not the vendor
+            // endpoint the tool actually drives.
+            let primary_device = device::primary_device(&devices);
+
             Ok(json!({
                 "connected": connected,
                 "transport": transport_str,
                 "device_count": devices.len(),
                 "devices": devices,
+                "primary_device": primary_device,
                 "power": power,
                 "active_layer": active_layer,
                 "layers_count": layers_count,
@@ -113,6 +90,8 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
         }
 
         Command::Ping {} => Ok(json!({})),
+
+        Command::ListCommands {} => Ok(json!({ "commands": describe_commands() })),
 
         Command::GetConfig {} => {
             let cfg = match &ctx.tap_engine {
@@ -254,12 +233,23 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                 _ => mode,
             };
             let packet = protocol::build_led_packet(layer, &spec)?;
-            device::with_device(move |dev| device::send_led(dev, &packet))
-                .context("Cannot drive the Anticater USB device")?;
+            // Written and then READ BACK on the same device handle. This
+            // firmware accepts an LED write, stores it, and changes nothing
+            // when the init packet is missing, so "the bytes went out" has
+            // never been evidence that the light changed. The reply carries
+            // what the device holds now, and the settings app renders that
+            // instead of the word "OK" it used to invent.
+            let applied = device::with_device(move |dev| {
+                device::send_led(dev, &packet)?;
+                device::read_led_mode(dev, layer)
+            })
+            .context("Cannot drive the Anticater USB device")?;
             Ok(json!({
                 "ok": true,
                 "layer": layer,
-                "spec": spec
+                "spec": spec,
+                "mode": applied,
+                "mode_name": led_mode_name(applied)
             }))
         }
 
@@ -281,7 +271,12 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                 Some(n) => n,
                 None => installed_button_count()?,
             };
-            let slots = u8::try_from(buttons + 3).unwrap_or(u8::MAX);
+            // Five slots per knob, not three. Reading `buttons + 3` stopped
+            // the walk two slots short of the hold+twist pair, so the two
+            // gestures the classifier now examines were never in the table
+            // it examined them in.
+            let slots =
+                u8::try_from(buttons + crate::protocol::GESTURES_PER_KNOB).unwrap_or(u8::MAX);
             let table = device::with_device(move |dev| {
                 Ok(device::read_slot_table(dev, slots, device::DEVICE_LAYERS))
             })
@@ -302,6 +297,14 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
             Ok(json!({
                 "mode": mode.as_str(),
                 "buttons": buttons,
+                // The slots this layout puts the knob's gestures on. The
+                // declared button count places them, and a layout that
+                // declares the wrong number moves every gesture along
+                // without any surface saying so -- so the surfaces say so.
+                "knob_key_ids": crate::protocol::KnobEvent::ALL
+                    .iter()
+                    .map(|e| crate::protocol::key_id_for_knob(buttons, 0, *e))
+                    .collect::<Vec<u8>>(),
                 "slots_read": table.len(),
                 "host_layers_can_fire": mode == device::mode::KnobMode::HostTranslate,
                 "device_binding": arrangement,
@@ -323,13 +326,26 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                      readable; pass `buttons` explicitly",
                 )?,
             };
+            // The key IDs this flash targets, worked out before the write so
+            // they can be reported whether or not it succeeds. A layout that
+            // declares the wrong number of buttons writes a well-formed run
+            // of packets into slots the knob never reads, and the device
+            // reports no error -- so the only way anyone finds out is if the
+            // reply says WHICH keys were written. It used to say only how
+            // many, which is exactly the count a misflash also produces.
+            let key_ids: Vec<u8> = crate::protocol::KnobEvent::ALL
+                .iter()
+                .map(|e| crate::protocol::key_id_for_knob(buttons, 0, *e))
+                .collect();
             let count =
                 device::with_device(move |dev| flash_slot_bindings(dev, buttons, &flash_layers))
                     .context("Cannot flash slot bindings to the Anticater USB device")?;
             Ok(json!({
                 "ok": true,
                 "flashed_slots": count,
-                "layers": target_layers
+                "layers": target_layers,
+                "buttons": buttons,
+                "key_ids": key_ids
             }))
         }
 

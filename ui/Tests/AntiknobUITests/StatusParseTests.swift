@@ -113,3 +113,52 @@ struct StatusParseTests {
         #expect(parsed.hardwareFound == false)
     }
 }
+
+/// The device the pane NAMES must be the device the pane TALKS TO.
+///
+/// A knob publishes several HID interfaces. `devices[0]` is whichever
+/// enumerated first, and on the hardware this was found on that is a
+/// `0x514c:0x4155` keyboard endpoint sitting four rows above the
+/// `0x514c:0x8850` knob every button on the pane drives. The daemon now
+/// names the vendor configuration endpoint it opens, and this reads that.
+@Suite("Primary device")
+struct PrimaryDeviceParseTests {
+    private let keyboardFirst: [[String: Any]] = [
+        ["name": "Anticater / LiQi (0x514c:0x4155)", "usage_page": 1],
+        ["name": "Anticater / LQKJ VK01 (0x514c:0x8850)", "usage_page": 1]
+    ]
+
+    @Test("the daemon's chosen endpoint wins over whatever enumerated first")
+    func primaryDeviceIsPreferred() {
+        let parsed = StatusParse.parse([
+            "devices": keyboardFirst,
+            "primary_device": [
+                "name": "Anticater / LQKJ VK01 (0x514c:0x8850)",
+                "usage_page": 0xFF00
+            ]
+        ])
+        #expect(parsed.product == "Anticater / LQKJ VK01 (0x514c:0x8850)")
+        #expect(parsed.hardwareFound)
+        // The full list is still carried; only the headline changed.
+        #expect(parsed.devices.count == 2)
+    }
+
+    /// An older daemon does not send the key. Falling back to the first
+    /// entry is what this build did everywhere, so it stays the fallback
+    /// rather than becoming "unknown".
+    @Test("a payload without a primary falls back to the first endpoint")
+    func fallsBackToFirstEndpoint() {
+        let parsed = StatusParse.parse(["devices": keyboardFirst])
+        #expect(parsed.product == "Anticater / LiQi (0x514c:0x4155)")
+    }
+
+    /// The daemon's active host layer, so the menu bar's checkmark tracks
+    /// the daemon rather than the last thing clicked in this process.
+    @Test("the active layer is read, and its absence is not read as zero")
+    func activeLayerIsCarried() {
+        #expect(StatusParse.parse(["active_layer": 2]).activeLayer == 2)
+        // The CLI's status has no engine to ask. Defaulting to 0 would put a
+        // checkmark on a layer nobody selected.
+        #expect(StatusParse.parse([:]).activeLayer == nil)
+    }
+}

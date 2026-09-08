@@ -117,6 +117,13 @@ pub enum Command {
     #[serde(rename = "ping")]
     Ping {},
 
+    /// Describe every command this build has. The settings app renders it
+    /// instead of a hand-kept list of its own, which had drifted to eleven
+    /// entries against seventeen real ones -- naming a `list_devices` that
+    /// does not exist and three parameters by the wrong name.
+    #[serde(rename = "list_commands")]
+    ListCommands {},
+
     #[serde(rename = "get_config")]
     GetConfig {},
 

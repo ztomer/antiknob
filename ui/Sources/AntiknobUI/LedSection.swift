@@ -1,223 +1,172 @@
-// LedSection.swift — Dynamic hardware LED lighting controls.
-// Sends live set_led commands to antiknob-daemon over the Unix domain socket.
+// LedSection.swift — the knob's backlight, and nothing this device cannot do.
+//
+// What used to be here and is not any more, with the reason:
+//
+//   Colour swatches. Eight of them, above a notice saying the firmware
+//   ignores every one. A control the app itself documents as inert is not a
+//   control; the mode carries its own colour on this device and that is the
+//   whole of the colour story. (`set_led`'s colour argument still exists on
+//   the wire for the 16-key variant that honours it -- that is a CLI matter,
+//   not something to offer here as though it did something.)
+//
+//   The 16-LED ring, Solid Fill and Spectrum Gradient. Sixteen beads this
+//   knob does not have, driven by two buttons that recoloured the picture
+//   and not the light. Spectrum Gradient never even opened the socket.
+//
+//   A footer promising "steady backlight, breath cycles, and press-reactive
+//   lighting", which named three things while the list above it named six
+//   different ones.
+//
+// What is here instead: the six real modes, a preview that animates each one
+// the way the knob renders it, and a read-back so the pane can say what the
+// firmware actually holds rather than what was last clicked.
 
 import SwiftUI
-
-/// One selectable LED mode. A named type rather than a 4-tuple: every use
-/// site read positionally before, and `id`/`name`/`desc` are all Strings.
-struct LedMode: Identifiable, Hashable {
-    let id: String
-    let name: String
-    let desc: String
-    let icon: String
-
-    /// The selectable modes, in display order.
-    ///
-    /// These are the 514c:8850's own modes, watched one by one on real
-    /// hardware. Two rounds of correction got here. The list first carried
-    /// the 1189:884x names, offering "Shock (Breathe)" and "Press
-    /// (Reactive)" for modes that are nothing of the sort; it then carried
-    /// effect names for modes 1 and 2, which are fixed COLOURS on this
-    /// device -- red and green, whatever colour bytes are sent.
-    ///
-    /// Mode 5 is here now. It was left out as "crashes this firmware", which
-    /// it does not: the owner watched it render a second multicoloured
-    /// effect, and the vendor app sends it while walking its own buttons.
-    static let all: [LedMode] = [
-            LedMode(id: "red", name: "Red",
-                    desc: "Steady red", icon: "lightbulb.fill"),
-            LedMode(id: "green", name: "Green",
-                    desc: "Steady green", icon: "lightbulb.led.wide.fill"),
-            LedMode(id: "ripple", name: "Ripple",
-                    desc: "Ripple effect on input", icon: "waveform.path.ecg"),
-            LedMode(id: "rainbow", name: "Rainbow",
-                    desc: "Cycling multicolour — the effect the knob ships in",
-                    icon: "rainbow"),
-            LedMode(id: "rgb", name: "RGB",
-                    desc: "A second multicolour effect", icon: "sparkles"),
-            LedMode(id: "off", name: "Off",
-                    desc: "Disable LEDs to conserve power", icon: "power")
-        ]
-
-    /// Whether this build can promise the colour swatches do anything.
-    ///
-    /// On the 3-button knob they do not: mode 1 was set with blue, red and
-    /// green in turn and stayed red every time. The 16-key device sharing
-    /// this product id does honour them, so the controls stay -- but a UI
-    /// that silently ignores a colour someone picked is the same defect as a
-    /// layer view showing bindings that cannot fire.
-    static let colourNotice =
-        "This knob has a single fixed colour — only the effect can change. "
-        + "Colour choices are sent and ignored by its firmware."
-}
-
-/// One swatch in the colour row. `hex` is the wire name sent to `set_led`.
-struct LedColorPreset: Hashable {
-    let name: String
-    let hex: String
-    let color: Color
-
-    /// The swatch row, in display order.
-    static let all: [LedColorPreset] = [
-            LedColorPreset(name: "White", hex: "white", color: .white),
-            LedColorPreset(name: "Red", hex: "red", color: .red),
-            LedColorPreset(name: "Orange", hex: "orange", color: .orange),
-            LedColorPreset(name: "Yellow", hex: "yellow", color: .yellow),
-            LedColorPreset(name: "Green", hex: "green", color: .green),
-            LedColorPreset(name: "Cyan", hex: "cyan", color: Color(red: 0, green: 0.9, blue: 0.9)),
-            LedColorPreset(name: "Blue", hex: "blue", color: .blue),
-            LedColorPreset(name: "Purple", hex: "purple", color: .purple)
-        ]
-}
 
 struct LedSection: View {
     @ObservedObject var store: ConfigStore
 
     @State private var selectedLayer: Int = 0
     @State private var selectedMode: String = "rainbow"
-    @State private var selectedColorHex: String = "white"
-    @State private var customColor: Color = .white
     @State private var liveApply: Bool = true
 
-    @State private var beadColors: [Color] = Array(repeating: .white, count: 16)
-    @State private var hardwareReadMode: String?
-    @State private var isReadingMode: Bool = false
+    /// What the firmware reported for `selectedLayer`, and whether that
+    /// answer is current. `nil` is "not read yet", which is a third state
+    /// and must not render as either a mode or a failure.
+    @State private var firmwareMode: Int?
+    @State private var readFailed: Bool = false
+    @State private var isReading: Bool = false
+
+    /// The daemon's own words about the last write. Not a locally invented
+    /// "OK": `set_led` now reads the mode back and reports what it found,
+    /// and this shows that.
+    @State private var lastWrite: String?
+    @State private var writeFailed: Bool = false
+
+    private var mode: LedMode {
+        LedMode.named(selectedMode) ?? LedMode.all[0]
+    }
+
+    /// True when the selection is what the firmware says it is holding.
+    private var selectionIsLive: Bool {
+        firmwareMode == mode.number
+    }
 
     var body: some View {
         Form {
-            layerPickerSection
-            ringVisualizerSection
-            modeSelectionSection
-            if selectedMode != "off" {
-                colorSelectionSection
-            }
+            layerSection
+            previewSection
+            modeSection
             actionSection
         }
         .formStyle(.grouped)
-    }
-
-    private var layerPickerSection: some View {
-        Section("Hardware Device Layer") {
-            HStack {
-                Picker("Apply to Layer", selection: $selectedLayer) {
-                    ForEach(0..<3) { i in
-                        Text("Device Layer \(i + 1)").tag(i)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                Button {
-                    queryDeviceState()
-                } label: {
-                    if isReadingMode {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Label("Query Firmware", systemImage: "arrow.clockwise")
-                    }
-                }
-                .disabled(isReadingMode || !store.hardwareConnected)
-            }
-
-            if let readMode = hardwareReadMode {
-                PropertyGrid {
-                    PropertyRow(label: "Firmware Reported Mode") {
-                        Text(readMode)
-                            .font(.caption)
-                            .foregroundStyle(Color.accentColor)
-                    }
-                }
-            }
+        .onAppear { readFirmwareMode() }
+        .onChange(of: selectedLayer) { _, _ in
+            lastWrite = nil
+            readFirmwareMode()
         }
     }
 
-    private var ringVisualizerSection: some View {
-        Section("16-LED RGB Ring Visualizer") {
-            VStack(spacing: 12) {
-                ZStack {
-                    // Center knob icon
-                    Circle()
-                        .fill(Color(nsColor: .controlBackgroundColor))
-                        .frame(width: 56, height: 56)
-                        .overlay(Circle().strokeBorder(Color.secondary.opacity(0.4), lineWidth: 1))
-                        .shadow(radius: 2)
+    // MARK: - Device layer
 
-                    Image(systemName: "dial.low.fill")
-                        .font(.title2)
+    private var layerSection: some View {
+        Section {
+            Picker("Apply to", selection: $selectedLayer) {
+                ForEach(0..<3, id: \.self) { i in
+                    Text("Layer \(i + 1)").tag(i)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            PropertyGrid {
+                GridRow {
+                    Text("On the knob")
                         .foregroundStyle(.secondary)
-
-                    // 16 Circular LED beads
-                    ForEach(0..<16, id: \.self) { i in
-                        let angle = Double(i) * (2.0 * .pi / 16.0) - (.pi / 2.0)
-                        let radius: Double = 48.0
-                        let x = cos(angle) * radius
-                        let y = sin(angle) * radius
-                        let col = selectedMode == "off" ? Color.secondary.opacity(0.3) : beadColors[i]
-
-                        Circle()
-                            .fill(col)
-                            .frame(width: 12, height: 12)
-                            .overlay(Circle().strokeBorder(Color.black.opacity(0.2), lineWidth: 0.5))
-                            .shadow(color: col.opacity(selectedMode == "off" ? 0 : 0.8), radius: 3)
-                            .offset(x: x, y: y)
+                        .gridColumnAlignment(.leading)
+                    firmwareReadout
+                        .gridColumnAlignment(.leading)
+                    Button {
+                        readFirmwareMode()
+                    } label: {
+                        if isReading {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
                     }
+                    .buttonStyle(.borderless)
+                    .disabled(isReading || !store.hardwareConnected)
+                    .help("Re-read this layer's mode from the firmware")
+                    .gridColumnAlignment(.leading)
                 }
-                .frame(width: 130, height: 130)
-                .padding(.vertical, 4)
+            }
+        } header: {
+            Text("Hardware Layer")
+        } footer: {
+            Text("""
+                The knob's firmware holds one backlight mode per DEVICE layer. \
+                These three are the firmware's own layers, not the host layers \
+                in the tabs above — the knob shows the mode of whichever device \
+                layer it is currently on.
+                """)
+        }
+    }
 
-                HStack(spacing: 12) {
-                    Button("Solid Fill") {
-                        applySolidToRing()
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
+    @ViewBuilder
+    private var firmwareReadout: some View {
+        if !store.hardwareConnected {
+            Text("No device").foregroundStyle(.secondary)
+        } else if isReading {
+            Text("Reading…").foregroundStyle(.secondary)
+        } else if let number = firmwareMode {
+            Text("\(LedMode.describe(number: number)) (mode \(number))")
+        } else if readFailed {
+            Label("Could not read", systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.orange)
+        } else {
+            Text("Not read yet").foregroundStyle(.secondary)
+        }
+    }
 
-                    Divider().frame(height: 12)
+    // MARK: - Preview
 
-                    Button("Spectrum Gradient") {
-                        applySpectrumToRing()
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
-
-                    Divider().frame(height: 12)
-
-                    Button("Clear (Off)") {
-                        selectedMode = "off"
-                        if liveApply { sendLedUpdate() }
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
-                }
+    private var previewSection: some View {
+        Section("Preview") {
+            VStack(spacing: 10) {
+                LedPreview(mode: mode, isLive: selectionIsLive)
+                LedPreviewCaption(mode: mode, isLive: selectionIsLive)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
         }
     }
 
-    /// Icon column width. SF Symbols differ in width (`power` is narrow,
-    /// `waveform.path.ecg` wide), so without a fixed frame each row's text
-    /// would start at a different x.
+    // MARK: - Modes
+
+    /// Icon column width. SF Symbols differ in width, so without a fixed
+    /// frame each row's text would start at a different x.
     private static let iconColumn: CGFloat = 20
 
-    private var modeSelectionSection: some View {
-        Section("Lighting Mode") {
+    private var modeSection: some View {
+        Section("Mode") {
             PropertyGrid(horizontalSpacing: 14, verticalSpacing: 9) {
-                ForEach(LedMode.all, id: \.id) { m in
+                ForEach(LedMode.all) { m in
                     modeRow(m)
                 }
             }
         }
     }
 
-    /// Four columns: glyph, name, description, selection mark.
+    /// Five columns: glyph, name, description, "on the knob" marker,
+    /// selection mark.
     ///
-    /// The description gets a column of its own between the name and the
-    /// mark, so five explanations of very different lengths read down one
-    /// edge. The name column expands, which keeps the mark pinned to the
-    /// trailing edge where it was, and the mark keeps its space when the row
-    /// is unselected so selecting one does not shift the text.
+    /// The two marks answer different questions and so get separate columns:
+    /// one says what you have selected, the other says what the firmware is
+    /// holding. Collapsing them would put the app back to presenting a
+    /// selection as a fact about the hardware.
     private func modeRow(_ m: LedMode) -> some View {
         let isSelected = selectedMode == m.id
+        let isOnDevice = firmwareMode == m.number
         return GridRow {
             Image(systemName: m.icon)
                 .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
@@ -234,6 +183,13 @@ struct LedSection: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .gridColumnAlignment(.leading)
 
+            Text("on the knob")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .opacity(isOnDevice ? 1 : 0)
+                .accessibilityHidden(!isOnDevice)
+                .gridColumnAlignment(.leading)
+
             Image(systemName: "checkmark")
                 .foregroundStyle(Color.accentColor)
                 .fontWeight(.semibold)
@@ -248,114 +204,78 @@ struct LedSection: View {
         }
     }
 
-    private var colorSelectionSection: some View {
-        Section("Color Swatches") {
-            // Says plainly that these do nothing here rather than letting
-            // someone pick a colour and wonder why the knob stays red.
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "info.circle")
-                    .foregroundStyle(.secondary)
-                Text(LedMode.colourNotice)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            HStack(spacing: 12) {
-                ForEach(LedColorPreset.all, id: \.hex) { preset in
-                    Button {
-                        selectedColorHex = preset.hex
-                        updateBeadsColor(preset.color)
-                        if liveApply { sendLedUpdate() }
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(preset.color)
-                                .frame(width: 28, height: 28)
-                                .overlay(Circle().strokeBorder(.separator, lineWidth: 1))
-                                .shadow(radius: selectedColorHex == preset.hex ? 3 : 0)
-
-                            if selectedColorHex == preset.hex {
-                                Image(systemName: "checkmark")
-                                    .font(.caption2)
-                                    .fontWeight(.bold)
-                                    .foregroundStyle(preset.hex == "white" || preset.hex == "yellow" ? .black : .white)
-                            }
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .help(preset.name)
-                }
-            }
-            .padding(.vertical, 6)
-        }
-    }
+    // MARK: - Send
 
     private var actionSection: some View {
         Section {
-            Toggle("Live update knob on selection", isOn: $liveApply)
+            Toggle("Send on selection", isOn: $liveApply)
 
             HStack {
                 Button {
                     sendLedUpdate()
                 } label: {
-                    Label("Send to Hardware Now", systemImage: "bolt.fill")
+                    Label("Send to Knob", systemImage: "bolt.fill")
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!store.hardwareConnected)
 
                 Spacer()
 
-                if let msg = store.statusMessage {
-                    Text(msg)
+                if let msg = lastWrite {
+                    Label(msg, systemImage: writeFailed
+                          ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(writeFailed ? Color.red : Color.secondary)
                 }
             }
         } footer: {
-            Text("""
-                Anticater VK01 supports steady backlight, breath cycles, and \
-                press-reactive lighting per hardware layer.
-                """)
+            if store.hardwareConnected {
+                Text("""
+                    The daemon writes the mode and reads it back before reporting, \
+                    so a write that the firmware accepted and ignored is not counted \
+                    as a success.
+                    """)
+            } else {
+                Text("No knob detected, so nothing can be sent.")
+            }
         }
     }
 
     private func sendLedUpdate() {
-        store.setLed(
-            layer: selectedLayer,
-            mode: selectedMode,
-            color: selectedMode == "off" ? nil : selectedColorHex
-        )
-    }
-
-    private func updateBeadsColor(_ col: Color) {
-        beadColors = Array(repeating: col, count: 16)
-    }
-
-    private func applySolidToRing() {
-        if let preset = LedColorPreset.all.first(where: { $0.hex == selectedColorHex }) {
-            updateBeadsColor(preset.color)
-        } else {
-            updateBeadsColor(.white)
-        }
-        if liveApply { sendLedUpdate() }
-    }
-
-    private func applySpectrumToRing() {
-        for i in 0..<16 {
-            let hue = Double(i) / 16.0
-            beadColors[i] = Color(hue: hue, saturation: 1.0, brightness: 1.0)
-        }
-    }
-
-    private func queryDeviceState() {
-        isReadingMode = true
-        store.getHardwareLedMode(layer: selectedLayer) { mode in
-            isReadingMode = false
-            if let m = mode {
-                let name = ledModeNames[Int(m)] ?? "Unknown"
-                hardwareReadMode = "Mode \(m): \(name)"
-            } else {
-                hardwareReadMode = "Could not read mode"
+        lastWrite = nil
+        // The colour argument is deliberately not sent. This knob's modes
+        // carry their own colours; passing one would make the reply's `spec`
+        // name a colour the firmware never applied.
+        store.setLed(layer: selectedLayer, mode: selectedMode) { result in
+            switch result {
+            case .success(let applied):
+                writeFailed = false
+                firmwareMode = applied.mode
+                lastWrite = applied.mode == mode.number
+                    ? "Knob is now \(applied.name)"
+                    : "Firmware reports \(applied.name) — the write did not take"
+                if applied.mode != mode.number {
+                    writeFailed = true
+                }
+            case .failure(let error):
+                writeFailed = true
+                lastWrite = error.localizedDescription
             }
+        }
+    }
+
+    private func readFirmwareMode() {
+        guard store.hardwareConnected else {
+            firmwareMode = nil
+            readFailed = false
+            return
+        }
+        isReading = true
+        readFailed = false
+        store.getHardwareLedMode(layer: selectedLayer) { number in
+            isReading = false
+            firmwareMode = number
+            readFailed = (number == nil)
         }
     }
 }

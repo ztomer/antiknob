@@ -23,6 +23,10 @@ public struct ParsedStatus: @unchecked Sendable, Equatable {
     public var devices: [[String: Any]] = []
     public var tapActive: Bool = false
     public var tapError: String?
+    /// The daemon's own active host layer. nil when the payload does not
+    /// say -- the CLI's status has no engine to ask, and defaulting to 0
+    /// would put a checkmark on a layer nobody selected.
+    public var activeLayer: Int?
 
     public static func == (lhs: ParsedStatus, rhs: ParsedStatus) -> Bool {
         lhs.hardwareFound == rhs.hardwareFound
@@ -32,6 +36,7 @@ public struct ParsedStatus: @unchecked Sendable, Equatable {
             && lhs.devices.count == rhs.devices.count
             && lhs.tapActive == rhs.tapActive
             && lhs.tapError == rhs.tapError
+            && lhs.activeLayer == rhs.activeLayer
     }
 }
 
@@ -67,10 +72,20 @@ public enum StatusParse {
                 out.transport = transport
             }
         }
+        if let active = status["active_layer"] as? Int {
+            out.activeLayer = active
+        }
         if let devices = status["devices"] as? [[String: Any]], !devices.isEmpty {
             out.hardwareFound = true
             out.devices = devices
-            out.product = productName(of: devices[0])
+            // The interface commands are actually sent to, which the daemon
+            // names. `devices[0]` is whichever HID interface enumerated
+            // first: on this hardware a `0x514c:0x4155` keyboard endpoint,
+            // four rows above the `0x8850` knob every button on the pane
+            // talks to. Naming the wrong device beside a green dot is the
+            // same class as drawing an unreachable binding as live.
+            let chosen = (status["primary_device"] as? [String: Any]) ?? devices[0]
+            out.product = productName(of: chosen)
         }
         return out
     }

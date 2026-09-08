@@ -1,92 +1,33 @@
-// ServicesPane.swift — Services, Socket, MCP, and Daemon Capabilities view.
-// Provides controls for Unix domain socket, MCP integration, event tap permissions,
-// and lists all 9 exposed API tools (single source of truth).
+// ServicesPane.swift — the socket, the event tap, the MCP server, and what
+// the daemon can actually be asked to do.
+//
+// The capability list here used to be a hand-written array of eleven tools
+// with hand-written descriptions and parameters. The daemon exposes
+// seventeen commands, generated from one table that also generates its CLI.
+// The hand-written copy had drifted exactly as a second copy does: it
+// advertised a `list_devices` tool that does not exist, gave `upload_keymap`
+// a `yaml_content` parameter, `set_layer` a `layer` where the schema says
+// `index`, and `set_led` a `color` its schema does not carry. It is read
+// from the daemon now, so what the pane shows is what the connected build
+// answers to.
 
 import AppKit
 import SwiftUI
-
-struct ApiToolInfo: Identifiable {
-    let id: String
-    let name: String
-    let description: String
-    let params: [String]
-}
-
-let daemonTools: [ApiToolInfo] = [
-    ApiToolInfo(
-        id: "get_status",
-        name: "get_status",
-        description: "Query hardware detection, daemon socket status, and macOS event tap health.",
-        params: []
-    ),
-    ApiToolInfo(
-        id: "get_config",
-        name: "get_config",
-        description: "Read all configured host layers, actions, and double-tap switching toggle.",
-        params: []
-    ),
-    ApiToolInfo(
-        id: "set_config",
-        name: "set_config",
-        description: "Apply full runtime configuration and broadcast to the active tap engine.",
-        params: ["config: object"]
-    ),
-    ApiToolInfo(
-        id: "set_layer",
-        name: "set_layer",
-        description: "Switch the active physical knob layer (0-indexed).",
-        params: ["layer: integer"]
-    ),
-    ApiToolInfo(
-        id: "set_led",
-        name: "set_led",
-        description: "Configure RGB ring lighting mode and primary color hex code.",
-        params: ["layer: integer", "mode: string", "color: string?"]
-    ),
-    ApiToolInfo(
-        id: "bind_slots",
-        name: "bind_slots",
-        description: "Flash hardware slot chords (⌃⌥F16..F20) to knob onboard firmware.",
-        params: ["layer: integer?", "dry_run: boolean?"]
-    ),
-    ApiToolInfo(
-        id: "upload_keymap",
-        name: "upload_keymap",
-        description: "Flash custom keymap YAML directly to hardware onboard flash memory.",
-        params: ["yaml_content: string"]
-    ),
-    ApiToolInfo(
-        id: "list_apps",
-        name: "list_apps",
-        description: "Scan macOS system and user Applications for bundle IDs.",
-        params: []
-    ),
-    ApiToolInfo(
-        id: "list_devices",
-        name: "list_devices",
-        description: "Enumerate connected Anticater VK01 USB HID devices.",
-        params: []
-    ),
-    ApiToolInfo(
-        id: "read_slots",
-        name: "read_slots",
-        description: "Read slot table memory dump from hardware onboard flash memory.",
-        params: ["group: integer?", "counters: [integer]?"]
-    ),
-    ApiToolInfo(
-        id: "send_raw",
-        name: "send_raw",
-        description: "Send raw 64-byte HID report payload to device.",
-        params: ["bytes: [string]"]
-    )
-]
 
 struct ServicesPane: View {
     @ObservedObject var store: ConfigStore
     @State private var copiedClaude: Bool = false
     @State private var copiedAntigravity: Bool = false
-    @State private var copiedToolId: String?
-    @State private var capabilitiesExpanded: Bool = false
+    // Module-internal rather than private: the capabilities half of this
+    // pane is an extension in ServicesCapabilities.swift, and an extension
+    // in another file cannot see `private` members.
+    @State var copiedToolId: String?
+    @State var capabilitiesExpanded: Bool = false
+
+    /// nil until the daemon has been asked. Empty is a different state from
+    /// unread, and both are different from a list.
+    @State var commands: [DaemonCommand]?
+    @State var commandsError: String?
 
     var body: some View {
         Form {
@@ -96,7 +37,13 @@ struct ServicesPane: View {
             capabilitiesSection
         }
         .formStyle(.grouped)
+        .onAppear { loadCommands() }
+        .onChange(of: store.daemonConnected) { _, connected in
+            if connected && commands == nil { loadCommands() }
+        }
     }
+
+    // MARK: - Socket
 
     private var daemonSection: some View {
         Section {
@@ -113,8 +60,14 @@ struct ServicesPane: View {
                     Text("Socket Path")
                         .foregroundStyle(.secondary)
                         .gridColumnAlignment(.leading)
-                    Text("/tmp/antiknob.sock")
+                    // The socket in use, not the one the app hopes is there.
+                    // /tmp/antiknob.sock is a convenience symlink the daemon
+                    // creates when it can, and this pane printed it as fact
+                    // on machines where it does not exist.
+                    Text(store.socketPath ?? "Not connected")
                         .font(.system(.body, design: .monospaced))
+                        .foregroundStyle(store.socketPath == nil ? .secondary : .primary)
+                        .textSelection(.enabled)
                         .gridColumnAlignment(.leading)
                     EmptyView()
                 }
@@ -132,6 +85,7 @@ struct ServicesPane: View {
             HStack {
                 Button {
                     store.refreshStatus()
+                    loadCommands()
                 } label: {
                     Label("Ping Daemon", systemImage: "arrow.clockwise")
                 }
@@ -148,10 +102,12 @@ struct ServicesPane: View {
         } header: {
             Text("Unix Domain Socket IPC")
         } footer: {
-            Text("The daemon serves the single source of truth at /tmp/antiknob.sock. "
-               + "The native UI, CLI, and third-party scripts communicate with this endpoint.")
+            Text("The daemon serves the single source of truth over this socket. "
+               + "The native UI, CLI, and third-party scripts all speak to it.")
         }
     }
+
+    // MARK: - Event tap
 
     private var eventTapSection: some View {
         Section {
@@ -196,6 +152,8 @@ struct ServicesPane: View {
         }
     }
 
+    // MARK: - MCP
+
     private var mcpSection: some View {
         Section {
             PropertyGrid {
@@ -204,14 +162,19 @@ struct ServicesPane: View {
                 }
 
                 PropertyRow(label: "Launch Command") {
-                    Text("antiknob-daemon --mcp")
+                    // The resolved path, so the copied config points at a
+                    // binary that is actually there. It was hardcoded to
+                    // /Applications/Antiknob/bin, which is one of four
+                    // places the daemon can be installed.
+                    Text("\(store.daemonBinaryPath) --mcp")
                         .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
                 }
             }
 
             HStack(spacing: 12) {
                 Button {
-                    copyClaudeConfig()
+                    copy(Self.claudeConfig(daemon: store.daemonBinaryPath)) { copiedClaude = $0 }
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: copiedClaude ? "checkmark" : "doc.on.doc")
@@ -220,7 +183,9 @@ struct ServicesPane: View {
                 }
 
                 Button {
-                    copyAntigravityConfig()
+                    copy(Self.antigravityConfig(daemon: store.daemonBinaryPath)) {
+                        copiedAntigravity = $0
+                    }
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: copiedAntigravity ? "checkmark" : "doc.on.doc")
@@ -241,98 +206,42 @@ struct ServicesPane: View {
         }
     }
 
-    private var capabilitiesSection: some View {
-        Section {
-            DisclosureGroup(isExpanded: $capabilitiesExpanded) {
-                ForEach(daemonTools) { tool in
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text(tool.name)
-                                .font(.system(.subheadline, design: .monospaced))
-                                .fontWeight(.semibold)
+    // MARK: - Actions
 
-                            Spacer()
-
-                            if !tool.params.isEmpty {
-                                Text(tool.params.joined(separator: ", "))
-                                    .font(.caption2)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Capsule().fill(.quaternary))
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Button {
-                                copyTool(tool.name)
-                            } label: {
-                                Image(systemName: copiedToolId == tool.name ? "checkmark" : "doc.on.doc")
-                                    .font(.caption)
-                            }
-                            .buttonStyle(.borderless)
-                            .help("Copy tool name")
-                        }
-
-                        Text(tool.description)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 3)
-                    if tool.id != daemonTools.last?.id {
-                        Divider()
-                    }
-                }
-            } label: {
-                HStack {
-                    Label("Exposed Capabilities (\(daemonTools.count) Tools)", systemImage: "wrench.and.screwdriver")
-                        .fontWeight(.medium)
-                    Spacer()
-                    Text(capabilitiesExpanded ? "Collapse" : "Expand")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        } footer: {
-            Text("All tools share identical schemas across Unix Domain Socket and MCP stdio interfaces.")
-        }
-    }
-
-    private func copyClaudeConfig() {
-        let json = """
+    static func claudeConfig(daemon: String) -> String {
+        """
         {
           "mcpServers": {
             "antiknob": {
-              "command": "/Applications/Antiknob/bin/antiknob-daemon",
+              "command": "\(daemon)",
               "args": ["--mcp"]
             }
           }
         }
         """
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(json, forType: .string)
-        withAnimation { copiedClaude = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            withAnimation { copiedClaude = false }
-        }
     }
 
-    private func copyAntigravityConfig() {
-        let json = """
+    static func antigravityConfig(daemon: String) -> String {
+        """
         {
           "antiknob": {
-            "command": "/Applications/Antiknob/bin/antiknob-daemon",
+            "command": "\(daemon)",
             "args": ["--mcp"]
           }
         }
         """
+    }
+
+    private func copy(_ text: String, mark: @escaping (Bool) -> Void) {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(json, forType: .string)
-        withAnimation { copiedAntigravity = true }
+        NSPasteboard.general.setString(text, forType: .string)
+        withAnimation { mark(true) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            withAnimation { copiedAntigravity = false }
+            withAnimation { mark(false) }
         }
     }
 
-    private func copyTool(_ name: String) {
+    func copyTool(_ name: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(name, forType: .string)
         withAnimation { copiedToolId = name }

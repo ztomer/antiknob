@@ -54,10 +54,31 @@ struct GeneralPane: View {
                 Text("Firmware Slot Translation")
                     .font(.subheadline)
                     .fontWeight(.medium)
-                Text("Antiknob binds the knob's 5 firmware slots to ⌃⌥F16..F20 once over USB. "
-                   + "All gestures are then translated cleanly host-side by the daemon.")
+                Text("Antiknob binds the knob's 5 gesture slots to ⌃⌥F16..F20 once over USB. "
+                   + "All five gestures are then translated host-side by the daemon.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                // Whether the flash has actually taken, said here rather
+                // than only on every layer tab. `bind-slots` wrote three of
+                // the five chords until this session, so a knob could be
+                // bound and still have two gestures that reached nothing.
+                if let banner = store.modePresentation.banner {
+                    Label(banner, systemImage: store.modePresentation.icon)
+                        .font(.caption)
+                        .foregroundStyle(store.modePresentation.mode == .standalone
+                                         ? Color.orange : Color.secondary)
+                        .help(store.modePresentation.detail ?? banner)
+                }
+                if let arrangement = store.deviceBindingSummary {
+                    // Which DEVICE layer carries the chords. It used to be
+                    // repeated at the top of every host layer's tab, where
+                    // it is not a fact about any one of them.
+                    Text(arrangement)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 HStack {
                     Button {
@@ -72,7 +93,8 @@ struct GeneralPane: View {
                             Label("Flash Slot Bindings to Hardware", systemImage: "bolt.fill")
                         }
                     }
-                    .disabled(store.isBindingSlots)
+                    .disabled(store.isBindingSlots || !store.hardwareConnected)
+                    .help(store.hardwareConnected ? "" : "No knob detected")
 
                     Spacer()
                 }
@@ -103,9 +125,13 @@ struct GeneralPane: View {
         Section("Status & Diagnostics") {
             PropertyGrid {
                 StatusRow(
+                    // The socket in use. This printed `/tmp/antiknob.sock`
+                    // as a constant; that path is a symlink the daemon
+                    // creates when it can, and on a machine without it every
+                    // call was going somewhere else entirely.
                     label: "Daemon Socket",
                     value: store.daemonConnected
-                        ? "Connected (/tmp/antiknob.sock)"
+                        ? "Connected (\(store.socketPath ?? "path unknown"))"
                         : "Offline (Local fallback)"
                 ) {
                     StatusDot(color: store.daemonConnected ? .green : .orange)

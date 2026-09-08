@@ -47,17 +47,38 @@ struct ModePresentation: Equatable, Sendable {
     /// True only when the firmware can actually reach the host layers.
     var hostLayersCanFire: Bool { mode == .hostTranslate }
 
-    /// nil when there is nothing worth interrupting the user about.
+    /// One line, or nothing. nil when there is nothing worth interrupting
+    /// the user about.
+    ///
+    /// This was a paragraph, and beneath it a second line repeating the way
+    /// out and a third restating the arrangement -- four lines of prose at
+    /// the top of every layer tab, saying one thing three times. The claim
+    /// is true and stays; the essay does not. What it used to spell out now
+    /// lives in `detail`, which the row carries as a tooltip.
     var banner: String? {
         switch mode {
         case .hostTranslate:
             return nil
         case .standalone:
-            return "These layers are inactive. The knob is flashed standalone, "
-                + "so its gestures go straight to macOS and never reach Antiknob."
+            return "These layers are inactive — the knob is flashed standalone."
         case .unknown:
-            return "Can't tell whether these layers are active — the knob's "
-                + "bindings haven't been read yet."
+            return "Not yet known whether these layers are active."
+        }
+    }
+
+    /// The long form, shown on hover rather than on arrival.
+    var detail: String? {
+        switch mode {
+        case .hostTranslate:
+            return nil
+        case .standalone:
+            return "The knob's gestures go straight to macOS and never reach "
+                + "Antiknob, so nothing bound here can run. Flashing the slot "
+                + "bindings makes the knob send the chords the daemon listens for."
+        case .unknown:
+            return "The knob's firmware bindings have not been read yet, so "
+                + "the app cannot say whether these layers can fire. Reconnect "
+                + "the knob, or refresh from the status bar."
         }
     }
 
@@ -75,66 +96,63 @@ struct ModePresentation: Equatable, Sendable {
     }
 }
 
-/// Says when a layer's bindings cannot fire, and why.
+/// Says, in one line, when a layer's bindings cannot fire.
 ///
 /// Host layers only run if the firmware sends the bound slot chords. A
 /// standalone-flashed knob keeps them saved and unreachable, and the layer
 /// view used to draw them exactly as it draws live ones -- an intention
 /// presented as a fact, which is how a knob doing nothing looked like a
-/// correctly configured knob. Renders nothing when the layers can fire.
+/// correctly configured knob. So the warning stays. What went is its length:
+/// a four-line block, identical on every layer tab, that restated the same
+/// fact three ways and carried a device-layer summary belonging to the
+/// hardware pane rather than to any one layer.
+///
+/// Renders nothing when the layers can fire.
 struct ReachabilityNotice: View {
     let mode: ModePresentation
-
-    /// True when there is anything to draw at all.
-    private var hasSomethingToSay: Bool {
-        mode.banner != nil || mode.deviceBinding != nil
-    }
+    @ObservedObject var store: ConfigStore
 
     var body: some View {
-        if hasSomethingToSay {
-            content
+        if let banner = mode.banner {
+            Section {
+                HStack(spacing: 8) {
+                    Image(systemName: mode.icon)
+                        .foregroundStyle(mode.mode == .standalone ? Color.orange : .secondary)
+                    Text(banner)
+                        .font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    if mode.callToAction != nil {
+                        fixButton
+                    }
+                }
+                .help(mode.detail ?? banner)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(mode.detail ?? banner)
+            }
         }
     }
 
-    @ViewBuilder
-    private var content: some View {
-        if let banner = mode.banner {
-            Section {
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: mode.icon)
-                        .foregroundStyle(mode.mode == .standalone ? Color.orange : .secondary)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(banner)
-                            .font(.callout)
-                            .fixedSize(horizontal: false, vertical: true)
-                        if let action = mode.callToAction {
-                            Text("Hardware → \(action) makes the knob send them.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        if let binding = mode.deviceBinding {
-                            Text(binding)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
+    /// The way out, inline. It used to be a sentence naming a button on
+    /// another pane; a warning that can be acted on where it appears is one
+    /// fewer place for the fix to be described instead of offered.
+    private var fixButton: some View {
+        Button {
+            store.bindSlots()
+        } label: {
+            if store.isBindingSlots {
+                HStack(spacing: 5) {
+                    ProgressView().controlSize(.small)
+                    Text("Flashing…")
                 }
-            }
-        } else if let binding = mode.deviceBinding {
-            // Nothing is wrong, but the arrangement is still worth stating:
-            // two of the three layers run with the daemon stopped, and
-            // nothing else in the app says so.
-            Section {
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "info.circle")
-                        .foregroundStyle(.secondary)
-                    Text(binding)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            } else {
+                Text("Flash Slot Bindings")
             }
         }
+        .controlSize(.small)
+        .disabled(store.isBindingSlots || !store.hardwareConnected)
+        .help(store.hardwareConnected
+              ? "Flash ⌃⌥F16..F20 to the knob so the daemon hears its gestures"
+              : "No knob detected")
     }
 }

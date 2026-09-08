@@ -14,6 +14,7 @@ private struct StatusSnapshot: @unchecked Sendable {
     let devices: [[String: Any]]
     let tapActive: Bool
     let tapError: String?
+    let activeLayer: Int?
 }
 
 struct SlotDumpBox: @unchecked Sendable {
@@ -55,7 +56,19 @@ public final class ConfigStore: ObservableObject {
     /// nil until the knob's bindings have been read, which presents as
     /// "not stated" rather than as an arrangement nobody confirmed.
     @Published var deviceBindingSummary: String?
+    /// How many buttons the installed layout declares, and the key IDs that
+    /// puts the knob's five gestures on. Read from the daemon rather than
+    /// assumed: the count places the slots, and a layout declaring the wrong
+    /// number writes well-formed packets into slots the firmware never
+    /// reads, with nothing anywhere reporting a failure.
+    @Published var knobButtons: Int?
+    @Published var knobKeyIds: [Int]?
     @Published var startOnLogin: Bool = false
+    /// The socket path the last successful call actually went to. nil when
+    /// nothing has answered. Three panes printed `/tmp/antiknob.sock` as a
+    /// constant, on a machine where that symlink does not exist and every
+    /// call was going to the Application Support socket instead.
+    @Published var socketPath: String?
 
     /// Everything the status bar renders, as a pure value. Lives in
     /// `StatusPresentation` rather than here so it can be tested without
@@ -104,9 +117,13 @@ public final class ConfigStore: ObservableObject {
             let reply = try? SocketClient.shared.getKnobMode()
             let mode = reply?["mode"] as? String
             let binding = reply?["device_binding_summary"] as? String
+            let buttons = reply?["buttons"] as? Int
+            let keyIds = reply?["knob_key_ids"] as? [Int]
             await MainActor.run { [weak self] in
                 self?.knobModeRaw = mode
                 self?.deviceBindingSummary = binding
+                self?.knobButtons = buttons
+                self?.knobKeyIds = keyIds
             }
         }
     }
@@ -148,7 +165,8 @@ public final class ConfigStore: ObservableObject {
                 powerDesc: parsed.powerDescription,
                 devices: parsed.devices,
                 tapActive: parsed.tapActive,
-                tapError: parsed.tapError
+                tapError: parsed.tapError,
+                activeLayer: parsed.activeLayer
             )
 
             await MainActor.run { [weak self] in
@@ -161,6 +179,13 @@ public final class ConfigStore: ObservableObject {
                 self.devices = snapshot.devices
                 self.tapActive = snapshot.tapActive
                 self.tapError = snapshot.tapError
+                self.socketPath = SocketClient.shared.connectedPath
+                // The daemon's answer, not the app's memory of what was
+                // clicked. The menu bar's checkmark used to track a local
+                // variable nothing else read or wrote.
+                if let active = snapshot.activeLayer {
+                    self.activeLayerIdx = active
+                }
                 self.checkStartOnLogin()
             }
         }
@@ -241,7 +266,14 @@ public final class ConfigStore: ObservableObject {
         }
     }
 
-    private nonisolated static func resolveDaemonPath() -> String {
+    /// Where the daemon binary is on THIS machine, for the MCP config the
+    /// Services pane hands out. It was hardcoded to
+    /// `/Applications/Antiknob/bin/antiknob-daemon`, which is one of the
+    /// four places `resolveDaemonPath` already looks -- so the config the
+    /// pane copied could name a binary that is not there.
+    var daemonBinaryPath: String { Self.resolveDaemonPath() }
+
+    nonisolated static func resolveDaemonPath() -> String {
         let possiblePaths = [
             "/Applications/Antiknob/bin/antiknob-daemon",
             "\(FileManager.default.homeDirectoryForCurrentUser.path)/.local/bin/antiknob-daemon",

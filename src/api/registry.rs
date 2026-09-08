@@ -435,6 +435,16 @@ pub const COMMANDS: &[CommandSpec] = &[
         mcp: Reach::Yes,
     },
     CommandSpec {
+        name: "list_commands",
+        about: "Describe every command this build exposes, with its parameters and which \
+                surfaces carry it. Read from the same table that generates the CLI and the \
+                MCP tool list, so a caller cannot be told about a command that is not here.",
+        params: &[],
+        cli_as: None,
+        cli: Reach::No("the CLI's own --help renders this table already"),
+        mcp: Reach::Yes,
+    },
+    CommandSpec {
         name: "ping",
         about: "Application-level liveness probe confirming the daemon is responsive.",
         params: &[],

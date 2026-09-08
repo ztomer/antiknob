@@ -82,10 +82,32 @@ enum SocketWire {
 final class SocketClient: @unchecked Sendable {
     static let shared = SocketClient()
 
-    private let primaryPath = "/tmp/antiknob.sock"
-    private var fallbackPath: String {
+    /// Where the daemon's socket can be, in the order this client tries.
+    ///
+    /// `/tmp/antiknob.sock` is a convenience SYMLINK the daemon creates when
+    /// it can; the real socket lives in Application Support. Three panes
+    /// used to print the /tmp path as fact -- "Socket Path: /tmp/antiknob.sock",
+    /// "Connected (/tmp/antiknob.sock)" -- on a machine where that symlink
+    /// does not exist and every call was going to the fallback. A path the
+    /// app prints should be the path the app used.
+    private var candidatePaths: [String] {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return "\(home)/Library/Application Support/antiknob/antiknob.sock"
+        return [
+            "/tmp/antiknob.sock",
+            "\(home)/Library/Application Support/antiknob/antiknob.sock"
+        ]
+    }
+
+    /// The path the last successful call went to, or nil if none has
+    /// succeeded. Written on the socket queue and read on the main actor,
+    /// which is why it is guarded rather than a plain `var`.
+    private var lastGoodPath: String?
+
+    /// The socket this client is actually talking to, for display. nil when
+    /// no call has succeeded yet -- which reads as "not connected" rather
+    /// than as a path nothing has been reached at.
+    var connectedPath: String? {
+        queue.sync { lastGoodPath }
     }
 
     var localConfigURL: URL {
@@ -107,11 +129,18 @@ final class SocketClient: @unchecked Sendable {
 
         let jsonString = try SocketWire.encodeRequest(id: reqId, method: method, params: params)
 
-        // Try primary path then fallback path
-        var lastErr: SocketError = .cannotConnect(primaryPath)
-        for path in [primaryPath, fallbackPath] {
+        // The /tmp symlink first, the real socket second. Whichever answers
+        // is recorded, so the Services pane can name the socket in use
+        // instead of the one it hopes is there.
+        let paths = candidatePaths
+        var lastErr: SocketError = .cannotConnect(paths[0])
+        for path in paths {
             do {
-                return try sendAndReceive(path: path, request: jsonString, timeoutSecs: timeoutSecs)
+                let result = try sendAndReceive(
+                    path: path, request: jsonString, timeoutSecs: timeoutSecs
+                )
+                queue.sync { lastGoodPath = path }
+                return result
             } catch let err as SocketError {
                 lastErr = err
                 continue
@@ -120,6 +149,7 @@ final class SocketClient: @unchecked Sendable {
                 continue
             }
         }
+        queue.sync { lastGoodPath = nil }
         throw lastErr
     }
 
@@ -225,18 +255,43 @@ final class SocketClient: @unchecked Sendable {
         _ = try rpcCall(method: "set_layer", params: ["layer": layerIndex])
     }
 
-    func setLed(layer: Int, mode: String, color: String?) throws -> String {
-        var params: [String: Any] = ["layer": layer, "mode": mode]
-        if let color = color, !color.isEmpty {
-            params["color"] = color
+    /// Set a layer's backlight mode. The reply is the daemon's read-back of
+    /// what the firmware holds afterwards, so a write the device swallowed
+    /// is reported as the mode it kept rather than as success.
+    ///
+    /// No colour parameter: this knob's modes each carry their own colour
+    /// and the bytes are ignored, so an argument here could only ever name a
+    /// colour that was never applied.
+    func setLed(layer: Int, mode: String) throws -> AppliedLedMode {
+        let res = try rpcCall(method: "set_led", params: ["layer": layer, "mode": mode])
+        guard let dict = res as? [String: Any], let applied = dict["mode"] as? Int else {
+            throw SocketError.parseError("set_led did not report the mode the device holds.")
         }
-        let res = try rpcCall(method: "set_led", params: params)
-        return (res as? [String: Any])?["status"] as? String ?? "OK"
+        return AppliedLedMode(mode: applied)
     }
 
     func getLed(layer: Int) throws -> [String: Any] {
         let res = try rpcCall(method: "get_led", params: ["layer": layer])
         return (res as? [String: Any]) ?? [:]
+    }
+
+    /// What this daemon can actually do, read from the command table that
+    /// generates its own CLI and MCP surfaces.
+    ///
+    /// The Services pane used to carry a hand-written list of eleven tools.
+    /// The daemon has seventeen. The list named a `list_devices` that has
+    /// never existed, gave `upload_keymap` a `yaml_content` parameter it
+    /// does not take, `set_layer` a `layer` where MCP wants `index`, and
+    /// `set_led` a `color` the tool schema does not carry. A second
+    /// hand-kept copy of a generated table is a list of things that are not
+    /// true yet.
+    func listCommands() throws -> [DaemonCommand] {
+        let res = try rpcCall(method: "list_commands", timeoutSecs: 3)
+        guard let dict = res as? [String: Any],
+              let raw = dict["commands"] as? [[String: Any]] else {
+            throw SocketError.parseError("list_commands did not return a command list.")
+        }
+        return raw.compactMap(DaemonCommand.init(json:))
     }
 
     /// Ask the daemon what the knob's firmware will actually do with a

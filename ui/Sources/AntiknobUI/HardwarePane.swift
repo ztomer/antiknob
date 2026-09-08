@@ -1,6 +1,29 @@
-// HardwarePane.swift — Standalone Hardware & Firmware Flashing view.
-// Manages slot chords, standalone on-chip keymap flashing, auxiliary buttons,
-// and USB device hardware telemetry.
+// HardwarePane.swift — the device, its endpoints, and the two ways to flash it.
+//
+// What was removed here, and why:
+//
+//   "Auxiliary Hardware Keypad Buttons". A static block describing three
+//   mechanical buttons at key IDs 0x01/0x02/0x03. This knob has at most ONE
+//   button: `probe-gestures --map` put a distinct marker on keys 1-6, ran
+//   all five gestures, and found keys 2..6 are the gestures themselves. So
+//   the section described key IDs that belong to the knob, offered no
+//   control of any kind, and pointed at a "buttons array" in an editor whose
+//   templates all declared `buttons: []`.
+//
+//   Every keymap template's colour. `led: backlight green`, `backlight cyan`,
+//   `backlight red`, `backlight blue`, `backlight white` -- five templates
+//   naming five colours, and `backlight` is an alias for mode 1, which is
+//   RED on this device whatever colour follows it. All five produced red.
+//
+//   Every keymap template's layout. `buttons: []` with no rows or columns
+//   declares zero buttons, which puts the knob's gestures at key IDs 1/2/3.
+//   On this hardware key 1 is driven by nothing and the gestures start at 2,
+//   so flashing any template wrote `ccw` to a dead slot, `press` to twist,
+//   and `cw` to press. The device accepts all of it and reports no error.
+//
+// The chord text was wrong in the other direction: it said ⌃⌥F16..F20 while
+// `bind-slots` flashed three chords. It flashes five now, so the text is
+// true and the two hold+twist gestures can reach the daemon.
 
 import AppKit
 import SwiftUI
@@ -28,85 +51,19 @@ enum SlotTarget: Int, CaseIterable, Identifiable {
     }
 }
 
-enum KeymapTemplate: String, CaseIterable, Identifiable {
-    case media = "Media Controller"
-    case mouseWheel = "Native Mouse Wheel"
-    case zoom = "Meeting Controller (Zoom)"
-    case browser = "Browser Navigation"
-    case custom = "Custom YAML"
-
-    var id: String { rawValue }
-
-    var defaultYaml: String {
-        switch self {
-        case .media:
-            return """
-            layers:
-              - name: Media
-                buttons: []
-                knobs:
-                  - ccw: voldown
-                    press: mute
-                    cw: volup
-                led: backlight green
-            """
-        case .mouseWheel:
-            return """
-            layers:
-              - name: Wheel
-                buttons: []
-                knobs:
-                  - ccw: wheeldown
-                    press: mclick
-                    cw: wheelup
-                led: backlight cyan
-            """
-        case .zoom:
-            return """
-            layers:
-              - name: Meeting
-                buttons: []
-                knobs:
-                  - ccw: cmd+shift+a
-                    press: opt+y
-                    cw: cmd+shift+v
-                led: backlight red
-            """
-        case .browser:
-            return """
-            layers:
-              - name: Browser
-                buttons: []
-                knobs:
-                  - ccw: cmd+leftbracket
-                    press: cmd+r
-                    cw: cmd+rightbracket
-                led: backlight blue
-            """
-        case .custom:
-            return """
-            layers:
-              - name: Custom
-                buttons: []
-                knobs:
-                  - ccw: ctrl+alt+f16
-                    press: ctrl+alt+f17
-                    cw: ctrl+alt+f18
-                led: backlight white
-            """
-        }
-    }
-}
-
 struct HardwarePane: View {
     @ObservedObject var store: ConfigStore
-    @State private var selectedTemplate: KeymapTemplate = .media
-    @State private var yamlText: String = KeymapTemplate.media.defaultYaml
-    @State private var targetLayer: Int = 0
-    @State private var isFlashingKeymap: Bool = false
-    @State private var flashStatus: String?
-    @State private var flashSuccess: Bool = true
     @State private var selectedSlotLayer: Int = -1 // -1 = All layers
+
+    // Module-internal rather than private: the standalone-flash half of this
+    // pane is an extension in HardwareKeymap.swift, and an extension in
+    // another file cannot see `private` members. Same arrangement as
+    // LayerDetail / LayerBindings and InspectorPane / InspectorActions.
+    @State var selectedTemplate: KeymapTemplate = .media
+    @State var yamlText: String = KeymapTemplate.media.defaultYaml
+    @State var isFlashingKeymap: Bool = false
+    @State var flashStatus: String?
+    @State var flashSuccess: Bool = true
 
     var body: some View {
         Form {
@@ -114,13 +71,13 @@ struct HardwarePane: View {
             endpointSection
             slotBindingSection
             standaloneKeymapSection
-            auxiliaryButtonsSection
         }
         .formStyle(.grouped)
+        .onAppear { store.refreshKnobMode() }
     }
 
     private var deviceInfoSection: some View {
-        Section("Hardware & Transport Details") {
+        Section {
             PropertyGrid {
                 StatusRow(label: "Device Model", value: store.hardwareProduct) {
                     StatusDot(color: store.hardwareConnected ? .green : .secondary)
@@ -145,12 +102,19 @@ struct HardwarePane: View {
                         .frame(width: 16)
                 }
             }
+        } header: {
+            Text("Hardware & Transport Details")
+        } footer: {
+            // Says which of the many endpoints below this names, because it
+            // used to name whichever one enumerated first -- a keyboard
+            // interface belonging to a different product id from the knob.
+            Text("The vendor configuration endpoint (usage page 0xFF00) — the interface "
+               + "every command on this pane is sent to.")
         }
     }
 
-    /// Endpoints as a four-column table: index, transport tag, device name,
-    /// device path. Each is a different kind of thing, so each gets its own
-    /// column and reads down its own straight edge.
+    /// Endpoints as a five-column table: index, transport tag, device name,
+    /// device path, and whether this is the one being driven.
     private var endpointSection: some View {
         Section("HID Endpoints") {
             if store.devices.isEmpty {
@@ -164,26 +128,40 @@ struct HardwarePane: View {
                         Text("Transport").gridColumnAlignment(.leading)
                         Text("Device").gridColumnAlignment(.leading)
                         Text("Path").gridColumnAlignment(.leading)
+                        Text("").gridColumnAlignment(.leading)
                     }
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
 
                     ForEach(Array(store.devices.enumerated()), id: \.offset) { idx, dev in
-                        GridRow {
-                            Text("\(idx + 1)")
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                            TagPill(text: dev["transport"] as? String ?? "")
-                            Text(dev["name"] as? String ?? "Unknown Device")
-                                .font(.caption.weight(.medium))
-                            Text(dev["path"] as? String ?? "")
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                        }
+                        endpointRow(index: idx, device: dev)
                     }
                 }
             }
+        }
+    }
+
+    /// The vendor configuration endpoint, which is the one every command
+    /// goes to. Nineteen near-identical rows with nothing marking the one
+    /// that matters is a list, not information.
+    private static let vendorUsagePage = 0xFF00
+
+    private func endpointRow(index: Int, device dev: [String: Any]) -> some View {
+        let isTarget = (dev["usage_page"] as? Int) == Self.vendorUsagePage
+        return GridRow {
+            Text("\(index + 1)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+            TagPill(text: dev["transport"] as? String ?? "")
+            Text(dev["name"] as? String ?? "Unknown Device")
+                .font(.caption.weight(isTarget ? .semibold : .medium))
+            Text(dev["path"] as? String ?? "")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.secondary)
+            Text(isTarget ? "in use" : "")
+                .font(.caption2)
+                .foregroundStyle(Color.accentColor)
         }
     }
 
@@ -191,8 +169,8 @@ struct HardwarePane: View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
                 Text("""
-                    Bind the knob's onboard slots to chords (⌃⌥F16..F20) so the host \
-                    daemon translates all twists, clicks, and sequences cleanly.
+                    Binds the knob's five gesture slots to ⌃⌥F16..F20 so the daemon can \
+                    swallow them and run the host layers. Run once.
                     """)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -231,138 +209,41 @@ struct HardwarePane: View {
                     }
                 }
                 .padding(.top, 4)
+
+                slotLayoutReadout
             }
             .padding(.vertical, 4)
         } header: {
             Text("Host Translation Chords (Recommended)")
         } footer: {
             Text("""
-                Flashing binds CCW=⌃⌥F16, Press=⌃⌥F17, CW=⌃⌥F18. Run once to prepare \
-                hardware for daemon translation.
+                Twist Left=⌃⌥F16, Press=⌃⌥F17, Twist Right=⌃⌥F18, \
+                Hold+Twist Left=⌃⌥F19, Hold+Twist Right=⌃⌥F20.
                 """)
         }
     }
 
-    private var standaloneKeymapSection: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("""
-                    Flash standalone actions directly to on-chip EEPROM. The knob operates \
-                    without any background app or daemon on any macOS, Windows, or Linux system.
-                    """)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                PropertyGrid {
-                    GridRow {
-                        Text("Template")
-                            .foregroundStyle(.secondary)
-                            .frame(width: Layout.controlLabel, alignment: .leading)
-                            .gridColumnAlignment(.leading)
-                        Dropdown(title: selectedTemplate.rawValue) {
-                            Picker("", selection: $selectedTemplate) {
-                                ForEach(KeymapTemplate.allCases) { t in
-                                    Text(t.rawValue).tag(t)
-                                }
-                            }
-                            .pickerStyle(.inline).labelsHidden()
-                        }
-                        .onChange(of: selectedTemplate) { _, newT in
-                            yamlText = newT.defaultYaml
-                        }
-                        .gridColumnAlignment(.leading)
-
-                        Button {
-                            flashKeymap()
-                        } label: {
-                            if isFlashingKeymap {
-                                HStack(spacing: 6) {
-                                    ProgressView().controlSize(.small)
-                                    Text("Writing to flash…")
-                                }
-                            } else {
-                                Label("Flash Keymap to Hardware", systemImage: "arrow.up.doc.fill")
-                            }
-                        }
-                        .disabled(isFlashingKeymap || !store.hardwareConnected)
-                        .gridColumnAlignment(.leading)
-                    }
-                }
-
-                TextEditor(text: $yamlText)
-                    .font(.system(.body, design: .monospaced))
-                    .frame(minHeight: 140)
-                    .padding(4)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3), lineWidth: 1))
-
-                if let msg = flashStatus {
-                    HStack(spacing: 6) {
-                        Image(systemName: flashSuccess ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                            .foregroundStyle(flashSuccess ? .green : .red)
-                        Text(msg)
-                            .font(.caption)
-                            .foregroundStyle(flashSuccess ? Color.primary : Color.red)
-                    }
-                }
-            }
-            .padding(.vertical, 4)
-        } header: {
-            Text("Standalone On-Chip Keymap Flashing")
-        } footer: {
-            Text("""
-                Directly writes 64-byte USB HID report packets (report ID 0x03) and sends \
-                commit marker 0xFD 0xFE 0xFF.
-                """)
-        }
-    }
-
-    private var auxiliaryButtonsSection: some View {
-        Section("Auxiliary Hardware Keypad Buttons") {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("For hardware variants equipped with 1 or 3 mechanical buttons beside the knob:")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                HStack(spacing: 16) {
-                    VStack(alignment: .leading) {
-                        Text("Button 1").fontWeight(.medium)
-                        Text("key_id = 0x01").font(.caption2).monospaced().foregroundStyle(.secondary)
-                    }
-                    Divider().frame(height: 24)
-                    VStack(alignment: .leading) {
-                        Text("Button 2").fontWeight(.medium)
-                        Text("key_id = 0x02").font(.caption2).monospaced().foregroundStyle(.secondary)
-                    }
-                    Divider().frame(height: 24)
-                    VStack(alignment: .leading) {
-                        Text("Button 3").fontWeight(.medium)
-                        Text("key_id = 0x03").font(.caption2).monospaced().foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.vertical, 4)
-
-                Text("Configure buttons in the standalone YAML editor under the 'buttons' array: [[key1, key2, key3]].")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.vertical, 2)
-        }
-    }
-
-    private func flashKeymap() {
-        isFlashingKeymap = true
-        flashStatus = nil
-        store.uploadKeymap(yaml: yamlText) { result in
-            isFlashingKeymap = false
-            switch result {
-            case .success(let msg):
-                flashSuccess = true
-                flashStatus = "Success: \(msg)"
-            case .failure(let err):
-                flashSuccess = false
-                flashStatus = err.localizedDescription
-            }
+    /// Which key IDs a flash will write, read from the daemon.
+    ///
+    /// The declared button count places the knob's slots, so a layout that
+    /// declares more buttons than the device has moves every gesture along
+    /// by that many -- and both the write and the device's acceptance of it
+    /// are indistinguishable from a correct flash. Naming the slots is the
+    /// only place that becomes visible before someone wonders why a freshly
+    /// flashed knob does nothing.
+    @ViewBuilder
+    private var slotLayoutReadout: some View {
+        if let keys = store.knobKeyIds, let buttons = store.knobButtons {
+            Text("Writes key IDs \(keys.map(String.init).joined(separator: ", ")) "
+               + "— the layout declares \(buttons) button\(buttons == 1 ? "" : "s") "
+               + "before the knob.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text("Slot layout not read yet.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
     }
 }

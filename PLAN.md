@@ -42,30 +42,33 @@ bodies no unit test executes. The logic that has a seam scores far higher --
 `Models.swift` 64%, `SocketWire` near total. Two ways to make the number mean
 more, in order of value:
 
-* Split the package into a logic target and a views target so a floor can
-  apply where coverage is meaningful. Still blocked on the house side, but
-  NOT in the way this used to say. The note read: `swift_gate.sh` calls
-  `check_swift_coverage.py --min N` directly and never reaches
-  `coverage_gate.sh`, the script that supports per-target floors
-  (`--floors-json`), so routing Swift through it would fix every repo at
-  once.
+* ~~Split the package into a logic target and a views target~~ **Done
+  2026-09-07, and not by splitting the package.** The floor that matters is
+  now on `Sources/AntiknobUI/Core/` at **46%**, measured 46.58%, beside the
+  package floor of 4%.
 
-  Measured 2026-09-07, and the reroute is the wrong move. `coverage_gate.sh`
-  in Swift mode could not measure this package AT ALL -- it handed llvm-cov
-  the `.dSYM` directory instead of the executable -- and once that was fixed
-  it reported 10.54% where the working checker reports 4.78%, because it
-  counted `Tests/` toward the floor. Rerouting would have raised every
-  repo's measured Swift coverage and made every floor easier to pass, which
-  is the opposite of what a ratchet is for. Both defects are fixed upstream
-  (gates_of_heck `9ef8f1c`) and the scope rule now lives in one module both
-  paths import, but the two engines still differ: `check_swift_coverage.py`
-  reads SwiftPM's codecov JSON payloads, `coverage_swift.py` re-runs
-  `swift test` and shells out to llvm-cov.
+  The old note said this was blocked on routing `swift_gate.sh` through
+  `coverage_gate.sh`, which supports `--floors-json`. Measured, that reroute
+  was the wrong move: `coverage_gate.sh` in Swift mode could not measure this
+  package AT ALL -- it handed llvm-cov the `.dSYM` directory instead of the
+  executable -- and once that was fixed it read 10.54% against the working
+  checker's 4.78%, because it counted `Tests/` toward the floor. Rerouting
+  would have raised every repo's measured Swift coverage and made every floor
+  easier to pass. Both defects are fixed upstream (gates_of_heck `9ef8f1c`)
+  and the scope rule now lives in one module both paths import.
 
-  So the smaller, safer fix is to teach `check_swift_coverage.py` per-path
-  floors directly, reusing `coverage_gate.sh`'s existing `--floors-json`
-  schema. That keeps the fast path every repo already uses and does not
-  double the test run.
+  `check_swift_coverage.py` gained the floors instead (`1a13651`), with the
+  key generalised from a target NAME to a path PREFIX. That is what makes a
+  separate target unnecessary: `Core/` is a directory inside `AntiknobUI`, so
+  the views and the types they are built from stay in one module and nothing
+  gains a `public` annotation it would not otherwise have -- the property
+  `Package.swift` deliberately records. Letting a coverage tool dictate a
+  package's module structure is the wrong way round.
+
+  `Core/` holds the six sources with no view declarations at all: the models,
+  the socket client, the two parsers, the gesture enum and the presentation
+  values. That boundary scores 46.58% where the views score 0.2% over 6,606
+  lines, which is the whole reason the package number could never mean much.
 * Keep putting seams under the logic that has none. `ConfigStore` is still
   the largest -- its `init()` loads config and starts a 2s poll timer, so it
   cannot be constructed in a test as it stands -- but the seam does not have
@@ -84,11 +87,14 @@ more, in order of value:
 body-length and complexity on view bodies and the two exhaustive `Action`
 coding switches. Shrink-only -- a new violation fails and so does a listed one
 that GROWS, because the match key includes the measured count. It has been
-re-recorded three times, every time verified file-agnostically as zero new
+re-recorded four times, every time verified file-agnostically as zero new
 debt first, which is the only form of re-record it permits. The three
 `ConfigStore` entries were deleted rather than re-listed: their violations
 stopped firing, and a baseline entry that no longer bites is exactly the
-rot the ratchet exists to prevent.
+rot the ratchet exists to prevent. The fourth re-record was a pure path
+change -- the two `Models.swift` entries moved into `Core/` -- which the
+ratchet correctly reported as new, because its match key is file plus rule
+plus reason.
 
 ### 2. Knob slot mapping, and what is left of hold+twist
 

@@ -12,6 +12,17 @@ import PackageDescription
 //                  here needs a `public` annotation it would not otherwise have.
 //   Antiknob    -- the `@main` entry point and nothing else, because `@main`
 //                  cannot live in a library.
+//
+// Inside AntiknobUI, `Core/` holds the sources with no view declarations at
+// all -- models, the socket client, the parsers and the presentation values.
+// It is a DIRECTORY and not a target on purpose. A separate target would put
+// a module boundary between the views and the types they are built from, and
+// every one of those types, its members and its initialisers would need
+// `public` for no reason but the boundary. The only thing the split was ever
+// wanted for is a coverage floor aimed at code unit tests actually execute,
+// and coverage-floors.json aims one at the directory (46%) while the package
+// floor stays where the package as a whole is (4%). Letting a coverage tool
+// dictate a package's module structure is the wrong way round.
 let package = Package(
     name: "Antiknob",
     platforms: [.macOS("26.0")],

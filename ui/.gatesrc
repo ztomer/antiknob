@@ -18,3 +18,11 @@ GOH_SWIFT_LINT_BASELINE=.swiftlint-baseline.json
 # ConfigStore gave them a seam and 20 tests, and the measured figure moved
 # 3.4% -> 4.8%. The floor follows the measurement, decimal shaved.
 GOH_SWIFT_COV_MIN=4
+
+# Per-directory floors, checked BEFORE the package floor. The package number
+# is dominated by the view bodies -- 6,606 of its 7,423 lines, 0.2% covered --
+# so it can only ever be a ratchet against deleting tests. Sources/AntiknobUI/
+# Core/ is the half with no view declarations at all, and it measures 46.58%,
+# which is a floor worth having. Aimed at a DIRECTORY rather than a separate
+# target on purpose; see Package.swift for why.
+GOH_SWIFT_COV_FLOORS=coverage-floors.json

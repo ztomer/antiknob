@@ -79,6 +79,13 @@ struct LedMode: Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     let desc: String
+    /// The glyph, which must carry the mode WITHOUT its colour.
+    ///
+    /// The rule: a mode named for a COLOUR gets its initial, a mode named for
+    /// an EFFECT gets a picture of the effect. Red and Green both drew
+    /// `circle.fill` and were separated by tint alone -- the one pair that
+    /// roughly 1 in 12 men cannot separate, in a row with no labels, with the
+    /// name only on hover. Colour reinforces here; it never carries.
     let icon: String
     /// The number `get_led` reports for this mode.
     let number: Int
@@ -103,13 +110,13 @@ struct LedMode: Identifiable, Hashable, Sendable {
         LedMode(
             id: "red", name: "Red",
             desc: "Steady red",
-            icon: "circle.fill", number: 1,
+            icon: "r.circle.fill", number: 1,
             appearance: .steady(RGB(1.0, 0.15, 0.1))
         ),
         LedMode(
             id: "green", name: "Green",
             desc: "Steady green",
-            icon: "circle.fill", number: 2,
+            icon: "g.circle.fill", number: 2,
             appearance: .steady(RGB(0.1, 1.0, 0.25))
         ),
         LedMode(

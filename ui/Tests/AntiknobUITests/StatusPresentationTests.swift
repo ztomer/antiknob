@@ -224,9 +224,41 @@ struct LedModeTests {
         #expect(ids.count == 6)
     }
 
-    @Test("every mode has a description and its own glyph")
+    @Test("every mode has a description")
     func modesAreDescribed() {
         #expect(LedMode.all.allSatisfy { !$0.desc.isEmpty })
+    }
+
+    /// No two modes may be told apart by COLOUR alone.
+    ///
+    /// The picker is a row of glyphs with no labels and the name on hover, so
+    /// the glyph is the only thing carrying identity at a glance. Red and
+    /// Green both drew `circle.fill` and differed only in tint -- the exact
+    /// pair roughly 1 in 12 men cannot separate, which made those two buttons
+    /// identical for them and hovering the only way through. WCAG 1.4.1, in a
+    /// pane that had passed three rounds of design review.
+    ///
+    /// Colour reinforces. It never carries.
+    @Test("no two modes are distinguished by colour alone")
+    func glyphsCarryWithoutColour() {
+        let icons = LedMode.all.map(\.icon)
+        #expect(
+            Set(icons).count == icons.count,
+            "two modes share a glyph, so only their tint separates them: \(icons)"
+        )
+    }
+
+    /// The tint is still there, and still correct -- the fix was to stop it
+    /// being the ONLY channel, not to remove it.
+    @Test("the fixed-colour modes still carry their colours")
+    func fixedColourModesKeepTheirTint() {
+        guard case .steady(let red)? = LedMode.named("red")?.appearance,
+              case .steady(let green)? = LedMode.named("green")?.appearance else {
+            Issue.record("the fixed-colour modes are not steady colours")
+            return
+        }
+        #expect(red.red > red.green && red.red > red.blue, "mode 1 is not red: \(red)")
+        #expect(green.green > green.red && green.green > green.blue, "mode 2 is not green: \(green)")
     }
 
     /// Every mode gets a preview, and no mode gets a preview that pretends
@@ -239,21 +271,6 @@ struct LedModeTests {
         #expect(approximate == ["rgb"], "\(approximate)")
         #expect(LedMode.named("off")?.appearance == .unlit)
         #expect(LedMode.named("rainbow")?.appearance == .palette(RGB.vendorRainbow))
-    }
-
-    /// The two fixed-colour modes must preview in their own colours. Drawing
-    /// mode 2 red would put the app back to the reading that produced the
-    /// wrong names in the first place -- that the knob has one colour.
-    @Test("the fixed-colour modes preview in different colours")
-    func fixedColourModesDiffer() {
-        guard case .steady(let red)? = LedMode.named("red")?.appearance,
-              case .steady(let green)? = LedMode.named("green")?.appearance else {
-            Issue.record("the fixed-colour modes are not steady colours")
-            return
-        }
-        #expect(red != green)
-        #expect(red.red > red.green && red.red > red.blue, "mode 1 is not red: \(red)")
-        #expect(green.green > green.red && green.green > green.blue, "mode 2 is not green: \(green)")
     }
 
     /// The vendor's rainbow, in the vendor's order. Six entries, starting at

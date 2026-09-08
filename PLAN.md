@@ -32,8 +32,8 @@ file carries only what is still open. `git log --oneline` and
 
 Both floors are the measured figure with the decimal shaved off, set so they
 can only be met by keeping tests, never by picking a number: Rust 61
-(`GOH_COV_FLOOR_RUST`, measured 61.92%) and Swift 3 (`GOH_SWIFT_COV_MIN`,
-measured 3.4% over SOURCES -- the house checker stopped counting `Tests/` on
+(`GOH_COV_FLOOR_RUST`, measured 61.92%) and Swift 4 (`GOH_SWIFT_COV_MIN`,
+measured 4.8% over SOURCES -- the house checker stopped counting `Tests/` on
 2026-09-07, because a test file is ~100% covered by definition and a floor set
 on that can be met by tests that assert nothing).
 
@@ -48,16 +48,29 @@ more, in order of value:
   reaches `coverage_gate.sh`, which is the script that supports per-target
   floors (`--floors-json`). Routing Swift through it would fix this for every
   repo.
-* Keep putting seams under the logic that has none. `ConfigStore` (659 lines,
-  0%) is the largest remaining one; its `init()` loads config and starts a
-  2s poll timer, so it cannot be constructed in a test as it stands.
+* Keep putting seams under the logic that has none. `ConfigStore` is still
+  the largest -- its `init()` loads config and starts a 2s poll timer, so it
+  cannot be constructed in a test as it stands -- but the seam does not have
+  to run through the store. Two decisions it made inline are now pure and
+  covered: `CliDiscovery` (where the binary is, and what its JSON means) and
+  `StatusParse` (what a status payload claims about the hardware). The second
+  was written out TWICE in `refreshStatus`, once per source, differing only
+  in the tap fields; one parser now serves both. That moved the measured
+  figure 3.4% -> 4.8% and took the lint baseline from 8 entries to 5, because
+  `ConfigStore` dropped under the type-body cap it had been over.
 
-`ui/.swiftlint-baseline.json` is the companion ratchet: 8 entries, all
+  The store's own remaining methods are one-shot RPCs that need the socket
+  faked to test; that is the next seam, and it is a bigger one.
+
+`ui/.swiftlint-baseline.json` is the companion ratchet: 5 entries, all
 body-length and complexity on view bodies and the two exhaustive `Action`
 coding switches. Shrink-only -- a new violation fails and so does a listed one
 that GROWS, because the match key includes the measured count. It has been
-re-recorded twice, both times verified file-agnostically as zero new debt
-first, which is the only form of re-record it permits.
+re-recorded three times, every time verified file-agnostically as zero new
+debt first, which is the only form of re-record it permits. The three
+`ConfigStore` entries were deleted rather than re-listed: their violations
+stopped firing, and a baseline entry that no longer bites is exactly the
+rot the ratchet exists to prevent.
 
 ### 2. Knob slot mapping, and what is left of hold+twist
 

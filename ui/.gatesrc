@@ -13,4 +13,8 @@ GOH_SWIFT_LINT_BASELINE=.swiftlint-baseline.json
 # inflated by the test files, which are ~100% covered by definition. A floor
 # on that could be met by writing tests that assert nothing. See PLAN.md for
 # what would make it mean more.
-GOH_SWIFT_COV_MIN=3
+#
+# 2026-09-07: 3 -> 4. Pulling the CLI discovery and status parsing out of
+# ConfigStore gave them a seam and 20 tests, and the measured figure moved
+# 3.4% -> 4.8%. The floor follows the measurement, decimal shaved.
+GOH_SWIFT_COV_MIN=4

@@ -16,7 +16,7 @@ private struct StatusSnapshot: @unchecked Sendable {
     let tapError: String?
 }
 
-private struct SlotDumpBox: @unchecked Sendable {
+struct SlotDumpBox: @unchecked Sendable {
     let slots: [[String: Any]]
 }
 
@@ -126,79 +126,22 @@ public final class ConfigStore: ObservableObject {
         Task.detached(priority: .utility) {
             let client = SocketClient.shared
             let connected = client.isConnected()
-            var hwFound = false
-            var product = "Not detected"
-            var detectedTransport = "disconnected"
-            var detectedDevices: [[String: Any]] = []
-            var tapIsActive = false
-            var tapErrStr: String?
-            var powerDesc = "Wired (USB Bus Powered)"
-
-            if connected {
-                if let status = try? client.getStatus() {
-                    if let ta = status["tap_active"] as? Bool {
-                        tapIsActive = ta
-                    }
-                    if let te = status["tap_error"] as? String {
-                        tapErrStr = te
-                    }
-                    if let tr = status["transport"] as? String {
-                        detectedTransport = tr
-                    }
-                    if let pow = status["power"] as? [String: Any] {
-                        if let desc = pow["description"] as? String {
-                            powerDesc = desc
-                        }
-                        if detectedTransport == "disconnected", let tr = pow["transport"] as? String {
-                            detectedTransport = tr
-                        }
-                    }
-                    if let devs = status["devices"] as? [[String: Any]], !devs.isEmpty {
-                        hwFound = true
-                        detectedDevices = devs
-                        if let p = devs[0]["name"] as? String, !p.isEmpty {
-                            product = p
-                        } else if let p = devs[0]["product_string"] as? String, !p.isEmpty {
-                            product = p
-                        } else {
-                            product = "Anticater VK-01"
-                        }
-                    }
-                }
-            } else if let cliStatus = Self.queryCliStatus() {
-                if let tr = cliStatus["transport"] as? String {
-                    detectedTransport = tr
-                }
-                if let pow = cliStatus["power"] as? [String: Any] {
-                    if let desc = pow["description"] as? String {
-                        powerDesc = desc
-                    }
-                    if detectedTransport == "disconnected", let tr = pow["transport"] as? String {
-                        detectedTransport = tr
-                    }
-                }
-                if let devs = cliStatus["devices"] as? [[String: Any]], !devs.isEmpty {
-                    hwFound = true
-                    detectedDevices = devs
-                    if let p = devs[0]["name"] as? String, !p.isEmpty {
-                        product = p
-                    } else if let p = devs[0]["product_string"] as? String, !p.isEmpty {
-                        product = p
-                    } else {
-                        product = "Anticater VK-01"
-                    }
-                }
-            }
+            // One parser for both sources; see `StatusParse`. The daemon is
+            // asked first and the CLI is the fallback for when it is down.
+            let payload: [String: Any]? = connected
+                ? try? client.getStatus()
+                : Self.queryCliStatus()
+            let parsed = payload.map(StatusParse.parse) ?? ParsedStatus()
 
             let snapshot = StatusSnapshot(
                 connected: connected,
-                hwFound: hwFound,
-                product: product,
-                transport: detectedTransport,
-                powerDesc: powerDesc,
-                devices: detectedDevices,
-                tapActive: tapIsActive,
-                tapError: tapErrStr
+                hwFound: parsed.hardwareFound,
+                product: parsed.product,
+                transport: parsed.transport,
+                powerDesc: parsed.powerDescription,
+                devices: parsed.devices,
+                tapActive: parsed.tapActive,
+                tapError: parsed.tapError
             )
 
             await MainActor.run { [weak self] in
@@ -220,19 +163,17 @@ public final class ConfigStore: ObservableObject {
         let task = Process()
         let pipe = Pipe()
 
-        var possiblePaths: [String] = [
-            "/Applications/Antiknob/bin/antiknob",
-            "\(FileManager.default.homeDirectoryForCurrentUser.path)/.local/bin/antiknob",
-            "\(FileManager.default.homeDirectoryForCurrentUser.path)/.cargo/bin/antiknob",
-            "/usr/local/bin/antiknob"
-        ]
-        if let res = Bundle.main.resourcePath {
-            possiblePaths.append("\(res)/antiknob")
-        }
-        let besideApp = Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("antiknob").path
-        possiblePaths.append(besideApp)
-
-        guard let execPath = possiblePaths.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+        let possiblePaths = CliDiscovery.searchPaths(
+            home: FileManager.default.homeDirectoryForCurrentUser.path,
+            resourcePath: Bundle.main.resourcePath,
+            besideApp: Bundle.main.bundleURL
+                .deletingLastPathComponent()
+                .appendingPathComponent("antiknob").path
+        )
+        guard let execPath = CliDiscovery.resolve(
+            paths: possiblePaths,
+            isExecutable: { FileManager.default.isExecutableFile(atPath: $0) }
+        ) else {
             return nil
         }
 
@@ -246,19 +187,10 @@ public final class ConfigStore: ObservableObject {
             task.waitUntilExit()
             guard task.terminationStatus == 0 else { return nil }
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                return obj
-            } else if let devices = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                return [
-                    "connected": !devices.isEmpty,
-                    "devices": devices,
-                    "product_string": devices.first?["name"] as? String ?? "Anticater VK01"
-                ]
-            }
+            return CliDiscovery.decodeStatus(data)
         } catch {
             return nil
         }
-        return nil
     }
 
     func openAccessibilitySettings() {
@@ -348,106 +280,4 @@ public final class ConfigStore: ObservableObject {
 
     // MARK: - Device Operations
 
-    func setLed(layer: Int, mode: String, color: String?) {
-        Task.detached(priority: .userInitiated) {
-            do {
-                let status = try SocketClient.shared.setLed(layer: layer, mode: mode, color: color)
-                await MainActor.run { [weak self] in
-                    self?.statusMessage = status
-                }
-            } catch {
-                await MainActor.run { [weak self] in
-                    self?.statusMessage = "LED error: \(error.localizedDescription)"
-                }
-            }
-        }
-    }
-
-    public func bindSlots(layer: Int? = nil) {
-        isBindingSlots = true
-        Task.detached(priority: .userInitiated) {
-            do {
-                let status = try SocketClient.shared.bindSlots(layer: layer, dryRun: false)
-                await MainActor.run { [weak self] in
-                    self?.isBindingSlots = false
-                    self?.statusMessage = status
-                }
-            } catch {
-                await MainActor.run { [weak self] in
-                    self?.isBindingSlots = false
-                    self?.statusMessage = "Bind error: \(error.localizedDescription)"
-                }
-            }
-        }
-    }
-
-    func uploadKeymap(
-        yaml: String,
-        layer: Int? = nil,
-        completion: @escaping @MainActor @Sendable (Result<String, Error>) -> Void
-    ) {
-        Task.detached(priority: .userInitiated) {
-            do {
-                let msg = try SocketClient.shared.uploadKeymap(yaml: yaml, layer: layer)
-                await MainActor.run { [weak self] in
-                    self?.statusMessage = msg
-                    completion(.success(msg))
-                }
-            } catch {
-                await MainActor.run { [weak self] in
-                    self?.statusMessage = "Upload error: \(error.localizedDescription)"
-                    completion(.failure(error))
-                }
-            }
-        }
-    }
-
-    func readSlots(
-        group: UInt8? = nil,
-        counters: [UInt8]? = nil,
-        completion: @escaping @MainActor @Sendable (Result<[[String: Any]], Error>) -> Void
-    ) {
-        Task.detached(priority: .userInitiated) {
-            do {
-                let res = try SocketClient.shared.readSlots(group: group, counters: counters)
-                let slots = res["slots"] as? [[String: Any]] ?? []
-                let box = SlotDumpBox(slots: slots)
-                await MainActor.run {
-                    completion(.success(box.slots))
-                }
-            } catch {
-                await MainActor.run {
-                    completion(.failure(error))
-                }
-            }
-        }
-    }
-
-    func sendRawPacket(hexString: String, completion: @escaping @MainActor @Sendable (Result<String, Error>) -> Void) {
-        let parts = hexString.components(separatedBy: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
-            .filter { !$0.isEmpty }
-        Task.detached(priority: .userInitiated) {
-            do {
-                let res = try SocketClient.shared.sendRaw(bytes: parts)
-                let count = res["bytes_sent"] as? Int ?? parts.count
-                await MainActor.run {
-                    completion(.success("Sent \(count) bytes"))
-                }
-            } catch {
-                await MainActor.run {
-                    completion(.failure(error))
-                }
-            }
-        }
-    }
-
-    func getHardwareLedMode(layer: Int, completion: @escaping @MainActor @Sendable (Int?) -> Void) {
-        Task.detached(priority: .userInitiated) {
-            let res = try? SocketClient.shared.getLed(layer: layer)
-            let mode = res?["mode"] as? Int
-            await MainActor.run {
-                completion(mode)
-            }
-        }
-    }
 }

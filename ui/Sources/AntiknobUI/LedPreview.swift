@@ -10,7 +10,10 @@
 // the hardware is worse than no control.
 //
 // So this draws the knob's single ring, animated as the selected mode
-// actually behaves, and says when it is approximating.
+// actually behaves. The caption that used to sit under it -- naming the mode
+// and flagging the one whose pattern was never captured -- is gone: the
+// glyph row names the selection and the flash row says whether it is live,
+// so the caption was a third statement of both.
 
 import SwiftUI
 

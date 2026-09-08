@@ -3,6 +3,7 @@
 //! Serves as the single source of truth for both the Unix domain socket RPC
 //! interface and the MCP (Model Context Protocol) server.
 
+use super::registry;
 use crate::host::HostConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -16,264 +17,51 @@ pub struct ToolDef {
 }
 
 /// All available API tools / RPC commands generated from single source of truth.
+/// Every MCP tool, GENERATED from `registry::COMMANDS`.
+///
+/// This used to be eighteen hand-written `ToolDef` literals sitting a
+/// thousand lines away from the CLI's own definition of the same commands.
+/// They drifted, as two hand-written lists do. Now there is one table and
+/// two renderers, so a command cannot exist on one surface and not the
+/// other without the table saying why.
 pub fn all_tools() -> Vec<ToolDef> {
-    vec![
-        ToolDef {
-            name: "get_status",
-            description: "Get current Anticater VK01 hardware status, active host layer, and LED mode.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {}
+    registry::for_surface(true).map(tool_def).collect()
+}
+
+fn tool_def(spec: &'static registry::CommandSpec) -> ToolDef {
+    let mut properties = serde_json::Map::new();
+    let mut required: Vec<String> = Vec::new();
+    for param in spec.params.iter().filter(|p| p.on_surface(true)) {
+        let ty = match param.kind {
+            registry::Kind::Flag => json!({ "type": "boolean" }),
+            registry::Kind::Str => json!({ "type": "string" }),
+            registry::Kind::Int => json!({ "type": "integer" }),
+            registry::Kind::IntList => json!({
+                "type": "array", "items": { "type": "integer" }
             }),
-        },
-        ToolDef {
-            name: "get_config",
-            description: "Retrieve the current host-side layers configuration JSON.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {}
+            registry::Kind::StrList => json!({
+                "type": "array", "items": { "type": "string" }
             }),
-        },
-        ToolDef {
-            name: "set_config",
-            description: "Update the host layers configuration JSON, applying changes immediately and persisting them.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "config": {
-                        "type": "object",
-                        "description": "Full HostConfig object"
-                    }
-                },
-                "required": ["config"]
-            }),
-        },
-        ToolDef {
-            name: "set_layer",
-            description: "Switch the active host layer immediately.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "layer": {
-                        "type": "integer",
-                        "description": "0-based layer index"
-                    }
-                },
-                "required": ["layer"]
-            }),
-        },
-        ToolDef {
-            name: "set_led",
-            description: "Set hardware LED lighting mode and color on the Anticater knob (e.g. mode 'backlight' color 'cyan', or mode 'off').",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "layer": {
-                        "type": "integer",
-                        "description": "0-based device layer (0..=2)",
-                        "default": 0
-                    },
-                    "mode": {
-                        "type": "string",
-                        "description": "LED mode: 'off', 'backlight'/'mode1', 'shock'/'mode2', 'shock2'/'mode3', 'press'/'mode4'"
-                    },
-                    "color": {
-                        "type": "string",
-                        "description": "Optional color name: 'white', 'red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'"
-                    }
-                },
-                "required": ["mode"]
-            }),
-        },
-        ToolDef {
-            name: "get_led",
-            description: "Read back the current hardware LED mode and status for a device layer.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "layer": {
-                        "type": "integer",
-                        "description": "0-based device layer (0..=2)",
-                        "default": 0
-                    }
-                }
-            }),
-        },
-        ToolDef {
-            name: "bind_slots",
-            description: "Flash one-time host slot bindings (ctrl-alt-F16..F18) to the knob firmware so the host daemon can translate gestures.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "layers": {
-                        "type": "array",
-                        "items": { "type": "integer" },
-                        "description": "Optional list of layers to bind. Defaults to all [0, 1, 2]."
-                    },
-                    "buttons": {
-                        "type": "integer",
-                        "description": "The device's physical button count (VK01 = 3). Knob slot IDs follow the buttons, so a wrong count writes bindings the firmware never reads without reporting an error. Defaults to the installed layout's count."
-                    }
-                }
-            }),
-        },
-        ToolDef {
-            name: "get_virtual_layer",
-            description: "Report the active layer's variants, which variant's bindings are currently live, and why -- pinned by an override, matched from the frontmost application, or the layer's own bindings because nothing applied.",
-            input_schema: json!({ "type": "object", "properties": {} }),
-        },
-        ToolDef {
-            name: "set_virtual_variant",
-            description: "Pin one of the active layer's variants by name, so the knob uses its bindings regardless of which application is in front. Pass null to clear the pin and return to matching on the frontmost application. A name that matches no variant is rejected rather than silently ignored.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "variant": {
-                        "type": ["string", "null"],
-                        "description": "Variant name to pin, or null to clear the pin."
-                    }
-                }
-            }),
-        },
-        ToolDef {
-            name: "get_knob_mode",
-            description: "Read the knob's firmware slot table and report whether its gestures send host slot chords (host-translate, so host layers run) or ordinary actions (standalone, so host layers cannot fire). Returns 'unknown' when the table says nothing about the knob rather than guessing.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "buttons": {
-                        "type": "integer",
-                        "description": "The device's physical button count (VK01 = 3). Decides which slots are the knob's; defaults to the installed layout's."
-                    }
-                }
-            }),
-        },
-        ToolDef {
-            name: "upload_keymap",
-            description: "Flash a hardware keymap YAML configuration to the device firmware. \
-                          A gesture may bind one action (\"volumeup\"), a sequence \
-                          ([\"cmd-c\", \"cmd-v\"]) or a timed sequence ({steps: [...], \
-                          delay_ms: 120}). Knob gestures are ccw, press, cw, hold_twist_l \
-                          and hold_twist_r.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "yaml": {
-                        "type": "string",
-                        "description": "Valid DeviceConfig YAML string"
-                    },
-                    "layer": {
-                        "type": "integer",
-                        "description": "Optional single layer to flash"
-                    }
-                },
-                "required": ["yaml"]
-            }),
-        },
-        ToolDef {
-            name: "list_apps",
-            description: "List installed macOS applications and their bundle IDs for launch/quit actions.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {}
-            }),
-        },
-        ToolDef {
-            name: "read_slots",
-            description: "Read the device's slot table. Pass full=true to get the WHOLE \
-                          table in three burst queries -- every key on every layer, \
-                          including keys past whatever the declared layout mentions. The \
-                          per-slot form is a diagnostic for protocol work.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "full": {
-                        "type": "boolean",
-                        "description": "Read every key on every layer (recommended)"
-                    },
-                    "group": {
-                        "type": "integer",
-                        "description": "Per-slot form: the width to walk the table at"
-                    },
-                    "counters": {
-                        "type": "array",
-                        "items": { "type": "integer" },
-                        "description": "Per-slot form: which counters to read"
-                    }
-                }
-            }),
-        },
-        ToolDef {
-            name: "send_raw",
-            description: "Send a raw 64-byte HID report payload to the Anticater VK01 device.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "bytes": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "Hex byte strings (e.g. ['0xFD', '0xFE', '0xFF'])"
-                    }
-                },
-                "required": ["bytes"]
-            }),
-        },
-        ToolDef {
-            name: "bind_sequence",
-            description: "Bind ONE knob gesture to a sequence of actions, with an optional \
-                          wait between steps. This is what lets a gesture type a string or \
-                          drive an application: `[\"cmd-c\", \"cmd-v\"]` copies then pastes. \
-                          Key ids on this device are 2=twist CCW, 3=press, 4=twist CW, \
-                          5=hold+twist left, 6=hold+twist right. A slot holds 19 entries and \
-                          a chord costs one entry per modifier plus one for the key, so \
-                          `cmd-c` is two. Keyboard actions chain; the firmware stores only \
-                          ONE media action per slot, so a media list is refused rather than \
-                          silently truncated. Call show_keys for the action vocabulary.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "key": {
-                        "type": "integer",
-                        "description": "Slot key id. 2=CCW, 3=press, 4=CW, 5=hold+twist L, 6=hold+twist R"
-                    },
-                    "layer": {
-                        "type": "integer",
-                        "description": "Device layer 0-2 (default 0)"
-                    },
-                    "actions": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "Action names in order, e.g. [\"cmd-c\", \"cmd-v\"]"
-                    },
-                    "delay_ms": {
-                        "type": "integer",
-                        "description": "Milliseconds to wait before each step after the first"
-                    }
-                },
-                "required": ["key", "actions"]
-            }),
-        },
-        ToolDef {
-            name: "show_keys",
-            description: "List every action name this device understands: keyboard keys, \
-                          modifiers, media usages and mouse actions. Call this before \
-                          bind_sequence or upload_keymap rather than guessing a name -- an \
-                          unknown name is refused, and the vocabulary is not the same as a \
-                          macOS key name.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {}
-            }),
-        },
-        ToolDef {
-            name: "ping",
-            description: "Application-level liveness probe confirming the daemon is responsive.",
-            input_schema: json!({
-                "type": "object",
-                "properties": {}
-            }),
-        },
-    ]
+        };
+        let mut schema = ty.as_object().expect("type schema is an object").clone();
+        schema.insert("description".into(), json!(param.about));
+        if let Some(default) = param.default {
+            schema.insert("default".into(), json!(default));
+        }
+        properties.insert(param.name.to_string(), serde_json::Value::Object(schema));
+        if param.required {
+            required.push(param.name.to_string());
+        }
+    }
+    let mut input_schema = json!({ "type": "object", "properties": properties });
+    if !required.is_empty() {
+        input_schema["required"] = json!(required);
+    }
+    ToolDef {
+        name: spec.name,
+        description: spec.about,
+        input_schema,
+    }
 }
 
 /// Device power and battery status telemetry.

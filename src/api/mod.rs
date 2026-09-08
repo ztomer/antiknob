@@ -2,6 +2,7 @@
 
 pub mod dispatch;
 pub mod mcp;
+pub mod registry;
 pub mod socket;
 pub mod types;
 #[cfg(test)]

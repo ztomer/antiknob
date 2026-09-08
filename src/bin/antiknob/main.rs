@@ -1,304 +1,204 @@
+//! `antiknob` -- the command line surface.
+//!
+//! The subcommands and their arguments are GENERATED from
+//! `antiknob::api::registry::COMMANDS`, the same table the MCP tool list is
+//! generated from. There is no enum of commands here to keep in step with
+//! the tool definitions, because keeping two definitions in step is a thing
+//! nobody does reliably: `bind-seq` existed here for a day with no MCP tool
+//! at all, and `show-keys` never had one.
+//!
+//! What remains is the dispatch: turning parsed arguments into a call. That
+//! is genuinely per-command work and cannot be generated, but a command
+//! cannot reach it without being in the registry, and a registry entry with
+//! no arm here is a named runtime refusal rather than a silent no-op.
+
 use std::path::PathBuf;
 
+use antiknob::api::registry::{self, Kind};
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{Arg, ArgAction, ArgMatches, Command};
 
 mod binding;
 mod cmds;
 mod diag;
 mod probe;
 
-#[derive(Parser)]
-#[command(
-    name = "antiknob",
-    version,
-    about = "Native macOS Apple Silicon configurator for Anticater VK01 Knob (MIT OR Apache-2.0)"
-)]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
+/// Build the whole CLI from the registry.
+fn cli() -> Command {
+    let mut app = Command::new("antiknob")
+        .version(env!("CARGO_PKG_VERSION"))
+        .about(
+            "Native macOS Apple Silicon configurator for Anticater VK01 Knob (MIT OR Apache-2.0)",
+        )
+        .subcommand_required(true)
+        .arg_required_else_help(true);
+
+    for spec in registry::for_surface(false) {
+        let name: &'static str = Box::leak(spec.cli_name().into_boxed_str());
+        let mut sub = Command::new(name).about(spec.about);
+        for param in spec.params.iter().filter(|p| p.on_surface(false)) {
+            sub = sub.arg(build_arg(param));
+        }
+        app = app.subcommand(sub);
+    }
+    app
 }
 
-#[derive(Subcommand)]
-enum Commands {
-    /// Probe and display status of connected Anticater / CH57x hardware without sudo
-    Status {
-        /// Machine-readable JSON device list (for the GUI subprocess bridge)
-        #[arg(long)]
-        json: bool,
-    },
+/// One registry parameter as a clap argument.
+fn build_arg(param: &registry::Param) -> Arg {
+    let mut arg = Arg::new(param.name).help(param.about);
 
-    /// Validate configuration YAML file syntax offline
-    Validate {
-        /// Layout file. Defaults to the one in Application Support,
-        /// seeded from the packaged starter on first use.
-        #[arg()]
-        file: Option<PathBuf>,
-    },
+    if !param.positional {
+        // `no_verify` is spelled `--no-verify`; the registry keeps the
+        // Rust-side name so the extraction below can use it verbatim.
+        let long: &'static str = Box::leak(param.name.replace('_', "-").into_boxed_str());
+        arg = arg.long(long);
+    }
 
-    /// Flash keymaps and knob configurations to device over USB without sudo
-    Upload {
-        /// Layout file. Defaults to the one in Application Support,
-        /// seeded from the packaged starter on first use.
-        #[arg()]
-        file: Option<PathBuf>,
-        /// Flash only this device layer (default: all layers)
-        #[arg(long)]
-        layer: Option<u8>,
-        /// Skip the post-flash read-back. Faster, and reports only that the
-        /// device accepted the packets -- which is not the same as the
-        /// bindings being live.
-        #[arg(long)]
-        no_verify: bool,
-        /// Confirm the target device really has no keys. Required for a
-        /// config declaring zero buttons, because knob slots then start at
-        /// key ID 1 -- which on a device WITH keys are the keys.
-        #[arg(long)]
-        knob_only: bool,
-    },
+    arg = match param.kind {
+        Kind::Flag => arg.action(ArgAction::SetTrue),
+        Kind::Str | Kind::Int => arg.action(ArgAction::Set),
+        // Comma-separated so `--candidates 7,8,9` works, and repeatable.
+        Kind::IntList => arg.action(ArgAction::Append).value_delimiter(','),
+        // Everything left on the line: an action sequence, a raw payload, an
+        // LED mode with a colour. Hyphens are values here, not flags, or
+        // `led 0 static white` could not name a chord like `cmd-c`.
+        Kind::StrList => arg
+            .action(ArgAction::Append)
+            .num_args(1..)
+            .allow_hyphen_values(true),
+    };
 
-    /// Set LED lighting mode (e.g., led 0 backlight white, led 0 shock blue, led 0 off)
-    Led {
-        layer: u8,
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        mode: Vec<String>,
-    },
+    if param.required {
+        arg = arg.required(true);
+    }
+    if let Some(default) = param.default {
+        arg = arg.default_value(default);
+    }
+    arg
+}
 
-    /// Read back a layer's current LED mode (read-only diagnostic)
-    LedRead {
-        layer: u8,
-        /// Dump the full raw reply bytes
-        #[arg(long)]
-        raw: bool,
-    },
+// ---- typed extraction -------------------------------------------------
+//
+// clap hands back strings; these turn them into what the handlers take. A
+// parse failure names the argument rather than defaulting to zero.
 
-    /// Show all supported key names, media keys, and modifiers
-    ShowKeys,
+fn flag(m: &ArgMatches, name: &str) -> bool {
+    m.get_flag(name)
+}
 
-    /// Flash one-time host-translate slot bindings (ctrl-alt-F16..F18) to firmware
-    BindSlots {
-        /// Hardware layout to read the button count from. Knob slot IDs
-        /// follow the buttons, so this decides where the bindings land.
-        #[arg(long)]
-        config: Option<PathBuf>,
-        /// Override the button count instead of reading it from a config.
-        /// For a device with no config file to hand.
-        #[arg(long)]
-        buttons: Option<usize>,
-        /// Device layer to bind (default: all layers 0-2)
-        #[arg(long)]
-        layer: Option<u8>,
-        /// Print the packet plan without touching hardware
-        #[arg(long)]
-        dry_run: bool,
-    },
+fn opt_str(m: &ArgMatches, name: &str) -> Option<String> {
+    m.get_one::<String>(name).cloned()
+}
 
-    /// Bind one slot to a SEQUENCE of actions using the vendor's 0xFD command
-    BindSeq {
-        /// Slot key ID to bind. Buttons come first (1..n), then three per
-        /// knob; `read-slots` shows what each one currently holds.
-        #[arg(long)]
-        key: u8,
-        /// Device layer to bind (0-2)
-        #[arg(long, default_value_t = 0)]
-        layer: u8,
-        /// Width to read the table back at. Must be at least --key, or the
-        /// read-back addresses a different slot. Defaults to the key id.
-        #[arg(long)]
-        width: Option<u8>,
-        /// Print the packet without touching hardware
-        #[arg(long)]
-        dry_run: bool,
-        /// Milliseconds to wait between steps. Every entry carries its own
-        /// 16-bit delay, so a sequence can wait for a menu to open rather
-        /// than racing it. The vendor's own default is 50.
-        #[arg(long, default_value_t = 0)]
-        delay_ms: u16,
-        /// Actions to run in order, e.g. `cmd-c cmd-v`. All must be the same
-        /// kind: one slot record holds one kind. A chord costs one entry per
-        /// modifier plus one for the key, and a slot holds 19 entries.
-        actions: Vec<String>,
-    },
+fn opt_path(m: &ArgMatches, name: &str) -> Option<PathBuf> {
+    opt_str(m, name).map(PathBuf::from)
+}
 
-    /// Dump raw input reports for a few seconds (verify what the knob sends)
-    Listen {
-        /// Only watch these devices (repeatable), e.g. --device 514c:8850.
-        /// Default watches every supported device, which mixes the knob's
-        /// reports in with any other Anticater hardware on the same host.
-        #[arg(long = "device", value_name = "VID:PID")]
-        devices: Vec<String>,
+fn opt_num<T: std::str::FromStr>(m: &ArgMatches, name: &str) -> Result<Option<T>>
+where
+    T::Err: std::fmt::Display,
+{
+    match m.get_one::<String>(name) {
+        None => Ok(None),
+        Some(raw) => raw.parse::<T>().map(Some).map_err(|e| {
+            anyhow::anyhow!("{}: '{}' is not valid ({e})", name.replace('_', "-"), raw)
+        }),
+    }
+}
 
-        /// How long to listen, in seconds
-        #[arg(long, default_value = "10")]
-        timeout_secs: u64,
-    },
+fn num<T: std::str::FromStr + Default>(m: &ArgMatches, name: &str) -> Result<T>
+where
+    T::Err: std::fmt::Display,
+{
+    Ok(opt_num::<T>(m, name)?.unwrap_or_default())
+}
 
-    /// Migrate the six built-in presets to host-layer JSON for the daemon
-    ImportPresets {
-        /// Write host.json here (default: print to stdout)
-        #[arg(long)]
-        out: Option<PathBuf>,
-        /// Overwrite an existing output file
-        #[arg(long)]
-        force: bool,
-    },
+fn strings(m: &ArgMatches, name: &str) -> Vec<String> {
+    m.get_many::<String>(name)
+        .map(|v| v.cloned().collect())
+        .unwrap_or_default()
+}
 
-    /// List installed apps (names + bundle IDs) for launch/quit actions
-    ListApps,
-
-    /// Dump the device slot table (read-only diagnostic for reverse engineering)
-    ReadSlots {
-        /// Layout whose width to read the table at. Defaults to the
-        /// installed one; the device needs telling how wide a layer is.
-        #[arg(long)]
-        config: Option<PathBuf>,
-        /// Exploratory sweep across groups 0x00-0x40 for protocol work,
-        /// instead of reading the table at its real width.
-        #[arg(long)]
-        wide: bool,
-        /// Read the WHOLE table -- every key, every layer -- in three burst
-        /// queries, the way the vendor app does. Sees past the declared
-        /// layout, which the per-slot walk never does.
-        #[arg(long)]
-        full: bool,
-    },
-
-    /// Determine which firmware slot a gesture drives, by writing a
-    /// distinct marker to each candidate and watching what comes out
-    ProbeGestures {
-        /// Slots to probe. Defaults to every slot past the knob's three,
-        /// up to the six the marker set can tell apart. Narrowing this to
-        /// 7,8 was a guess: slots 7 through 12 all carry the SAME generic
-        /// factory placeholder, so none of them is a likelier gesture slot
-        /// than any other.
-        #[arg(long, value_delimiter = ',', default_value = "7,8,9,10,11")]
-        candidates: Vec<u8>,
-        /// Slot used as the positive control -- one already known to be a
-        /// gesture, so that a silent run can be told apart from a broken
-        /// capture. Defaults to the knob's CCW slot, which follows the
-        /// buttons. Spends one of the six markers, which is why there are
-        /// five candidates and not six.
-        #[arg(long)]
-        control: Option<u8>,
-        /// Device layer to probe on
-        #[arg(long, default_value = "0")]
-        layer: u8,
-        /// Seconds to capture gestures for
-        #[arg(long, default_value = "45")]
-        capture_secs: u64,
-        /// Only watch these devices, e.g. 514c:8850
-        #[arg(long = "device", value_name = "VID:PID")]
-        devices: Vec<String>,
-        /// Layout to read the layer width from
-        #[arg(long)]
-        config: Option<PathBuf>,
-        /// Map EVERY gesture at once instead of probing a few slots: put a
-        /// distinct marker on keys 1-6, perform all five gestures, and read
-        /// which key each one drove. Settles which key ids the knob really
-        /// uses, which `key_id_for_knob` and the vendor app disagree about.
-        #[arg(long)]
-        map: bool,
-    },
-
-    /// Walk every LED mode on one layer so an unmapped one can be identified
-    /// by eye (which mode, if any, is a breathe)
-    LedProbe {
-        /// Device layer to cycle. Its LED is restored afterwards.
-        #[arg(default_value = "0")]
-        layer: u8,
-        /// Seconds to hold each mode
-        #[arg(long, default_value = "3")]
-        dwell_secs: u64,
-        /// Colour to use for the modes that take one
-        #[arg(long, default_value = "red")]
-        color: String,
-    },
-
-    /// Send a raw payload (hex bytes, report 0x03 prepended) for RE work
-    Raw {
-        /// Print the device's reply. Safe for queries (0xFA); a write
-        /// (0xFE) has no reply and will simply time out.
-        #[arg(long)]
-        read: bool,
-        /// How many replies to read. One query can answer with a BURST, and
-        /// reading once makes a burst look like a single record.
-        #[arg(long, default_value_t = 1)]
-        reads: usize,
-        /// Hex bytes, e.g. FC FC 02 00
-        #[arg(trailing_var_arg = true)]
-        bytes: Vec<String>,
-    },
-
-    /// Run as an MCP (Model Context Protocol) server over stdio
-    Mcp {
-        /// Host config JSON path (created with defaults if missing)
-        #[arg(long)]
-        config: Option<PathBuf>,
-    },
+fn nums<T: std::str::FromStr>(m: &ArgMatches, name: &str) -> Result<Vec<T>>
+where
+    T::Err: std::fmt::Display,
+{
+    strings(m, name)
+        .iter()
+        .map(|raw| {
+            raw.parse::<T>()
+                .map_err(|e| anyhow::anyhow!("{name}: '{raw}' is not valid ({e})"))
+        })
+        .collect()
 }
 
 fn main() -> Result<()> {
-    let cli = Cli::parse();
+    let matches = cli().get_matches();
+    let (name, m) = matches.subcommand().expect("a subcommand is required");
 
-    match cli.command {
-        Commands::Status { json } => cmds::run_status(json)?,
-        Commands::Validate { file } => cmds::run_validate(file)?,
-        Commands::Upload {
-            file,
-            layer,
-            no_verify,
-            knob_only,
-        } => cmds::run_upload(file, layer, no_verify, knob_only)?,
-        Commands::Led { layer, mode } => cmds::run_led(layer, mode)?,
-        Commands::LedRead { layer, raw } => cmds::run_led_read(layer, raw)?,
-        Commands::ShowKeys => cmds::run_show_keys()?,
-        Commands::BindSlots {
-            config,
-            buttons,
-            layer,
-            dry_run,
-        } => binding::run_bind_slots(config, buttons, layer, dry_run)?,
-        Commands::BindSeq {
-            key,
-            layer,
-            width,
-            dry_run,
-            delay_ms,
-            actions,
-        } => binding::run_bind_seq(key, layer, width, dry_run, delay_ms, actions)?,
-        Commands::Listen {
-            timeout_secs,
-            devices,
-        } => diag::run_listen(timeout_secs, devices)?,
-        Commands::ImportPresets { out, force } => cmds::run_import_presets(out, force)?,
-        Commands::ListApps => cmds::run_list_apps()?,
-        Commands::ReadSlots { config, wide, full } => {
-            if full {
+    // Dispatch on the registry's CANONICAL name, so an arm and a table entry
+    // cannot disagree about which command this is.
+    let spec = registry::for_surface(false)
+        .find(|s| s.cli_name() == name)
+        .expect("clap only offers subcommands the registry defines");
+
+    match spec.name {
+        "get_status" => cmds::run_status(flag(m, "json"))?,
+        "validate" => cmds::run_validate(opt_path(m, "file"))?,
+        "upload_keymap" => cmds::run_upload(
+            opt_path(m, "file"),
+            opt_num::<u8>(m, "layer")?,
+            flag(m, "no_verify"),
+            flag(m, "knob_only"),
+        )?,
+        "set_led" => cmds::run_led(num::<u8>(m, "layer")?, strings(m, "mode"))?,
+        "get_led" => cmds::run_led_read(num::<u8>(m, "layer")?, flag(m, "raw"))?,
+        "show_keys" => cmds::run_show_keys()?,
+        "bind_slots" => binding::run_bind_slots(
+            opt_path(m, "config"),
+            opt_num::<usize>(m, "buttons")?,
+            opt_num::<u8>(m, "layer")?,
+            flag(m, "dry_run"),
+        )?,
+        "bind_sequence" => binding::run_bind_seq(
+            num::<u8>(m, "key")?,
+            num::<u8>(m, "layer")?,
+            opt_num::<u8>(m, "width")?,
+            flag(m, "dry_run"),
+            num::<u16>(m, "delay_ms")?,
+            strings(m, "actions"),
+        )?,
+        "listen" => diag::run_listen(num::<u64>(m, "timeout_secs")?, strings(m, "device"))?,
+        "import_presets" => cmds::run_import_presets(opt_path(m, "out"), flag(m, "force"))?,
+        "list_apps" => cmds::run_list_apps()?,
+        "read_slots" => {
+            if flag(m, "full") {
                 diag::run_read_full()?
             } else {
-                diag::run_read_slots(cmds::layout_slots_per_layer(config)?, wide)?
+                diag::run_read_slots(
+                    cmds::layout_slots_per_layer(opt_path(m, "config"))?,
+                    flag(m, "wide"),
+                )?
             }
         }
-        Commands::ProbeGestures {
-            candidates,
-            control,
-            layer,
-            capture_secs,
-            devices,
-            config,
-            map,
-        } => {
-            if map {
+        "probe_gestures" => {
+            let config = opt_path(m, "config");
+            let candidates = nums::<u8>(m, "candidates")?;
+            let layer = num::<u8>(m, "layer")?;
+            let capture_secs = num::<u64>(m, "capture_secs")?;
+            let devices = strings(m, "device");
+            if flag(m, "map") {
                 return probe::run_map((1..=6).collect(), layer, capture_secs, devices);
             }
-            // Widen to the highest candidate so the read can address it:
-            // the device only walks a table as wide as it is told, and the
+            // Widen to the highest candidate so the read can address it: the
+            // device only walks a table as wide as it is told, and the
             // candidates deliberately sit past the declared layout.
             let width = cmds::layout_slots_per_layer(config.clone())?
                 .max(candidates.iter().copied().max().unwrap_or(0));
             // The knob's CCW slot follows the buttons, so it is the first
             // slot past them -- the same arithmetic `key_id_for_knob` does.
-            let control = match control {
+            let control = match opt_num::<u8>(m, "control")? {
                 Some(c) => c,
                 None => antiknob::protocol::key_id_for_knob(
                     binding::button_count_for(config)?,
@@ -308,21 +208,111 @@ fn main() -> Result<()> {
             };
             probe::run(control, candidates, layer, width, capture_secs, devices)?
         }
-        Commands::LedProbe {
-            layer,
-            dwell_secs,
-            color,
-        } => diag::run_led_probe(layer, dwell_secs, &color)?,
-        Commands::Raw { read, reads, bytes } => diag::run_raw(bytes, read, reads)?,
-        Commands::Mcp { config } => {
-            let config_path = match config {
+        "led_probe" => diag::run_led_probe(
+            num::<u8>(m, "layer")?,
+            num::<u64>(m, "dwell_secs")?,
+            &opt_str(m, "color").unwrap_or_else(|| "red".into()),
+        )?,
+        "send_raw" => diag::run_raw(
+            strings(m, "bytes"),
+            flag(m, "read"),
+            num::<usize>(m, "reads")?,
+        )?,
+        "mcp" => {
+            let config_path = match opt_path(m, "config") {
                 Some(p) => p,
                 None => antiknob::host::default_config_path()?,
             };
             let ctx = antiknob::api::ApiContext::new(config_path, None);
             antiknob::api::run_mcp_server(ctx)?;
         }
+        other => anyhow::bail!(
+            "the registry offers '{other}' but nothing here handles it; add an arm in main.rs"
+        ),
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use antiknob::api::registry::Reach;
+
+    /// clap validates its own definition; a malformed argument becomes a
+    /// test failure rather than a surprise for whoever runs the command.
+    #[test]
+    fn the_generated_cli_is_well_formed() {
+        cli().debug_assert();
     }
 
-    Ok(())
+    /// Every registry command the CLI claims to expose must actually render
+    /// as a subcommand. Generation is the whole point, so one that silently
+    /// failed to appear would defeat it.
+    #[test]
+    fn every_cli_command_in_the_registry_is_offered() {
+        let app = cli();
+        let offered: Vec<String> = app
+            .get_subcommands()
+            .map(|s| s.get_name().to_string())
+            .collect();
+        for spec in registry::COMMANDS.iter().filter(|s| s.cli.is_yes()) {
+            assert!(
+                offered.contains(&spec.cli_name()),
+                "{} is missing from the CLI: {offered:?}",
+                spec.cli_name()
+            );
+        }
+        assert_eq!(offered.len(), registry::for_surface(false).count());
+    }
+
+    /// Every command reaches a handler. Without this, adding a registry
+    /// entry and forgetting the arm is a runtime error nobody meets until
+    /// they run that exact command.
+    #[test]
+    fn every_offered_command_has_a_handler() {
+        // The arm list is the match's own, kept beside it so the two are
+        // read together.
+        const HANDLED: &[&str] = &[
+            "get_status",
+            "validate",
+            "upload_keymap",
+            "set_led",
+            "get_led",
+            "show_keys",
+            "bind_slots",
+            "bind_sequence",
+            "listen",
+            "import_presets",
+            "list_apps",
+            "read_slots",
+            "probe_gestures",
+            "led_probe",
+            "send_raw",
+            "mcp",
+        ];
+        for spec in registry::for_surface(false) {
+            assert!(
+                HANDLED.contains(&spec.name),
+                "'{}' is offered by the CLI but has no arm in main.rs",
+                spec.name
+            );
+        }
+    }
+
+    /// A command a surface withholds must say why, in a sentence a reader
+    /// can check rather than a placeholder.
+    #[test]
+    fn a_withheld_command_gives_a_real_reason() {
+        for spec in registry::COMMANDS {
+            for reach in [&spec.cli, &spec.mcp] {
+                if let Reach::No(reason) = reach {
+                    assert!(
+                        reason.len() > 20,
+                        "{} is withheld with a reason too thin to check: {reason:?}",
+                        spec.name
+                    );
+                }
+            }
+        }
+    }
 }

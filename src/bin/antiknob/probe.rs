@@ -43,6 +43,128 @@ fn snapshot(slots: &[ProbeSlot], layer: u8, slots_per_layer: u8) -> Result<Vec<V
         .collect())
 }
 
+/// Map EVERY gesture at once: which key id does each one drive?
+///
+/// The ordinary probe assumes it already knows which key is which -- its
+/// control sits on the knob's CCW slot. That assumption is exactly what is
+/// in doubt. The vendor app binds its five knob zones to keys 2-6 and shows
+/// no buttons at all; `key_id_for_knob` places the knob at 4-6 behind three
+/// buttons taken from the declared layout. The two overlap, so if the vendor
+/// is right then every knob binding this tool has ever flashed is on the
+/// wrong gesture.
+///
+/// This settles it without assuming anything: put a distinct marker on
+/// EVERY key in the range, perform every gesture, and read which key each
+/// one emitted. There is no control because there is nothing to control
+/// against -- but a run where nothing at all fires is reported as measuring
+/// nothing rather than as five silent keys.
+pub fn run_map(keys: Vec<u8>, layer: u8, capture_secs: u64, devices: Vec<String>) -> Result<()> {
+    println!("[ ==> ] Reading the device's own bindings so the markers cannot collide...");
+    let table = device::with_device(|dev| Ok(device::read_full_table(dev)))?;
+    // Only usages OUTSIDE the keys being overwritten matter: the ones on
+    // those keys are about to be replaced, so reserving markers against them
+    // would spend the budget for nothing.
+    let outside: Vec<Vec<u8>> = table
+        .into_iter()
+        .filter(|r| {
+            device::verify::parse_record(r)
+                .is_none_or(|(a, _)| !keys.contains(&a.key_id) || a.layer != layer + 1)
+        })
+        .collect();
+    let in_use = gesture_probe::usages_in_use(&outside);
+
+    let plan = gesture_probe::plan_avoiding(&keys, &in_use).map_err(|e| anyhow::anyhow!(e))?;
+    let width = keys.iter().copied().max().unwrap_or(6);
+
+    println!("[ ==> ] Reading the current contents of the candidate slots first...");
+    let before = snapshot(&plan, layer, width)?;
+    println!("        {} slot(s) captured for restore.", before.len());
+
+    let packets = gesture_probe::probe_packets(&plan, layer).map_err(|e| anyhow::anyhow!(e))?;
+    let armed = packets.clone();
+    device::with_device(move |dev| {
+        for p in &armed {
+            device::send_report(dev, p)?;
+            sleep(Duration::from_millis(15));
+        }
+        device::send_commit(dev)
+    })
+    .context("could not arm the probe")?;
+
+    let check = device::with_device(move |dev| {
+        Ok(device::read_slot_table(dev, width, device::DEVICE_LAYERS))
+    })?;
+    let verdicts = device::verify::verify(&packets, &check);
+    let confirmed = verdicts
+        .iter()
+        .filter(|(_, v)| *v == device::verify::SlotVerdict::Confirmed)
+        .count();
+    println!("[ ==> ] Armed {}/{} marker(s):", confirmed, verdicts.len());
+    for s in &plan {
+        println!("        key {} -> {}", s.key_id, s.marker_name);
+    }
+    if confirmed != verdicts.len() {
+        println!("[ Wrn ] Not every marker landed; a silent key below would be a");
+        println!("        failed write rather than a key no gesture drives. Stopping.");
+        restore(&before);
+        return Ok(());
+    }
+
+    println!();
+    println!("[ ==> ] Now perform each gesture ONCE, slowly, in this order:");
+    println!("        1. twist counter-clockwise");
+    println!("        2. press");
+    println!("        3. twist clockwise");
+    println!("        4. hold and twist LEFT");
+    println!("        5. hold and twist RIGHT");
+    println!("        Do NOT press any buttons. Capturing for {capture_secs}s...");
+    let seen = capture(capture_secs, &devices)?;
+
+    println!();
+    println!("[ ==> ] Results, in the order the device emitted them:");
+    let mut fired = Vec::new();
+    for usage in &seen {
+        match gesture_probe::slot_for_usage(&plan, *usage) {
+            Some(key_id) => {
+                fired.push(key_id);
+                println!("        key {key_id} fired  (usage {usage:#06x})");
+            }
+            None => println!("        usage {usage:#06x} is not one of the markers"),
+        }
+    }
+    println!();
+    if fired.is_empty() {
+        println!("[ Wrn ] INCONCLUSIVE: nothing fired, so this run measured nothing.");
+        println!("        Re-run and make sure a gesture happens inside the window.");
+    } else {
+        println!(
+            "[ Ok  ] {} of {} key(s) are driven by a gesture.",
+            fired.len(),
+            plan.len()
+        );
+        for s in &plan {
+            if !fired.contains(&s.key_id) {
+                println!("        key {} was never driven", s.key_id);
+            }
+        }
+        println!();
+        println!("        The ORDER above is the answer: the first key listed is the");
+        println!("        gesture you performed first. Compare it against");
+        println!("        `protocol::key_id_for_knob`, which currently says the knob");
+        println!(
+            "        is at {:?}.",
+            [
+                antiknob::protocol::key_id_for_knob(3, 0, antiknob::protocol::KnobEvent::RotateCCW),
+                antiknob::protocol::key_id_for_knob(3, 0, antiknob::protocol::KnobEvent::Press),
+                antiknob::protocol::key_id_for_knob(3, 0, antiknob::protocol::KnobEvent::RotateCW),
+            ]
+        );
+    }
+
+    restore(&before);
+    Ok(())
+}
+
 pub fn run(
     control: u8,
     candidates: Vec<u8>,

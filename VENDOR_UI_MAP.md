@@ -175,13 +175,20 @@ REPO's mapping. But both probe runs also captured `0x00B6` (key 2's content)
 and never captured key 3's, which fits the vendor's mapping with the press
 gesture not registering.
 
-The test that settles it needs one gesture performed: the device now holds
-five distinct usages at keys 2-6 (`b7 6f cd 70 92`), so
+The test that settles it is now one command:
 
-    antiknob listen --timeout-secs 20
+    antiknob probe-gestures --map
 
-and a single deliberate CCW twist names the key id outright. Until then,
-NOTHING in the code changes on this point.
+It puts a distinct marker on keys 1-6, asks for all five gestures in a
+stated order, and prints which key each one drove -- then restores every
+slot. There is no control marker because there is nothing left to control
+against when every key is a candidate; instead a run where nothing fires
+reports INCONCLUSIVE rather than listing six silent keys.
+
+The ORDER of the output is the answer. Perform CCW, press, CW, hold-left,
+hold-right in that order and the keys are named in that order.
+
+Until it is run, NOTHING in the code changes on this point.
 
 ## Save writes only DIRTY records
 

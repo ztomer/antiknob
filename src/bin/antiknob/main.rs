@@ -192,6 +192,12 @@ enum Commands {
         /// Layout to read the layer width from
         #[arg(long)]
         config: Option<PathBuf>,
+        /// Map EVERY gesture at once instead of probing a few slots: put a
+        /// distinct marker on keys 1-6, perform all five gestures, and read
+        /// which key each one drove. Settles which key ids the knob really
+        /// uses, which `key_id_for_knob` and the vendor app disagree about.
+        #[arg(long)]
+        map: bool,
     },
 
     /// Walk every LED mode on one layer so an unmapped one can be identified
@@ -280,7 +286,11 @@ fn main() -> Result<()> {
             capture_secs,
             devices,
             config,
+            map,
         } => {
+            if map {
+                return probe::run_map((1..=6).collect(), layer, capture_secs, devices);
+            }
             // Widen to the highest candidate so the read can address it:
             // the device only walks a table as wide as it is told, and the
             // candidates deliberately sit past the declared layout.

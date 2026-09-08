@@ -89,6 +89,26 @@ struct LayerTabBar: View {
         .buttonStyle(.plain)
         .accessibilityLabel(label(i))
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        // Order is a real setting -- the hotkeys and double-tap cycle the
+        // layers in this order -- so losing the row's chevrons could not
+        // mean losing the ability to reorder. On the pill it is about the
+        // one being pointed at.
+        .contextMenu {
+            Button("Move Left") { move(i, by: -1) }
+                .disabled(i == 0)
+            Button("Move Right") { move(i, by: 1) }
+                .disabled(i >= store.cfg.layers.count - 1)
+        }
+    }
+
+    private func move(_ i: Int, by delta: Int) {
+        let dest = i + delta
+        guard store.cfg.layers.indices.contains(i),
+              store.cfg.layers.indices.contains(dest) else { return }
+        withAnimation {
+            store.cfg.layers.swapAt(i, dest)
+            selected = dest
+        }
     }
 
     private var addButton: some View {
@@ -147,14 +167,6 @@ struct LayerEditRow: View {
 
             Spacer(minLength: 8)
 
-            Button { move(by: -1) } label: { Image(systemName: "chevron.left") }
-                .disabled(idx == 0)
-                .help("Move this layer earlier")
-
-            Button { move(by: 1) } label: { Image(systemName: "chevron.right") }
-                .disabled(idx >= store.cfg.layers.count - 1)
-                .help("Move this layer later")
-
             Button(role: .destructive) { confirmingDelete = true } label: {
                 Image(systemName: "trash")
             }
@@ -174,15 +186,6 @@ struct LayerEditRow: View {
     private var layerLabel: String {
         let name = store[layer: idx]?.name ?? ""
         return name.isEmpty ? "Layer \(idx + 1)" : name
-    }
-
-    private func move(by delta: Int) {
-        let dest = idx + delta
-        guard store.cfg.layers.indices.contains(dest) else { return }
-        withAnimation {
-            store.cfg.layers.swapAt(idx, dest)
-            selectedLayer = dest
-        }
     }
 
     private func delete() {

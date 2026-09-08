@@ -63,11 +63,17 @@ struct StatusRow<Indicator: View>: View {
             Text(label)
                 .foregroundStyle(.secondary)
                 .gridColumnAlignment(.leading)
+            // The value column takes the slack, which pushes the light to
+            // the pane's trailing edge. The lights used to sit immediately
+            // after the value, so their column landed at whatever x the
+            // longest value happened to end at -- a straight edge, but an
+            // arbitrary one in the middle of the pane.
             Text(value)
                 .foregroundStyle(valueStyle)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .gridColumnAlignment(.leading)
             indicator
-                .gridColumnAlignment(.leading)
+                .gridColumnAlignment(.trailing)
         }
     }
 }

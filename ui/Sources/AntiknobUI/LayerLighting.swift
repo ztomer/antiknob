@@ -30,12 +30,6 @@ struct LayerLightingRow: View {
             Text("Light mode")
                 .fixedSize(horizontal: true, vertical: false)
                 .gridColumnAlignment(.leading)
-            // The gestures' parameter column, held open and empty: a mode
-            // takes no parameter, and collapsing the cell would pull the
-            // glyphs left of the action menus they line up with.
-            Color.clear
-                .frame(width: Layout.gestureParams, height: 1)
-                .gridColumnAlignment(.leading)
             glyphRow
                 .gridColumnAlignment(.leading)
         }
@@ -61,9 +55,6 @@ struct LayerLightingRow: View {
             }
             .frame(width: Layout.dropdown, alignment: .leading)
 
-            Text(selection?.name ?? "No change")
-                .font(.caption)
-                .foregroundStyle(.secondary)
             Spacer(minLength: 0)
         }
         .padding(.vertical, 2)

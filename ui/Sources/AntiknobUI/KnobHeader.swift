@@ -34,7 +34,10 @@ struct KnobHeader: View {
     }
 
     private var knobBody: some View {
-        VStack(spacing: 6) {
+        // Clear of the ring. The label sat 6pt under an 84pt knob, which was
+        // fine until the knob grew a 108pt lit ring around it -- "Press"
+        // then printed over the bottom of the glow.
+        VStack(spacing: 18) {
             ZStack {
                 // The lit ring, when this layer sets a mode. Sized to sit
                 // just outside the knob body so the two read as one object.

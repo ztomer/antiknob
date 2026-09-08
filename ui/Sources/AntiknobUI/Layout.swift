@@ -20,14 +20,6 @@ enum Layout {
     /// size and position when its selection changes.
     static let dropdown: CGFloat = 216
 
-    /// A gesture's parameter control (scroll stepper, chord pill, app name).
-    ///
-    /// Reserved even when the action takes no parameter, so the action
-    /// dropdown starts at the same x on every layer -- otherwise the column
-    /// collapses on a layer whose actions have no parameters and the
-    /// dropdown jumps sideways when you switch tabs.
-    static let gestureParams: CGFloat = 150
-
     /// Chrome `Dropdown` draws around its label: 9pt horizontal padding each
     /// side, the chevron, and the gap before it. Subtracted from `dropdown`
     /// when checking a label fits, with a little slack so the check errs

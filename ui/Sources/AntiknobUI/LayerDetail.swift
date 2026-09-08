@@ -94,10 +94,18 @@ struct LayerDetail: View {
             Text(gestureTitles[g] ?? g.rawValue)
                 .fixedSize(horizontal: true, vertical: false)
                 .gridColumnAlignment(.leading)
-            params(g)
-                .gridColumnAlignment(.leading)
-            actionMenu(g)
-                .gridColumnAlignment(.leading)
+            // The action and whatever it needs, in ONE cell. The parameter
+            // used to come BEFORE the menu that decides whether there is
+            // one -- a row read "3 lines" and then, to its right, what those
+            // lines were for. Putting it in a column of its own fixed the
+            // order and introduced a new problem: the last column takes the
+            // grid's slack, which left the stepper at the pane's edge.
+            HStack(spacing: 10) {
+                actionMenu(g)
+                params(g)
+                Spacer(minLength: 0)
+            }
+            .gridColumnAlignment(.leading)
         }
         .padding(.vertical, 3)
         .contentShape(Rectangle())
@@ -207,7 +215,6 @@ struct LayerDetail: View {
             paramControls(g)
         }
         .fixedSize()
-        .frame(width: Layout.gestureParams, alignment: .leading)
     }
 
     @ViewBuilder

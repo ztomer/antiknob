@@ -85,6 +85,34 @@ struct DaemonCommand: Identifiable, Hashable, Sendable {
         )
     }
 
+    /// The first sentence of `about`, for a list someone is scanning.
+    ///
+    /// These descriptions are written for an AI agent reading the MCP tool
+    /// schema, so they are thorough on purpose -- `bind_sequence` runs to
+    /// four lines about slot capacity and chord cost. That is right where an
+    /// agent reads it and wrong in a list of eighteen rows. The full text is
+    /// not dropped, only moved to the row's tooltip.
+    var summary: String {
+        let trimmed = about.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A sentence ends at ". " followed by a CAPITAL. Splitting on "." or
+        // on ". " alone is not enough: the registry's own text says "Takes a
+        // name, e.g. volumeup", and both of those rules cut it at "e.g." --
+        // caught by `innerPeriodsDoNotSplit`, which is why it is here rather
+        // than in a comment claiming the simpler rule worked.
+        let chars = Array(trimmed)
+        for i in chars.indices.dropLast(2) where chars[i] == "." && chars[i + 1] == " " {
+            if chars[i + 2].isUppercase {
+                return String(chars[...i])
+            }
+        }
+        return trimmed
+    }
+
+    /// True when the tooltip would say more than the row already does.
+    var hasMoreDetail: Bool {
+        summary.count < about.trimmingCharacters(in: .whitespacesAndNewlines).count
+    }
+
     /// The commands an agent or a script can call: everything the socket and
     /// the MCP server carry. The pane lists these; the CLI-only ones are
     /// reachable from a terminal and are not what "exposed capabilities"

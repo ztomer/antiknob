@@ -81,6 +81,7 @@ pub fn run_bind_slots(
         Ok(Some(layer)) => {
             let arrangement = host::device_binding::arrangement(Some(layer), device::DEVICE_LAYERS);
             println!("[ Ok  ] {}", arrangement.describe());
+            println!("        Re-run with `--layer N` to move it to another device layer.");
         }
         Ok(None) => {
             println!("        Every layer was bound, so no single one is recorded as THE");

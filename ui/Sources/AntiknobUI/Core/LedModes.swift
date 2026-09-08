@@ -107,13 +107,13 @@ struct LedMode: Identifiable, Hashable, Sendable {
         ),
         LedMode(
             id: "ripple", name: "Ripple",
-            desc: "Pulses on input — reported by the reference project, not watched here",
+            desc: "Pulses on input",
             icon: "waveform.path.ecg", number: 3,
             appearance: .pulse(RGB(0.25, 0.55, 1.0))
         ),
         LedMode(
             id: "rainbow", name: "Rainbow",
-            desc: "Cycles the vendor's six colours — the effect the knob ships in",
+            desc: "Cycling colours — how the knob ships",
             icon: "rainbow", number: 4,
             appearance: .palette(RGB.vendorRainbow)
         ),

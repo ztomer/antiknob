@@ -57,10 +57,11 @@ extension ServicesPane {
                 capabilitiesBody
             }
         } footer: {
-            Text(callable == nil
-                 ? "Read from the daemon's own command table when it is reachable."
-                 : "Read from the daemon's command table — the same one that generates "
-                   + "its CLI and its MCP tool list, so this cannot drift from either.")
+            // What the reader can DO with this, not how it is plumbed. The
+            // previous line explained that the list is generated from the
+            // same table as the CLI and "cannot drift" -- true, and a note
+            // to ourselves rather than to anyone reading the pane.
+            Text("Every command this daemon answers to, over the socket or MCP.")
         }
     }
 
@@ -70,19 +71,23 @@ extension ServicesPane {
 
     private var capabilitiesTitle: String {
         if let callable {
-            return "Exposed Capabilities (\(callable.count) Tools)"
+            return "Commands (\(callable.count))"
         }
-        return commandsError == nil ? "Reading capabilities…" : "Capabilities unavailable"
+        return commandsError == nil ? "Reading commands…" : "Commands unavailable"
     }
 
     @ViewBuilder
     private var capabilitiesBody: some View {
         if let callable {
+            // One Form row per tool, and no explicit `Divider`.
+            //
+            // A Divider between entries is a SIBLING of them, so a grouped
+            // Form lays it out as a row of its own -- with a row's minimum
+            // height and a row's padding around a one-pixel line. That was
+            // the empty band between every pair of tools. The grouped style
+            // already separates its rows; the extra one only added the gap.
             ForEach(callable) { tool in
                 toolRow(tool)
-                if tool.id != callable.last?.id {
-                    Divider()
-                }
             }
         } else if let commandsError {
             // Named rather than blank: an empty list and a daemon that could
@@ -94,7 +99,7 @@ extension ServicesPane {
     }
 
     private func toolRow(_ tool: DaemonCommand) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text(tool.name)
                     .font(.system(.subheadline, design: .monospaced))
@@ -121,22 +126,31 @@ extension ServicesPane {
                 .help("Copy tool name")
             }
 
-            Text(tool.about)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(tool.summary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if tool.hasMoreDetail {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .help(tool.about)
 
             if !tool.cli.available, let reason = tool.cli.reason {
-                // The registry records WHY a command is absent from a
-                // surface. Carrying it distinguishes a considered omission
-                // from one nobody has noticed.
-                Text("Not on the CLI: \(reason)")
+                // Where a command can be called from. The registry's stated
+                // reason is kept, but on hover: it is written for whoever
+                // maintains the table, and in the row it read as an apology
+                // under every second entry.
+                Text("Socket and MCP only")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .help(reason)
             }
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 1)
     }
 
     func loadCommands() {

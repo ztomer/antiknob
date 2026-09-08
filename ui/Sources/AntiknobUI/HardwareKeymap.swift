@@ -99,10 +99,9 @@ extension HardwarePane {
         Section {
             VStack(alignment: .leading, spacing: 8) {
                 Text("""
-                    Writes actions into the knob's own flash, so it works with no daemon on \
-                    any OS. This REPLACES the slot chords above: a knob flashed standalone \
-                    stops reaching Antiknob, and the host layers go quiet until the chords \
-                    are flashed again.
+                    Writes actions into the knob itself, so it works on any machine with no \
+                    daemon. This overwrites the chords above, and the host layers stay quiet \
+                    until you flash them again.
                     """)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -166,13 +165,14 @@ extension HardwarePane {
             }
             .padding(.vertical, 4)
         } header: {
-            Text("Standalone On-Chip Keymap Flashing")
+            Text("Standalone Keymap")
         } footer: {
+            // Plain text: SwiftUI renders backticks literally, so a YAML key
+            // written as code arrives on screen wearing punctuation.
             Text("""
-                `rows` × `columns` declares how many buttons come before the knob, which is \
-                what places its five gesture slots. `led:` names a MODE — off, red, green, \
-                ripple, rainbow, rgb — because this firmware's modes carry their own colours \
-                and ignore the colour bytes.
+                rows × columns is how many buttons come before the knob, which is what \
+                places its five gestures. The led: line takes a mode — off, red, green, \
+                ripple, rainbow, rgb — not a colour; each mode carries its own.
                 """)
         }
     }

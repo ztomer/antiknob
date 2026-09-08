@@ -83,6 +83,13 @@ impl Arrangement {
     /// Always says WHY when something cannot work, because the failure it
     /// describes is otherwise invisible: a virtual layer that never fires
     /// looks exactly like one that is configured wrong.
+    ///
+    /// States the FACT and stops there. Each failing case used to end with
+    /// "Run `antiknob bind-slots --layer N`", which is the right next step
+    /// in a terminal and the wrong one in the settings app -- where it drew
+    /// literal backticks under a button that does exactly that. One string
+    /// cannot carry both calls to action, so it carries neither and each
+    /// surface adds its own.
     pub fn describe(&self) -> String {
         match self {
             Self::Bound {
@@ -102,15 +109,14 @@ impl Arrangement {
                 }
             }
             Self::Unbound { .. } => "No device layer is bound to slot chords, so the daemon \
-                 never hears the knob and no host layer can fire. Run \
-                 `antiknob bind-slots --layer N` to bind one."
+                 never hears the knob and no host layer can fire."
                 .to_string(),
             Self::OutOfRange {
                 recorded,
                 device_layers,
             } => format!(
                 "Device layer {} is recorded as host-translated, but this firmware has \
-                 only layers 1-{}. Re-run `antiknob bind-slots --layer N`.",
+                 only layers 1-{}.",
                 recorded + 1,
                 device_layers
             ),
@@ -208,7 +214,36 @@ mod tests {
         assert!(!a.daemon_can_hear_the_knob());
         let said = a.describe();
         assert!(said.contains("never hears"), "{said}");
-        assert!(said.contains("bind-slots"), "{said}");
+        assert!(said.contains("no host layer can fire"), "{said}");
+    }
+
+    /// `describe` is read by a terminal AND by the settings app, so it must
+    /// not carry either one's next step.
+    ///
+    /// This test used to assert the opposite -- that the unbound message
+    /// contains "bind-slots" -- which pinned a shell command inside a string
+    /// the GUI renders. It arrived there as literal backticks, directly
+    /// under a button that runs exactly that command, beneath a warning that
+    /// had already said the same thing. The assertion was holding the defect
+    /// in place, so it is inverted rather than deleted.
+    #[test]
+    fn no_description_tells_the_reader_to_run_a_command() {
+        let every = [
+            arrangement(None, DEVICE_LAYERS),
+            arrangement(Some(0), DEVICE_LAYERS),
+            arrangement(Some(DEVICE_LAYERS), DEVICE_LAYERS),
+            arrangement(Some(0), 1),
+        ];
+        for a in every {
+            let said = a.describe();
+            for shell in ["antiknob ", "bind-slots", "`", "--layer", "Run ", "Re-run"] {
+                assert!(
+                    !said.contains(shell),
+                    "describe() names a command or shell syntax ({shell:?}): {said}"
+                );
+            }
+            assert!(!said.is_empty());
+        }
     }
 
     /// Clamping would hide a config that is wrong about something.

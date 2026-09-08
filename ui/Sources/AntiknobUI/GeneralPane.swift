@@ -41,21 +41,17 @@ struct GeneralPane: View {
         } header: {
             Text("Layer Switching")
         } footer: {
-            Text("Double-tap waits \(Int(store.cfg.tapWindow * 1000)) ms before a single "
-               + "press acts. Turn it off for instant presses and switch layers with the "
-               + "shortcuts or the menu bar instead. The shortcuts cycle through the "
-               + "layers in a loop and require at least one modifier key.")
+            Text("With double-tap on, a single press waits "
+               + "\(Int(store.cfg.tapWindow * 1000)) ms to see if a second one follows. "
+               + "The shortcuts and the menu bar switch layers either way.")
         }
     }
 
     private var slotBindingSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Firmware Slot Translation")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                Text("Antiknob binds the knob's 5 gesture slots to ⌃⌥F16..F20 once over USB. "
-                   + "All five gestures are then translated host-side by the daemon.")
+                Text("Binds the knob's five gestures to ⌃⌥F16..F20 so the daemon hears "
+                   + "them. Run once.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -70,10 +66,13 @@ struct GeneralPane: View {
                                          ? Color.orange : Color.secondary)
                         .help(store.modePresentation.detail ?? banner)
                 }
-                if let arrangement = store.deviceBindingSummary {
-                    // Which DEVICE layer carries the chords. It used to be
-                    // repeated at the top of every host layer's tab, where
-                    // it is not a fact about any one of them.
+                // Which DEVICE layer carries the chords -- shown only when
+                // one does. With nothing bound, this line said "no host
+                // layer can fire", which is what the warning directly above
+                // it already says; two sentences for one fact, the second
+                // one longer.
+                if store.modePresentation.hostLayersCanFire,
+                   let arrangement = store.deviceBindingSummary {
                     Text(arrangement)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -102,7 +101,7 @@ struct GeneralPane: View {
             }
             .padding(.vertical, 4)
         } header: {
-            Text("Hardware Configuration")
+            Text("Firmware Slot Translation")
         }
     }
 
@@ -112,10 +111,8 @@ struct GeneralPane: View {
                 get: { store.startOnLogin },
                 set: { store.toggleStartOnLogin(enabled: $0) }
             ))
-            Text("""
-                Automatically launches the Antiknob daemon at user login to maintain \
-                knob gestures, layer switching, and lighting control.
-                """)
+            Text("Starts the Antiknob daemon when you log in. Without it the knob's "
+               + "gestures reach macOS unchanged.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -132,17 +129,17 @@ struct GeneralPane: View {
                     label: "Daemon Socket",
                     value: store.daemonConnected
                         ? "Connected (\(store.socketPath ?? "path unknown"))"
-                        : "Offline (Local fallback)"
+                        : "Not running — changes are saved but not applied"
                 ) {
                     StatusDot(color: store.daemonConnected ? .green : .orange)
                 }
 
-                StatusRow(label: "Knob Hardware", value: store.hardwareProduct) {
+                StatusRow(label: "Device", value: store.hardwareProduct) {
                     StatusDot(color: store.hardwareConnected ? .green : .secondary)
                 }
 
                 StatusRow(
-                    label: "Connection Mode",
+                    label: "Connection",
                     value: store.hardwareConnected ? store.transportDisplay : "Not connected"
                 ) {
                     Image(systemName: store.transportIcon)
@@ -152,7 +149,7 @@ struct GeneralPane: View {
                 }
 
                 StatusRow(
-                    label: "Power & Battery",
+                    label: "Power",
                     value: store.hardwareConnected ? store.powerDescription : "Disconnected"
                 ) {
                     // `store.powerIcon`, not a local bolt/battery guess: this

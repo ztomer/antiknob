@@ -62,13 +62,6 @@ struct InspectorPane: View {
     private var trafficSnooperSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
-                Text("""
-                    Non-exclusive packet monitor. Snoops keyboard, mouse, and vendor \
-                    endpoints while the OS continues receiving inputs.
-                    """)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
                 HStack {
                     Button {
                         if isSnooping {
@@ -81,11 +74,11 @@ struct InspectorPane: View {
                             Circle()
                                 .fill(isSnooping ? Color.green : Color.secondary)
                                 .frame(width: 8, height: 8)
-                            Text(isSnooping ? "Stop Live Snoop" : "Start Live Traffic Snoop")
+                            Text(isSnooping ? "Stop" : "Start Snoop")
                         }
                     }
 
-                    Button("Clear Traffic Log") {
+                    Button("Clear") {
                         logs.removeAll()
                     }
                     .disabled(logs.isEmpty)
@@ -94,7 +87,7 @@ struct InspectorPane: View {
                 }
 
                 if logs.isEmpty {
-                    Text("No packets captured yet. Start snooping and twist or press the knob.")
+                    Text("Nothing captured yet. Start the snoop, then turn or press the knob.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 12)
@@ -134,25 +127,26 @@ struct InspectorPane: View {
             }
             .padding(.vertical, 4)
         } header: {
-            Text("Live HID Wire Snoop")
+            Text("Live HID Traffic")
         } footer: {
-            Text("Opens all device interfaces non-exclusively (vendor 0xFF00, keyboard 0x01:0x06, mouse 0x01:0x02).")
+            Text("Reads the vendor (0xFF00), keyboard (0x01:0x06) and mouse (0x01:0x02) "
+               + "interfaces without taking them from macOS.")
         }
     }
 
     private var slotMemorySection: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
-                Text("""
-                    Inspect on-chip slot table records. Reads raw 64-byte responses via \
-                    vendor query [0xFA group 0x00 counter].
-                    """)
+                // No backticks: SwiftUI's Text renders them literally rather
+                // than as code, so they arrive on screen as punctuation.
+                Text("What the knob has stored in each slot — the raw 64-byte replies "
+                   + "to a FA group query.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
                 PropertyGrid {
                     GridRow {
-                        Text("Memory Group")
+                        Text("Group")
                             .foregroundStyle(.secondary)
                             .frame(width: Layout.controlLabel, alignment: .leading)
                             .gridColumnAlignment(.leading)
@@ -172,10 +166,10 @@ struct InspectorPane: View {
                             if isReadingSlots {
                                 HStack(spacing: 6) {
                                     ProgressView().controlSize(.small)
-                                    Text("Reading memory…")
+                                    Text("Reading…")
                                 }
                             } else {
-                                Label("Dump Slot Memory", systemImage: "memorychip")
+                                Label("Read Slots", systemImage: "memorychip")
                             }
                         }
                         .disabled(isReadingSlots || !store.hardwareConnected)
@@ -208,14 +202,14 @@ struct InspectorPane: View {
             }
             .padding(.vertical, 4)
         } header: {
-            Text("Slot Table Memory Dump")
+            Text("Slot Table")
         }
     }
 
     private var rawConsoleSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Send custom 64-byte raw HID report payloads (Report ID 0x03) directly to the device.")
+                Text("Sends a 64-byte report (ID 0x03) straight to the knob.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -252,7 +246,7 @@ struct InspectorPane: View {
             }
             .padding(.vertical, 4)
         } header: {
-            Text("Raw HID Packet Console")
+            Text("Raw Packets")
         }
     }
 }

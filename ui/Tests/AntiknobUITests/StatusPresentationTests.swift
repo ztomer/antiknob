@@ -411,3 +411,50 @@ struct DaemonCommandTests {
         #expect(DaemonCommand(json: ["about": "no name here"]) == nil)
     }
 }
+
+/// The command list shows a scannable line and keeps the rest on hover.
+///
+/// These `about` strings are MCP tool descriptions, written for an agent
+/// reading a schema. `bind_sequence` runs to four lines about slot capacity
+/// and chord cost. Right where an agent reads it; wrong in a list of
+/// eighteen rows someone is scanning.
+@Suite("Command summaries")
+struct DaemonCommandSummaryTests {
+    private func cmd(_ about: String) -> DaemonCommand? {
+        DaemonCommand(json: ["name": "x", "about": about])
+    }
+
+    @Test("a multi-sentence description shows its first sentence")
+    func firstSentenceOnly() {
+        let c = cmd("Set a layer's backlight mode. Modes: off, red, green, ripple.")
+        #expect(c?.summary == "Set a layer's backlight mode.")
+        #expect(c?.hasMoreDetail == true)
+    }
+
+    /// A one-sentence description is shown whole, and must not be flagged as
+    /// having more behind it -- an affordance for detail that opens nothing
+    /// is the defect this whole sweep is about.
+    @Test("a single sentence is shown in full and flags no hidden detail")
+    func singleSentenceIsWhole() {
+        let c = cmd("Read back a layer's current LED mode. ")
+        #expect(c?.summary == "Read back a layer's current LED mode.")
+        #expect(c?.hasMoreDetail == false)
+    }
+
+    /// Splitting on "." alone would cut these in half. The registry is full
+    /// of them: hex constants, "e.g.", version numbers.
+    @Test("a period inside a sentence does not end it")
+    func innerPeriodsDoNotSplit() {
+        let hex = cmd("Opens the vendor endpoint 0xFF00.5 and reads it. Then stops.")
+        #expect(hex?.summary == "Opens the vendor endpoint 0xFF00.5 and reads it.")
+        let eg = cmd("Takes a name, e.g. volumeup, and binds it.")
+        #expect(eg?.summary == "Takes a name, e.g. volumeup, and binds it.")
+        #expect(eg?.hasMoreDetail == false)
+    }
+
+    @Test("an empty description degrades to empty rather than crashing")
+    func emptyIsSafe() {
+        #expect(cmd("")?.summary == "")
+        #expect(cmd("")?.hasMoreDetail == false)
+    }
+}

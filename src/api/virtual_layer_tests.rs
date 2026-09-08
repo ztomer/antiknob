@@ -146,7 +146,12 @@ mod tests {
         assert_eq!(v["device_binding"]["state"], "unbound");
         let said = v["device_binding_summary"].as_str().expect("summary");
         assert!(said.contains("never hears"), "{said}");
-        assert!(said.contains("bind-slots"), "{said}");
+        assert!(said.contains("no host layer can fire"), "{said}");
+        // Not "bind-slots", which this used to assert. The summary is read
+        // by a terminal and by the settings app, so it states the fact and
+        // leaves the next step to whichever surface is rendering it; see
+        // `host::device_binding::no_description_tells_the_reader_to_run_a_command`.
+        assert!(!said.contains("bind-slots"), "{said}");
         // The variant still resolves -- the config is fine. It is the
         // hardware arrangement that is not, and the two must not be
         // conflated in the report.

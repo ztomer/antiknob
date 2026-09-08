@@ -79,11 +79,11 @@ struct HardwarePane: View {
     private var deviceInfoSection: some View {
         Section {
             PropertyGrid {
-                StatusRow(label: "Device Model", value: store.hardwareProduct) {
+                StatusRow(label: "Device", value: store.hardwareProduct) {
                     StatusDot(color: store.hardwareConnected ? .green : .secondary)
                 }
                 StatusRow(
-                    label: "Active Transport",
+                    label: "Connection",
                     value: store.hardwareConnected ? store.transportDisplay : "Not detected",
                     valueStyle: store.hardwareConnected ? .primary : .secondary
                 ) {
@@ -93,7 +93,7 @@ struct HardwarePane: View {
                         .frame(width: 16)
                 }
                 StatusRow(
-                    label: "Power Supply",
+                    label: "Power",
                     value: store.hardwareConnected ? store.powerDescription : "Disconnected"
                 ) {
                     Image(systemName: store.powerIcon)
@@ -103,13 +103,12 @@ struct HardwarePane: View {
                 }
             }
         } header: {
-            Text("Hardware & Transport Details")
+            Text("Device")
         } footer: {
             // Says which of the many endpoints below this names, because it
             // used to name whichever one enumerated first -- a keyboard
             // interface belonging to a different product id from the knob.
-            Text("The vendor configuration endpoint (usage page 0xFF00) — the interface "
-               + "every command on this pane is sent to.")
+            Text("The interface every command on this pane is sent to.")
         }
     }
 
@@ -169,8 +168,8 @@ struct HardwarePane: View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
                 Text("""
-                    Binds the knob's five gesture slots to ⌃⌥F16..F20 so the daemon can \
-                    swallow them and run the host layers. Run once.
+                    Binds the knob's five gestures to ⌃⌥F16..F20 so the daemon hears them \
+                    and runs the host layers. Run once.
                     """)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -214,7 +213,7 @@ struct HardwarePane: View {
             }
             .padding(.vertical, 4)
         } header: {
-            Text("Host Translation Chords (Recommended)")
+            Text("Host Translation Chords")
         } footer: {
             Text("""
                 Twist Left=⌃⌥F16, Press=⌃⌥F17, Twist Right=⌃⌥F18, \

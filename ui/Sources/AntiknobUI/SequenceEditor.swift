@@ -45,11 +45,11 @@ struct SequenceEditor: View {
                     Image(systemName: "list.bullet.rectangle")
                         .font(.largeTitle)
                         .foregroundStyle(.tertiary)
-                    Text("No steps configured.")
+                    // One line. The second said "Add a keystroke or delay
+                    // below" directly above the two buttons named exactly
+                    // that, which is a caption for a picture of itself.
+                    Text("No steps yet.")
                         .foregroundStyle(.secondary)
-                    Text("Add a keystroke or delay below.")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
                 }
             }
         }

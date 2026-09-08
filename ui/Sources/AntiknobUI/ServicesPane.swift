@@ -100,10 +100,9 @@ struct ServicesPane: View {
             }
             .padding(.top, 4)
         } header: {
-            Text("Unix Domain Socket IPC")
+            Text("Daemon")
         } footer: {
-            Text("The daemon serves the single source of truth over this socket. "
-               + "The native UI, CLI, and third-party scripts all speak to it.")
+            Text("This app, the CLI and any script reach the knob through the daemon.")
         }
     }
 
@@ -115,8 +114,8 @@ struct ServicesPane: View {
                 StatusRow(
                     label: "Event Tap Status",
                     value: store.tapActive
-                        ? "Active (Swallowing & Synthesizing)"
-                        : "Degraded (Permission Needed)",
+                        ? "Running"
+                        : "Needs permission",
                     valueStyle: store.tapActive ? .primary : .secondary
                 ) {
                     StatusDot(color: store.tapActive ? .green : .orange)
@@ -126,9 +125,9 @@ struct ServicesPane: View {
             if !store.tapActive {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("""
-                        macOS requires Accessibility and Input Monitoring permissions to \
-                        swallow and translate slot chords. Hardware USB flashing and LED \
-                        control remain fully functional without this permission.
+                        Antiknob needs Accessibility and Input Monitoring to intercept the \
+                        knob's chords. Flashing and lighting still work without it; the host \
+                        layers do not.
                         """)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -148,7 +147,7 @@ struct ServicesPane: View {
                 .padding(.vertical, 4)
             }
         } header: {
-            Text("macOS Event Tap Interception")
+            Text("Keyboard Interception")
         }
     }
 
@@ -199,10 +198,7 @@ struct ServicesPane: View {
         } header: {
             Text("Model Context Protocol (MCP) Server")
         } footer: {
-            Text("""
-                Run antiknob-daemon with --mcp to connect LLM assistants directly to the \
-                knob hardware and host configuration.
-                """)
+            Text("Lets an AI assistant read the knob's status and change its configuration.")
         }
     }
 

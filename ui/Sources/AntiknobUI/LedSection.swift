@@ -104,10 +104,8 @@ struct LedSection: View {
             Text("Hardware Layer")
         } footer: {
             Text("""
-                The knob's firmware holds one backlight mode per DEVICE layer. \
-                These three are the firmware's own layers, not the host layers \
-                in the tabs above — the knob shows the mode of whichever device \
-                layer it is currently on.
+                One mode per layer, stored on the knob. These are the firmware's own \
+                three layers, not the host layers in the tabs above.
                 """)
         }
     }
@@ -229,13 +227,7 @@ struct LedSection: View {
                 }
             }
         } footer: {
-            if store.hardwareConnected {
-                Text("""
-                    The daemon writes the mode and reads it back before reporting, \
-                    so a write that the firmware accepted and ignored is not counted \
-                    as a success.
-                    """)
-            } else {
+            if !store.hardwareConnected {
                 Text("No knob detected, so nothing can be sent.")
             }
         }
@@ -253,7 +245,7 @@ struct LedSection: View {
                 firmwareMode = applied.mode
                 lastWrite = applied.mode == mode.number
                     ? "Knob is now \(applied.name)"
-                    : "Firmware reports \(applied.name) — the write did not take"
+                    : "Knob is still \(applied.name) — the write did not take"
                 if applied.mode != mode.number {
                     writeFailed = true
                 }

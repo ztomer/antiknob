@@ -126,7 +126,7 @@ struct LedPreviewCaption: View {
                 .foregroundStyle(isLive ? Color.primary : Color.secondary)
 
             if mode.appearance.isApproximate {
-                Text("Preview approximate: this mode's pattern has not been captured off the wire.")
+                Text("Preview is a stand-in — this mode's exact pattern has not been recorded.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

@@ -16,7 +16,7 @@ Antiknob is written in 100% pure Rust and native SwiftUI, permissively licensed 
   * **Column Layout**: Property rows, status rows and record lists are laid out on shared column edges (`PropertyGrid` / `StatusRow` / `PropertyRow`), so labels, values, state lights and controls each read down one straight edge instead of ragging against the trailing margin. HID endpoints are a four-column table; state lights sit in their own column right of the text.
   * **System Settings Capsule Chord Recorder**: One-click shortcut capture displaying macOS native glyphs (`⌃`, `⌥`, `⇧`, `⌘`).
   * **Macro Sequence Editor**: Sheet modal supporting multi-step macros, millisecond wait steps, and drag-to-reorder.
-  * **Per-Layer Lighting**: Each host layer carries a backlight mode (Off, Red, Green, Ripple, Rainbow, RGB) and the daemon writes it to the knob on every layer switch, so the light says which layer you are on. The firmware stores modes per DEVICE layer and knows nothing about host layers, so this is something the daemon does rather than something the hardware offers — see `host::led_sync`. Picked from a row of glyphs, beside a knob whose ring animates the selected mode the way the hardware renders it. The glyphs carry WITHOUT their colour — `r.circle.fill` and `g.circle.fill` rather than one filled circle tinted two ways — because a row with no labels and the name on hover made the two fixed-colour modes identical to anyone who cannot separate red from green; a test asserts no two modes share a glyph. Modes 1 and 2 are fixed COLOURS on the device rather than effects, so the KNOB tells layers apart by colour — which is what the colour bytes never achieved. The pane reads the firmware's current mode rather than showing the last thing clicked, and `set_led` reports its own read-back, so a write the device accepted and ignored is not counted as a success.
+  * **Per-Layer Lighting**: Each host layer carries a backlight mode (Off, Red, Green, Ripple, Rainbow, RGB) and the daemon writes it to the knob on every layer switch, so the light says which layer you are on. The firmware stores modes per DEVICE layer and knows nothing about host layers, so this is something the daemon does rather than something the hardware offers — see `host::led_sync`. Picked from a row of glyphs, beside a knob whose ring animates the selected mode the way the hardware renders it. The glyphs carry WITHOUT their colour — `r.circle.fill` and `g.circle.fill` rather than one filled circle tinted two ways — because a row with no labels and the name on hover made the two fixed-colour modes identical to anyone who cannot separate red from green; a test asserts no two modes share a glyph. Modes 1 and 2 are fixed COLOURS on the device rather than effects, so the KNOB tells layers apart by colour — which is what the colour bytes never achieved. The pane reads the firmware's current mode rather than showing the last thing clicked. Note what that read-back does and does not prove: it confirms the device STORED a mode, never that the light rendered it. This repo spent a session treating the two as one thing while a knob glowing red reported green.
   * **Bottom Status Bar**: Connection, transport and power source read as SF Symbol glyphs in the lower-right corner (words in the tooltip), next to a manual refresh and the transient autosave badge.
   * **One Mapping Per Question**: Transport is a `Transport` enum, not a string compared at each call site, so every switch over it is exhaustive and adding a link is a compile error at each place that must render it. Power source, transport glyph and LED mode name each have exactly one definition.
 * **Single Source of Truth (`src/api/registry.rs`)**:
@@ -31,7 +31,7 @@ Antiknob is written in 100% pure Rust and native SwiftUI, permissively licensed 
   * The daemon drives a `CGEventTap` itself rather than through an input crate, so the dependency tree carries no unmaintained Objective-C shims. Modifiers arrive as `FlagsChanged` with no up/down bit of their own; the decoder derives it from the device-dependent flag bits, which distinguishes left from right — releasing one Control while the other is held is reported for the key that actually moved.
   * Keyboard events only. A tap that also saw the mouse could swallow it.
 * **Host-Side Translation ("bind once")**:
-  * One-time firmware slot binding (`ctrl-alt-F16..F20`, one chord per gesture, hold+twist included) plus a macOS daemon that swallows those chords and runs unlimited layered actions (scroll, keystrokes, sequences, media, brightness, launch/open/quit, mouse) with double-tap and hotkey layer switching.
+  * One-time firmware slot binding (`ctrl-alt-shift-F16..F20`, one chord per gesture, hold+twist included) plus a macOS daemon that swallows those chords and runs unlimited layered actions (scroll, keystrokes, sequences, media, brightness, launch/open/quit, mouse) with double-tap and hotkey layer switching.
 * **Unprivileged USB HID (`no sudo`)**:
   * Targets vendor usage page (`0xFF00`), avoiding macOS kernel driver collisions and running cleanly as a regular user.
   * All hidapi work is marshalled onto one dedicated, event-loop-free thread (`device::with_hid` / `device::with_device`). hidapi's macOS backend binds its IOHIDManager sources to the CFRunLoop of the thread that first initialised it, so a call from any other thread traps inside CoreFoundation. The single-thread rule makes that unrepresentable and is enforced by `tests/hid_thread_affinity.rs`.
@@ -161,8 +161,10 @@ antiknob list-apps
 #### Gestures and sequences
 
 A knob is **five** gestures, and a gesture can run a **sequence** with a wait
-between steps -- that is the vendor's `0xFD` command, which `0xFE` has no
-field for. In a layout:
+between steps -- that is the vendor's `0xFD` command. Single keyboard and
+media actions go out as `0xFD` too: the `0xFE` record this tool used for them
+declared no entry count, so the device stored it, read it back verbatim and
+executed nothing. In a layout:
 
 ```yaml
 knobs:

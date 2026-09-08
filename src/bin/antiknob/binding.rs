@@ -51,9 +51,28 @@ pub fn run_bind_slots(
     if dry_run {
         println!("[ ==> ] Slot binding plan (dry run, no hardware touched):");
         for packet in host::bind::binding_packets(buttons, &layers)? {
+            // Decoded from the record's OWN length and entry array, not from
+            // fixed byte offsets. The offsets version printed bytes 11/12 and
+            // reported `mods=0x00 code=0xf3` for all fifteen slots -- byte 12
+            // is the middle of entry #1, so it described a record that was
+            // never written. A dry run that cannot be trusted is worse than
+            // none: this one exists so the plan can be read BEFORE hardware
+            // is touched.
+            let entries: Vec<String> = (0..packet[6] as usize)
+                .map(|i| {
+                    format!(
+                        "{:02x}",
+                        packet[antiknob::fd::HEADER_LEN + i * antiknob::fd::ENTRY_LEN + 2]
+                    )
+                })
+                .collect();
             println!(
-                "        layer byte={} key_id={} kind={} mods=0x{:02x} code=0x{:02x}",
-                packet[3], packet[2], packet[4], packet[11], packet[12]
+                "        layer byte={} key_id={} kind={} entries={} [{}]",
+                packet[3],
+                packet[2],
+                packet[4],
+                packet[6],
+                entries.join(" ")
             );
         }
         // Counted from the plan, not restated as a literal. The literal
@@ -72,8 +91,13 @@ pub fn run_bind_slots(
     let sent =
         device::with_device(move |dev| host::bind::flash_slot_bindings(dev, buttons, &flashed))?;
     println!("[ Ok  ] Flashed {sent} slot binding(s).");
-    println!("        CCW=ctrl-alt-F16, Press=ctrl-alt-F17, CW=ctrl-alt-F18,");
-    println!("        Hold+Twist L=ctrl-alt-F19, Hold+Twist R=ctrl-alt-F20.");
+    // Printed FROM the table that was flashed, never restated as a literal.
+    // The literal version outlived two changes to the chords: it still said
+    // "ctrl-alt-F16" immediately after a run that wrote ctrl-alt-SHIFT-F16,
+    // which is a success message describing a flash that did not happen.
+    for line in host::bind::chord_summary_lines() {
+        println!("        {line}");
+    }
     let recorded = host::default_config_path()
         .map_err(anyhow::Error::from)
         .and_then(|path| host::device_binding::record_bound_layers(&path, &layers));

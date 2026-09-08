@@ -42,8 +42,11 @@ here rather than only the survivor:
    reports which key it drove: **key 1 is never driven, and keys 2/3/4/5/6
    are CCW / press / CW / hold+twist-left / hold+twist-right.** So the first
    answer was right, this device has AT MOST ONE button, and nothing about
-   hold+twist is unmeasured any more. `bind-slots` flashes all five
-   (`ctrl-alt-F16..F20`); see `src/host/bind.rs`.
+   hold+twist is unmeasured any more. RE-measured after the encoder fix
+   below, because the first run wrote its markers through `0xFE` -- records
+   the firmware stored and never executed, so a probe of them could have
+   reported silence as an answer. Same result both times. `bind-slots`
+   flashes all five (`ctrl-alt-shift-F16..F20`); see `src/host/bind.rs`.
 
 The lesson is in the shape rather than the numbers: a retraction based on
 reading someone else's constants overturned a reading of the actual vendor

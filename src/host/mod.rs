@@ -2,7 +2,7 @@
 //!
 //! Mirrors the vk01-anticater action vocabulary and `config.json` schema so
 //! host layers built here behave identically there: the knob's five firmware
-//! slots are bound once to `ctrl+alt+F16..F20`, and day-to-day behavior is
+//! slots are bound once to `ctrl+alt+shift+F16..F20`, and day-to-day behavior is
 //! decided host-side by matching those chords to gestures. Pure logic, no
 //! HID, no TCC, no threads.
 
@@ -399,21 +399,28 @@ mod tests {
             Gesture::HoldTwistR,
         ] {
             let (key, mods) = slot_chord(g);
-            assert_eq!(mods, ["ctrl", "alt"]);
-            assert_eq!(gesture_for_chord(key, &["ctrl", "alt"]), Some(g));
+            // SHIFT joined ctrl+alt after a measured collision: something on
+            // the test machine claimed ctrl-alt-F18/F19/F20 and ran its own
+            // action alongside the knob's.
+            assert_eq!(mods, ["ctrl", "alt", "shift"]);
+            assert_eq!(gesture_for_chord(key, &["ctrl", "alt", "shift"]), Some(g));
+            // The chord we MOVED OFF must no longer match, or the daemon
+            // would still answer to the colliding one.
+            assert_eq!(gesture_for_chord(key, &["ctrl", "alt"]), None);
         }
     }
 
     #[test]
     fn chord_matching_rejects_wrong_mods_and_keys() {
         assert!(!is_slot_chord(106, &["ctrl"]));
-        assert!(!is_slot_chord(106, &["ctrl", "alt", "cmd"]));
-        assert!(!is_slot_chord(106, &["cmd", "alt"]));
-        assert!(!is_slot_chord(105, &["ctrl", "alt"]));
+        assert!(!is_slot_chord(106, &["ctrl", "alt"]));
+        assert!(!is_slot_chord(106, &["ctrl", "alt", "shift", "cmd"]));
+        assert!(!is_slot_chord(106, &["cmd", "alt", "shift"]));
+        assert!(!is_slot_chord(105, &["ctrl", "alt", "shift"]));
         assert_eq!(gesture_for_chord(106, &["ctrl"]), None);
         // Modifier order must not matter.
         assert_eq!(
-            gesture_for_chord(79, &["alt", "ctrl"]),
+            gesture_for_chord(79, &["shift", "alt", "ctrl"]),
             Some(Gesture::TwistR)
         );
     }

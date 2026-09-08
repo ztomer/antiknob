@@ -89,10 +89,26 @@ mod mac {
         }
     }
 
+    /// Scroll, with the chord's modifiers explicitly CLEARED.
+    ///
+    /// A synthesized event with no flags set inherits whatever is physically
+    /// held -- and during any knob gesture that is always ctrl+alt+shift,
+    /// because the slot chord's modifiers pass through the tap (swallowing
+    /// them would break ordinary typing). So a plain "scroll up" arrived as
+    /// ctrl+alt+shift+scroll: ctrl+scroll is the system zoom gesture, and
+    /// applications read modified scrolls as something other than scrolling.
+    /// Measured 2026-09-08: twisting on the Navigate layer scrolled nothing
+    /// and opened the frontmost app's window instead.
+    ///
+    /// Cleared rather than merged, deliberately. The chord modifiers are
+    /// held for EVERY gesture, so a user-held shift can never be told apart
+    /// from the knob's own -- meaning "preserve what the user is holding"
+    /// is not implementable here, and a knob action must be deterministic.
     pub fn synth_scroll(lines: i32) {
         if let Some(source) = cg_source() {
             if let Ok(ev) = CGEvent::new_scroll_event(source, ScrollEventUnit::LINE, 1, lines, 0, 0)
             {
+                ev.set_flags(CGEventFlags::empty());
                 ev.post(CGEventTapLocation::HID);
             }
         }
@@ -123,6 +139,7 @@ mod mac {
                 for mouse_type in [14u32, 15u32] {
                     let ev = CGEventCreateMouseEvent(std::ptr::null_mut(), mouse_type, point, 2);
                     if !ev.is_null() {
+                        CGEventSetFlags(ev, 0);
                         CGEventPost(0, ev);
                         CFRelease(ev);
                     }
@@ -135,6 +152,10 @@ mod mac {
         for kind in [down, up] {
             if let Some(src) = cg_source() {
                 if let Ok(ev) = CGEvent::new_mouse_event(src, kind, point, button) {
+                    // Same reason as `synth_scroll`: a click inheriting the
+                    // held chord would be ctrl+alt+shift+click, which is a
+                    // different gesture in most applications.
+                    ev.set_flags(CGEventFlags::empty());
                     ev.post(CGEventTapLocation::HID);
                 }
             }
@@ -150,6 +171,10 @@ mod mac {
             mouse_button: u32,
         ) -> *mut c_void;
         fn CGEventPost(tap: u32, event: *mut c_void);
+        /// Needed for the same reason the wrapper path calls `set_flags`:
+        /// a posted event with no flags of its own inherits the physically
+        /// held chord modifiers.
+        fn CGEventSetFlags(event: *mut c_void, flags: u64);
         fn CFRelease(cf: *mut c_void);
     }
 

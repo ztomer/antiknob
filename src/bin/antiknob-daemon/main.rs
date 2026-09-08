@@ -242,6 +242,7 @@ fn main() -> Result<()> {
             cli.timeout_secs,
             &config_path,
             !cli.no_tray,
+            cli.verbose,
         );
     } else {
         println!("[ ==> ] OBSERVE mode: chords pass through, actions are only logged.");

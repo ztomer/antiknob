@@ -300,12 +300,12 @@ mod tests {
         let mut e = engine();
         // Layer 0 "Navigate": twist-R = scroll +3.
         assert_eq!(
-            e.handle_chord(79, &["ctrl", "alt"], 0),
+            e.handle_chord(79, &["ctrl", "alt", "shift"], 0),
             vec![EngineEvent::Fire(FiredAction::Scroll { lines: 3 })]
         );
         // Twist-L = scroll -3.
         assert_eq!(
-            e.handle_chord(106, &["ctrl", "alt"], 0),
+            e.handle_chord(106, &["ctrl", "alt", "shift"], 0),
             vec![EngineEvent::Fire(FiredAction::Scroll { lines: -3 })]
         );
     }
@@ -319,7 +319,7 @@ mod tests {
         assert_eq!(e.cycle_layer(-1), vec![EngineEvent::LayerChanged(1)]);
         // Media layer twist-R = volume up aux.
         assert!(matches!(
-            e.handle_chord(79, &["ctrl", "alt"], 0)[0],
+            e.handle_chord(79, &["ctrl", "alt", "shift"], 0)[0],
             EngineEvent::Fire(FiredAction::Aux(AuxKey::VolumeUp))
         ));
     }
@@ -329,17 +329,17 @@ mod tests {
         let mut e = engine();
         // First press arms the window.
         assert_eq!(
-            e.handle_chord(64, &["ctrl", "alt"], 1000),
+            e.handle_chord(64, &["ctrl", "alt", "shift"], 1000),
             vec![EngineEvent::NoOp]
         );
         // Second press inside 250 ms window switches layer.
         assert_eq!(
-            e.handle_chord(64, &["ctrl", "alt"], 1100),
+            e.handle_chord(64, &["ctrl", "alt", "shift"], 1100),
             vec![EngineEvent::LayerChanged(1)]
         );
         // Single press: fires when the window expires.
         assert_eq!(
-            e.handle_chord(64, &["ctrl", "alt"], 2000),
+            e.handle_chord(64, &["ctrl", "alt", "shift"], 2000),
             vec![EngineEvent::NoOp]
         );
         let fired = e.fire_expired_press(2250);
@@ -348,7 +348,7 @@ mod tests {
             EngineEvent::Fire(FiredAction::Aux(AuxKey::Mute))
         ));
         // Too early: nothing yet.
-        e.handle_chord(64, &["ctrl", "alt"], 3000);
+        e.handle_chord(64, &["ctrl", "alt", "shift"], 3000);
         assert_eq!(e.fire_expired_press(3100), vec![]);
     }
 
@@ -357,7 +357,7 @@ mod tests {
         let mut cfg = HostConfig::default_config();
         cfg.double_tap_switch = false;
         let mut e = Engine::new(cfg);
-        let out = e.handle_chord(64, &["ctrl", "alt"], 0);
+        let out = e.handle_chord(64, &["ctrl", "alt", "shift"], 0);
         assert!(matches!(
             out[0],
             EngineEvent::Fire(FiredAction::KeyChord { .. })
@@ -367,9 +367,9 @@ mod tests {
     #[test]
     fn armed_press_flushes_before_other_gesture() {
         let mut e = engine();
-        e.handle_chord(64, &["ctrl", "alt"], 0);
+        e.handle_chord(64, &["ctrl", "alt", "shift"], 0);
         // Twist arrives while press is armed: press was a single, run both.
-        let out = e.handle_chord(79, &["ctrl", "alt"], 50);
+        let out = e.handle_chord(79, &["ctrl", "alt", "shift"], 50);
         assert_eq!(out.len(), 2);
         assert!(matches!(out[0], EngineEvent::Fire(_)));
         assert!(matches!(out[1], EngineEvent::Fire(_)));
@@ -391,11 +391,11 @@ mod tests {
             }),
         };
         let mut e = Engine::new(cfg.clone());
-        let first = e.handle_chord(106, &["ctrl", "alt"], 0);
-        let second = e.handle_chord(106, &["ctrl", "alt"], 10);
+        let first = e.handle_chord(106, &["ctrl", "alt", "shift"], 0);
+        let second = e.handle_chord(106, &["ctrl", "alt", "shift"], 10);
         assert_ne!(first, second);
         // Config reload resets alternation: next fires `first` again.
         e.apply_config(cfg);
-        assert_eq!(e.handle_chord(106, &["ctrl", "alt"], 20), first);
+        assert_eq!(e.handle_chord(106, &["ctrl", "alt", "shift"], 20), first);
     }
 }

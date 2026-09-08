@@ -62,10 +62,14 @@ fn test_packet_structure() {
     let pkt = action.to_packet(key_id_for_button(0), 0);
     assert_eq!(pkt.len(), 64);
     assert_eq!(pkt[0], 0x03);
-    assert_eq!(pkt[1], 0xFE);
+    // 0xFD, the encoder that writes an entry count. 0xFE records had none
+    // and the firmware ran nothing from them.
+    assert_eq!(pkt[1], 0xFD);
     assert_eq!(pkt[2], 0x01);
     assert_eq!(pkt[3], 0x01); // Layer 0 + 1
     assert_eq!(pkt[4], 0x01); // Keyboard kind
+    assert_eq!(pkt[6], 1, "one entry: space has no modifiers");
+    assert_eq!(pkt[9], 0x2C, "the HID usage for space, in entry 0");
 }
 
 #[test]

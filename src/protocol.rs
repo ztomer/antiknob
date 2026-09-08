@@ -100,7 +100,46 @@ impl Action {
         Ok(Action::Key { modifiers, code })
     }
 
+    /// The packet that flashes ONE action to one slot.
+    ///
+    /// Keyboard and media go out as `0xFD`, which is not an optimisation but
+    /// the only correct encoding this repo has. The `0xFE` record built here
+    /// for years had NO entry count at byte 6 and put its payload at bytes
+    /// 10-12, where the firmware never looks:
+    ///
+    /// ```text
+    /// firmware default (runs): 03 fa 07 01 | 01 01 01 | 00 00 0a
+    /// what this wrote:         03 fa 02 01 | 01 00 00 | 00 00 00 | 01 05 6b
+    ///                                             ^len=0    ^empty   ^payload, unread
+    /// ```
+    ///
+    /// The device STORED that record and returned it verbatim, so every
+    /// read-back "confirmed" the write -- while executing zero entries. It
+    /// is the same instrument failure as the LED read-back one layer down:
+    /// a reply that proves storage was read as proof of effect. The symptom
+    /// on hardware was a knob that had lost its old bindings and emitted
+    /// nothing at all, with a slot table that looked perfect.
+    ///
+    /// Measured 2026-09-08: `bind-seq` (this encoder) writes
+    /// `03 fd 03 01 01 00 01 00 00 04` and the knob types `a`; `bind-slots`
+    /// (the old one) wrote the record above and the knob did nothing.
+    ///
+    /// Mouse stays on `0xFE` because it is the one kind whose FE layout WAS
+    /// measured and whose FD layout differs (wheel at byte 15 under FE, 21
+    /// under FD), which is why `fd::build_packet` refuses it.
     pub fn to_packet(&self, key_id: u8, layer: u8) -> Vec<u8> {
+        match self {
+            Action::Key { .. } | Action::Media(_) => {
+                return crate::fd::build_packet(
+                    key_id,
+                    layer,
+                    std::slice::from_ref(&crate::fd::Step::now(self.clone())),
+                )
+                .expect("one keyboard or media action always fits a single slot");
+            }
+            Action::MouseClick { .. } | Action::MouseWheel { .. } => {}
+        }
+
         let mut packet = vec![0u8; 64];
         packet[0] = 0x03;
         packet[1] = 0xFE;
@@ -108,25 +147,7 @@ impl Action {
         packet[3] = layer + 1;
 
         match self {
-            Action::Key { modifiers, code } => {
-                packet[4] = 1; // Kind = Keyboard
-                packet[10] = 1; // 1 key press
-                packet[11] = *modifiers;
-                packet[12] = *code;
-            }
-            Action::Media(code) => {
-                // Bytes 9-10, not 11-12. Keyboard actions put their mods and
-                // keycode at 11/12 and read back confirmed; media put its
-                // usage there too and never did. The device stores media
-                // codes at byte 9 -- every media slot read off real hardware
-                // has it there (`03 FA 04 03 02 01 01 00 00 E9` is volume up)
-                // -- so writes to 11/12 landed in fields the firmware does
-                // not consult, and the slot kept whatever it already held.
-                packet[4] = 2; // Kind = Media
-                let [low, high] = code.to_le_bytes();
-                packet[9] = low;
-                packet[10] = high;
-            }
+            Action::Key { .. } | Action::Media(_) => unreachable!("returned above"),
             Action::MouseClick { button } => {
                 packet[4] = 3; // Kind = Mouse
                 packet[10] = 0x01; // Click
@@ -277,10 +298,60 @@ mod tests {
         let packet = action.to_packet(key_id_for_knob(15, 0, KnobEvent::RotateCCW), 0);
         assert_eq!(packet.len(), 64);
         assert_eq!(packet[0], 0x03);
-        assert_eq!(packet[1], 0xFE);
+        // 0xFD, not 0xFE. This assertion said 0xFE for as long as the
+        // encoder wrote records the firmware stored and never ran: no entry
+        // count at byte 6, payload at bytes 10-12 where nothing reads it.
+        // The test passed throughout, because it checked the bytes the
+        // encoder happened to write rather than the ones the device obeys.
+        assert_eq!(packet[1], 0xFD);
         assert_eq!(packet[2], 16); // Knob 0 CCW after 15 buttons
         assert_eq!(packet[3], 1); // Layer 0 + 1
         assert_eq!(packet[4], 2); // Media kind
+                                  // The half that was missing, and the reason the knob went silent:
+                                  // a record MUST declare how many entries the firmware should run,
+                                  // and they must live in the entry array from byte 7.
+        assert_eq!(packet[6], 2, "a media action is two entries");
+        assert_eq!(&packet[7..13], &[0, 0, 0xEA, 0, 0, 0x00]);
+    }
+
+    /// The class-level gate: no encoder may emit a record that declares
+    /// nothing to run.
+    ///
+    /// One assertion covers every keyboard and media action the CLI accepts.
+    /// The defect it guards had no test at all -- the suite checked byte
+    /// offsets an encoder wrote, never that the firmware would act on them,
+    /// and a read-back "confirming" the write was mistaken for proof for
+    /// months. Calibrated by restoring the old `packet[10..12]` body, which
+    /// turns this red for every action.
+    #[test]
+    fn every_executable_record_declares_its_entry_count() {
+        for name in [
+            "ctrl-alt-shift-f16",
+            "ctrl-alt-shift-f20",
+            "a",
+            "cmd-c",
+            "volumeup",
+            "volumedown",
+            "mute",
+            "play",
+        ] {
+            let packet = Action::parse(name).unwrap().to_packet(2, 0);
+            let len = packet[6] as usize;
+            assert!(
+                len > 0,
+                "{name} flashes a record declaring zero entries: the device \
+                 stores it, reads it back verbatim, and runs nothing"
+            );
+            // The first entry must carry a value: a counted-but-empty
+            // payload is the same defect wearing a different number. Only
+            // the first, because a media usage below 0x100 has a zero HIGH
+            // byte and that zero is real data (`volumeup` is `e9 00`).
+            assert_ne!(
+                packet[crate::fd::HEADER_LEN + 2],
+                0,
+                "{name} counts entries but the first one is empty"
+            );
+        }
     }
 
     /// The measured map. `probe-gestures --map` put a distinct marker on

@@ -72,19 +72,24 @@ layers:
     let ccw_id = key_id_for_knob(buttons, 0, KnobEvent::RotateCCW);
     let ccw_pkt = ccw_action.to_packet(ccw_id, 0);
     assert_eq!(ccw_pkt[0], 0x03);
-    assert_eq!(ccw_pkt[1], 0xFE);
+    // 0xFD: keyboard and media single actions share the sequence encoder,
+    // the only one that writes an entry count. The 0xFE records this test
+    // used to assert were stored by the device and never executed.
+    assert_eq!(ccw_pkt[1], 0xFD);
     assert_eq!(ccw_pkt[2], ccw_id);
     assert_eq!(ccw_pkt[3], 0x01); // Layer 0 + 1
+    assert!(ccw_pkt[6] > 0, "the record must declare what to run");
 
     // Verify button packet
     let btn_action = Action::parse(&layer.buttons[0][0]).unwrap();
     let btn_id = key_id_for_button(0);
     let btn_pkt = btn_action.to_packet(btn_id, 0);
     assert_eq!(btn_pkt[0], 0x03);
-    assert_eq!(btn_pkt[1], 0xFE);
+    assert_eq!(btn_pkt[1], 0xFD);
     assert_eq!(btn_pkt[2], btn_id);
     assert_eq!(btn_pkt[3], 0x01); // Layer 0 + 1
     assert_eq!(btn_pkt[4], 0x01); // Keyboard kind
+    assert!(btn_pkt[6] > 0, "the record must declare what to run");
 
     // Verify LED packet
     let led_pkt = build_led_packet(0, layer.led.as_ref().unwrap()).unwrap();

@@ -25,7 +25,20 @@ plan and does not get pruned.
   one mode per DEVICE layer and has never heard of host layers, so
   `host::led_sync` writes the active layer's mode to the bound device layer
   on every switch, off the caller's thread. A layer with no mode leaves the
-  light alone.
+  light alone. Verified 2026-09-08 in two independent halves, because the
+  read-back alone proves nothing: switching layers over the socket makes the
+  device report the new layer's mode, AND a written mode was watched changing
+  the physical light (green, off, rainbow, red on demand).
+* **An instrument that cannot fail is worse than none.** FOUR shipped this
+  way and each cost hours: `--verbose` printed nothing in the mode the daemon
+  runs in; `tap_active` was set before the call it claimed to describe;
+  `probe-gestures --map` closed with a hard-coded model contradicting its own
+  measurement; and a device read-back proved storage while being read as
+  proof of effect. The rule the repo now works to: before believing a
+  negative result, make the instrument produce a positive one (type a key,
+  write a mode you can see). Anything a command PRINTS about what it did must
+  be derived from what it did -- nothing compiles against a `println!`, so
+  every literal in one rots silently.
 * All hidapi work re-enumerates the bus before every job. `HidApi::new`
   snapshots it once, so a daemon that never refreshed answered from that
   snapshot forever -- one replug and every open failed against a dead device
@@ -92,29 +105,38 @@ no spare button and a calibrated 512-query sweep found nothing that reports or
 sets the active layer -- only `FA B0 <layer>` (the LED mode) and the slot
 table answer.
 
-Built: `host.json` carries `boundDeviceLayer`, `bind-slots` records the layer
+Built: `host.json` carries `boundDeviceLayers`, `bind-slots` records every layer
 it flashed, `host::device_binding` turns that into a sentence, and
 `get_knob_mode` / `get_virtual_layer` / the GUI all state it -- including the
 unbound case, where a virtual layer is configured perfectly and fires never.
 
+**Flashed and working on hardware 2026-09-08.** All five gestures drive their
+layer's action, double-tap switches layers, and the chords are
+`ctrl-alt-shift-F16..F20` on keys 2-6 across all three device layers. The
+gesture map was then RE-measured through the fixed encoder -- keys 2, 3, 4,
+5, 6 fired in gesture order, key 1 never driven. The first measurement had
+written its markers through `0xFE`, records the firmware stored and never
+ran, so it needed redoing before it could be trusted; it gave the same
+answer.
+
+Getting there took three defects that no test could see, all recorded in
+`VENDOR_UI_MAP.md`:
+
+* the `0xFE` encoder wrote slot records with no entry count, which the device
+  stored, echoed back perfectly, and never executed;
+* four diagnostics reported something other than what they measured -- see
+  the instrument bullet in Context;
+* synthesized scroll and click events inherited the chord's held modifiers,
+  so a scroll went out as ctrl+alt+shift+scroll.
+
 Still to do:
 
-* **Flash the slot bindings on hardware.** Everything downstream of the flash
-  is now built and, where it could be, verified: `bind-slots` writes all five
-  chords (`ctrl-alt-F16..F20`, keys 2-6 on this device), the daemon drives the
-  backlight from the active host layer, and the settings app reports the
-  state honestly. What has never been run is the flash itself, because it
-  converts the knob out of standalone mode -- a change to a working device
-  rather than a test. Until it runs, the host layers do nothing and the app
-  says so.
-
-      antiknob bind-slots --dry-run    # shows the plan, touches nothing
-      antiknob bind-slots              # the real thing
-
-  The per-layer backlight was verified end to end WITHOUT flashing, by
-  recording a bound layer in `host.json` and switching layers over the
-  socket: red, green, red on the knob, matching the layers. That proves
-  `led_sync`; it does not prove the flash.
+* **Decide whether the chords need shift at all.** They moved to
+  `ctrl-alt-shift` when `ctrl-alt-F18/F19/F20` looked like it collided with
+  another application. The collision was probably the modifier-inheritance
+  bug instead, which is now fixed, so the extra modifier may be buying
+  nothing -- and fewer modifiers is less to collide with. One flash settles
+  it; it has not been tried.
 * **Decide what the virtual layer should DO.** The mechanism exists and the
   frontmost-app driver works; nothing has been designed for it to mean.
 

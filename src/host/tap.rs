@@ -193,9 +193,14 @@ mod tests {
         TapEngine::new(HostConfig::default_config())
     }
 
-    fn ctrl_alt(t: &mut TapEngine) {
+    /// Hold the modifiers every slot chord carries. CG keycodes: control
+    /// 59, option 58, shift 56. Shift joined the set after `ctrl+alt+F18`
+    /// was found colliding with another app's global shortcut on real
+    /// hardware; this helper is the single place the tests say so.
+    fn slot_mods(t: &mut TapEngine) {
         t.key(59, true, 0);
         t.key(58, true, 0);
+        t.key(56, true, 0);
     }
 
     #[test]
@@ -206,12 +211,18 @@ mod tests {
         t.key(59, false, 0);
         // Twist-R with only cmd held: not a slot chord, passes through.
         assert_eq!(t.key(79, true, 10), vec![]);
+        // And ctrl+alt WITHOUT shift is the chord this build moved off, so
+        // it must pass through too -- otherwise the move bought nothing.
+        let mut t2 = tap();
+        t2.key(59, true, 0);
+        t2.key(58, true, 0);
+        assert_eq!(t2.key(79, true, 10), vec![]);
     }
 
     #[test]
     fn autorepeat_presses_suppressed_until_release() {
         let mut t = tap();
-        ctrl_alt(&mut t);
+        slot_mods(&mut t);
         let first = t.key(79, true, 0);
         assert!(!first.is_empty());
         // Held-key repeats: no output.
@@ -225,7 +236,7 @@ mod tests {
     #[test]
     fn slot_dispatch_end_to_end_through_tap() {
         let mut t = tap();
-        ctrl_alt(&mut t);
+        slot_mods(&mut t);
         let out = t.key(106, true, 0);
         assert!(matches!(
             out[0],
@@ -254,7 +265,7 @@ mod tests {
     #[test]
     fn swallow_policy_consumed_press_and_release_only() {
         let mut t = tap();
-        ctrl_alt(&mut t);
+        slot_mods(&mut t);
         // Consumed press -> release swallowed.
         assert!(!t.key(79, true, 0).is_empty());
         assert!(t.release_swallow(79));
@@ -271,7 +282,7 @@ mod tests {
     #[test]
     fn press_expiry_flows_through_poll() {
         let mut t = tap();
-        ctrl_alt(&mut t);
+        slot_mods(&mut t);
         assert_eq!(t.key(64, true, 1000), vec![EngineEvent::NoOp]);
         assert_eq!(t.poll_expiry(1100), vec![]);
         let fired = t.poll_expiry(1300);

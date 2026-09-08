@@ -53,15 +53,30 @@ pub struct ChordSpec {
 /// Ground truth shared with vk01-anticater: slot chord per gesture.
 /// CG keycodes: F16=106, F17=64, F18=79, F19=80, F20=90. Required mods:
 /// control + alternate. Must NOT be user-editable.
-pub fn slot_chord(gesture: Gesture) -> (u16, [&'static str; 2]) {
+pub fn slot_chord(gesture: Gesture) -> (u16, [&'static str; 3]) {
     match gesture {
-        Gesture::TwistL => (106, ["ctrl", "alt"]),
-        Gesture::Press => (64, ["ctrl", "alt"]),
-        Gesture::TwistR => (79, ["ctrl", "alt"]),
-        Gesture::HoldTwistL => (80, ["ctrl", "alt"]),
-        Gesture::HoldTwistR => (90, ["ctrl", "alt"]),
+        Gesture::TwistL => (106, SLOT_MODS),
+        Gesture::Press => (64, SLOT_MODS),
+        Gesture::TwistR => (79, SLOT_MODS),
+        Gesture::HoldTwistL => (80, SLOT_MODS),
+        Gesture::HoldTwistR => (90, SLOT_MODS),
     }
 }
+
+/// The modifiers every slot chord carries.
+///
+/// SHIFT is here because `ctrl+alt` alone collided. Measured 2026-09-08 on
+/// this machine: with the knob bound to `ctrl-alt-F18/F19/F20`, twisting or
+/// hold-twisting ran the host action AND opened another application's quick
+/// window -- something else on the system claims those three, while F16 and
+/// F17 were clean. Rebinding one gesture to a bare `z` stopped it, which is
+/// what identified the chord rather than the gesture as the trigger.
+///
+/// Three modifiers instead of two is the cheap dodge: it keeps all five
+/// chords in one family (easier to reason about than a mix of F-key ranges)
+/// and avoids the F13-F15 alternative, where F14/F15 are brightness on Apple
+/// keyboards. If this collides too, move the KEYS, not the modifiers.
+const SLOT_MODS: [&str; 3] = ["ctrl", "alt", "shift"];
 
 /// True when an incoming chord is exactly one of the five bound slot
 /// chords (keycode plus ctrl+alt, no more, no less).
@@ -72,9 +87,13 @@ pub fn is_slot_chord(key: u16, mods: &[&str]) -> bool {
 }
 
 fn matches_slot(key: u16, sorted_mods: &[&str]) -> bool {
-    let wants_alt = |m: &[&str]| m == ["alt", "ctrl"];
+    // Sorted, so this is SLOT_MODS in alphabetical order. Kept as a literal
+    // rather than sorting SLOT_MODS at runtime: the point of the assertion
+    // is that the decoder and the flasher agree, and a shared helper that
+    // derived both from one value could not catch them drifting.
+    let wants = |m: &[&str]| m == ["alt", "ctrl", "shift"];
     match key {
-        106 | 64 | 79 | 80 | 90 => wants_alt(sorted_mods),
+        106 | 64 | 79 | 80 | 90 => wants(sorted_mods),
         _ => false,
     }
 }

@@ -260,6 +260,9 @@ pub(crate) fn run_observe(
         match rx.recv_timeout(tick) {
             Ok(DaemonMsg::Input(ev)) => {
                 let KeyEvent { code, pressed } = ev;
+                if let Ok(mut h) = tap_health.lock() {
+                    h.events_seen += 1;
+                }
                 if let Ok(mut t) = tap.lock() {
                     if verbose {
                         println!(
@@ -310,6 +313,7 @@ pub(crate) fn run_active(
     timeout_secs: u64,
     config_path: &Path,
     with_tray: bool,
+    verbose: bool,
 ) -> ! {
     if timeout_secs > 0 {
         std::thread::spawn(move || {
@@ -351,13 +355,29 @@ pub(crate) fn run_active(
             }
             let start = Instant::now();
             let thread_tap = Arc::clone(&grab_tap);
+            // Counted and logged HERE, in the grab callback, because this is
+            // the mode the daemon actually runs in. `--verbose` used to log
+            // only in observe mode while its own help promised it
+            // "diagnoses silent taps" -- so the one flag for the job printed
+            // nothing in the one mode that needed it, and its silence read
+            // as a dead tap rather than as a missing instrument.
+            let ev_health = Arc::clone(&grab_health);
             let res = keytap::grab(move |ev: KeyEvent| -> Decision {
                 let KeyEvent { code, pressed } = ev;
                 let now_ms = start.elapsed().as_millis() as u64;
+                if let Ok(mut h) = ev_health.lock() {
+                    h.events_seen += 1;
+                }
                 let Ok(mut t) = thread_tap.lock() else {
                     return Decision::Pass;
                 };
-                if pressed {
+                // Logged AFTER the lock so the held modifiers can be shown:
+                // a slot chord is a keycode AND its mods, and a log of bare
+                // keycodes cannot distinguish "wrong key" from "right key,
+                // mods not seen" -- the two failures that look identical
+                // from outside.
+                let mods_now = t.held_mods();
+                let decision = if pressed {
                     let out = t.key(code, true, now_ms);
                     if out.is_empty() {
                         Decision::Pass
@@ -369,7 +389,26 @@ pub(crate) fn run_active(
                     Decision::Swallow
                 } else {
                     Decision::Pass
+                };
+                // The SWALLOW decision is the half that matters when a chord
+                // also reaches another application: "we saw it" and "we
+                // consumed it" are different claims, and only the second says
+                // whether the system still gets the keystroke. Logging the
+                // first alone sent this session chasing a phantom collision.
+                if verbose {
+                    println!(
+                        "[key] code={} {} mods={:?} -> {}",
+                        code,
+                        if pressed { "down" } else { "up" },
+                        mods_now,
+                        if matches!(decision, Decision::Swallow) {
+                            "SWALLOW"
+                        } else {
+                            "pass"
+                        }
+                    );
                 }
+                decision
             });
             let reason = match res {
                 Err(e) => e,

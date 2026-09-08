@@ -218,7 +218,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         name: "bind_slots",
-        about: "Flash the one-time host-translate slot bindings (ctrl-alt-F16..F20, one per \
+        about: "Flash the one-time host-translate slot bindings (ctrl-alt-shift-F16..F20, one per \
                 gesture including hold+twist) so the daemon can translate knob gestures.",
         params: &[
             Param::opt("config", Kind::Str, "Layout to read the button count from")

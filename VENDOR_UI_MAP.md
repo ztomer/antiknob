@@ -424,6 +424,56 @@ earlier note here guessing "the limit is the app, not the hardware" was
 wrong. `fd::build_packet` now refuses a media sequence rather than letting
 the firmware truncate one silently, which is what the vendor app allows.
 
+### The `0xFE` single-action record was never executable
+
+**Measured 2026-09-08 on a `514c:8850`, and it invalidates every earlier
+"confirmed by read-back" in this file and in the code.**
+
+`Action::to_packet` built single-action records as `0xFE` with the payload at
+bytes 10-12 and NOTHING at byte 6. Every record the firmware actually runs
+declares an entry count there and carries its payload in the 3-byte entry
+array from byte 7:
+
+    firmware default (runs):  03 fa 07 01 | 01 01 01 | 00 00 0a
+    vendor's own write:       03 fd 02 01 | 02 00 02 | 00 00 b7
+    what 0xFE wrote:          03 fa 02 01 | 01 00 00 | 00 00 00 | 01 05 6b
+                                                 ^len=0    ^empty   ^payload, unread
+
+The device STORES the third form and returns it byte-for-byte on an `FA`
+read. It executes zero entries. So `read-slots` showed a perfect slot table
+over a knob that emitted nothing at all, and `bind-slots` had destroyed the
+firmware defaults it replaced -- old behaviour gone, new behaviour absent.
+
+**How it was settled**, after four wrong host-side theories (the keymap
+flash, elapsed time, the LED read-back, the event tap): `bind-seq`, which
+uses the `0xFD` encoder, wrote `03 fd 03 01 01 00 01 00 00 04` to the press
+slot and the knob typed `a`. One gesture, one visible effect, no daemon in
+the path. `bind-slots` on the same slot produced nothing.
+
+Keyboard and media single actions now go out as `0xFD`. Mouse stays on
+`0xFE`, because it is the one kind whose FE layout WAS measured and whose FD
+layout differs -- see the byte 15 / byte 21 note above.
+
+**The lesson this file should carry loudest:** an `FA` read-back proves the
+device STORED bytes. It has never proved the device ACTS on them. Both the
+LED "confirmation" and the slot-table "confirmation" were the device
+agreeing with itself.
+
+### Synthesized events inherit the chord's modifiers
+
+The slot chord's modifiers pass through the tap -- swallowing ctrl/alt/shift
+would break ordinary typing -- so they are physically held at the moment the
+daemon synthesizes a replacement action. A CGEvent posted without explicit
+flags picks them up: a plain scroll went out as `ctrl+alt+shift+scroll`,
+which is a zoom gesture rather than a scroll, and applications acted on it.
+`synth_key` always set its own flags and was therefore fine, which is why
+`cmd+,` worked while scrolling did not, and why the aux media keys (volume,
+mute, brightness) never showed the fault at all: they ignore modifiers.
+
+Every synthesized event now clears its flags explicitly. Merging the user's
+real modifiers is not implementable here -- the chord's are held for EVERY
+gesture, so a user-held shift cannot be told from the knob's own.
+
 ### Capacity
 
 The payload runs from byte 7 to byte 63: 57 bytes = **19 entries of 3 bytes**.
@@ -441,9 +491,13 @@ The payload runs from byte 7 to byte 63: 57 bytes = **19 entries of 3 bytes**.
     F1 = Ctrl    F2 = Shift    F3 = Alt    F4 = Win/Cmd
 
 They occupy an entry of their own and apply to what follows, so `Ctrl+C` is
-the two-entry sequence `F1 06`. This is NOT the HID modifier bitmask the
-`0xFE` path uses at byte 11, and it is why `Ctrl+` appears as a clickable
+the two-entry sequence `F1 06`. This is why `Ctrl+` appears as a clickable
 "key" in `BaseKeys` rather than as a checkbox.
+
+The old `0xFE` keyboard record put a HID modifier bitmask at byte 11 instead.
+That is recorded here as what this repo WROTE, not as something the firmware
+reads: the same record declared no entry count, and the device never ran one
+of them. See "The `0xFE` single-action record was never executable" above.
 
 Cross-check: Procreate's `Undo` encodes as `F4 1D` = Cmd+Z, which is the real
 Procreate shortcut. So the Procreate category is nothing but named chords --

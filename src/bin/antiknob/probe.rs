@@ -46,12 +46,16 @@ fn snapshot(slots: &[ProbeSlot], layer: u8, slots_per_layer: u8) -> Result<Vec<V
 /// Map EVERY gesture at once: which key id does each one drive?
 ///
 /// The ordinary probe assumes it already knows which key is which -- its
-/// control sits on the knob's CCW slot. That assumption is exactly what is
-/// in doubt. The vendor app binds its five knob zones to keys 2-6 and shows
-/// no buttons at all; `key_id_for_knob` places the knob at 4-6 behind three
-/// buttons taken from the declared layout. The two overlap, so if the vendor
-/// is right then every knob binding this tool has ever flashed is on the
-/// wrong gesture.
+/// control sits on the knob's CCW slot. That assumption is exactly what was
+/// in doubt, and this command is what settled it.
+///
+/// SETTLED on a VK01: the knob is FIVE gestures at keys 2-6, one button at
+/// key 1, and `key_id_for_knob` agrees given the declared count of one
+/// button. Re-measured 2026-09-08 through the fixed `0xFD` encoder, because
+/// the first run went through the `0xFE` one, whose records the firmware
+/// stored and never executed -- a probe writing markers nothing runs would
+/// have reported silence as an answer. It fired 2, 3, 4, 5, 6 in gesture
+/// order both times.
 ///
 /// This settles it without assuming anything: put a distinct marker on
 /// EVERY key in the range, perform every gesture, and read which key each
@@ -150,15 +154,33 @@ pub fn run_map(keys: Vec<u8>, layer: u8, capture_secs: u64, devices: Vec<String>
         println!();
         println!("        The ORDER above is the answer: the first key listed is the");
         println!("        gesture you performed first. Compare it against");
-        println!("        `protocol::key_id_for_knob`, which currently says the knob");
-        println!(
-            "        is at {:?}.",
-            [
-                antiknob::protocol::key_id_for_knob(3, 0, antiknob::protocol::KnobEvent::RotateCCW),
-                antiknob::protocol::key_id_for_knob(3, 0, antiknob::protocol::KnobEvent::Press),
-                antiknob::protocol::key_id_for_knob(3, 0, antiknob::protocol::KnobEvent::RotateCW),
-            ]
-        );
+        // Derived from the DECLARED layout and all five gestures, never a
+        // literal. This line used to hard-code three buttons and three
+        // gestures, so on a one-button knob it printed "[4, 5, 6]" directly
+        // beneath a measurement of keys 2-6 -- a summary contradicting the
+        // evidence above it, in the one command whose entire job is to
+        // settle that question. It also outlived the fix that made a knob
+        // five gestures wide, because nothing compiles against a `println!`.
+        match super::binding::button_count_for(None) {
+            Ok(buttons) => {
+                let expected: Vec<u8> = antiknob::protocol::KnobEvent::ALL
+                    .iter()
+                    .map(|e| antiknob::protocol::key_id_for_knob(buttons, 0, *e))
+                    .collect();
+                println!(
+                    "        `protocol::key_id_for_knob`, which for the declared {buttons} \
+                     button(s)"
+                );
+                println!("        says the knob is at {expected:?}.");
+            }
+            // Reported rather than defaulted: a guessed button count is
+            // exactly how this line went wrong, and a comparison against a
+            // made-up model is worse than none.
+            Err(e) => {
+                println!("        `protocol::key_id_for_knob` -- but the layout could not be");
+                println!("        read, so there is nothing to compare against: {e}");
+            }
+        }
     }
 
     restore(&before);

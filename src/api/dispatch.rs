@@ -86,6 +86,11 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                 "led_mode_name": led_mode_str,
                 "tap_active": health.active,
                 "tap_error": health.error,
+                // Reported beside `tap_active` because it is the half that
+                // can falsify it: a tap inside its run loop always claims
+                // active, and only this count distinguishes listening from
+                // deaf.
+                "tap_events_seen": health.events_seen,
             }))
         }
 

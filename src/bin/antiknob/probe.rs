@@ -99,6 +99,23 @@ pub fn run(
         .iter()
         .filter(|(_, v)| *v == device::verify::SlotVerdict::Confirmed)
         .count();
+    // Say which candidates were never configured slots to begin with. Every
+    // key id this firmware is asked about answers, so "the slot exists" is
+    // not a finding -- and the hold+twist search started from exactly that
+    // fabrication being read as one.
+    let fabricated: Vec<u8> = before
+        .iter()
+        .filter(|r| device::verify::is_synthetic_default(r))
+        .filter_map(|r| device::verify::parse_record(r).map(|(a, _)| a.key_id))
+        .collect();
+    if !fabricated.is_empty() {
+        println!(
+            "[ --- ] Slot(s) {:?} hold the firmware's synthetic default, not a",
+            fabricated
+        );
+        println!("        configured binding. Every key id answers this device, so their");
+        println!("        existing is not evidence that a gesture drives them.");
+    }
     println!("[ ==> ] Armed {}/{} marker(s):", confirmed, verdicts.len());
     println!(
         "        slot {} -> {}   (CONTROL: a gesture already known to work)",

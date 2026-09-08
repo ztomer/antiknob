@@ -38,6 +38,27 @@ pub struct SlotAction {
     pub code: u8,
 }
 
+/// True when a record is the firmware's synthetic default rather than a
+/// configured slot.
+///
+/// Ask this device about any key id and it answers, which for a long time
+/// read as "that slot exists". It does not. Every unconfigured key comes
+/// back as a keyboard record whose keycode is `0x04 + key_id - 1` -- key 7
+/// is `g`, key 8 is `h`, and the progression continues past any plausible
+/// slot count (key 14 answers `0x11`). A device that fabricates an answer
+/// for every question cannot be asked which slots it has.
+///
+/// This mattered: the search for the hold+twist slot started from "slots 7
+/// and 8 exist and are empty", which was the fabrication, not a finding.
+pub fn is_synthetic_default(record: &[u8]) -> bool {
+    let Some((addr, action)) = parse_record(record) else {
+        return false;
+    };
+    action.kind == 1
+        && action.mods == 0
+        && action.media == 0x04u8.wrapping_add(addr.key_id).wrapping_sub(1)
+}
+
 /// Read the addressed action out of a 64-byte record, request or reply.
 ///
 /// Byte 1 is `0xFE` on a write and `0xFA` on a read; everything the two
@@ -247,5 +268,66 @@ mod tests {
         );
         let echo = record(0xFA, 1, 2, 1, 0, 0x08, 0x06);
         assert_eq!(verify(&[cmd_c], &[echo])[0].1, SlotVerdict::Confirmed);
+    }
+
+    /// The fabrication that looked like a finding. Every unconfigured key
+    /// answers with `0x04 + key - 1`, so "slot 7 exists and is empty" was
+    /// the firmware inventing a record, not the device reporting one.
+    #[test]
+    fn an_unconfigured_slot_is_recognised_as_a_fabrication() {
+        // Read off the hardware: key 7 -> 0x0a, key 12 -> 0x0f.
+        for (key, code) in [(7u8, 0x0au8), (8, 0x0b), (9, 0x0c), (12, 0x0f)] {
+            let mut r = vec![0u8; 13];
+            r[0] = 0x03;
+            r[1] = 0xFA;
+            r[2] = key;
+            r[3] = 1;
+            r[4] = 1;
+            r[9] = code;
+            assert!(
+                is_synthetic_default(&r),
+                "key {key} -> {code:#04x} is the synthetic pattern"
+            );
+        }
+    }
+
+    /// A real binding must never be mistaken for the fabrication, or a
+    /// configured slot would be reported as empty.
+    #[test]
+    fn a_configured_slot_is_not_mistaken_for_the_default() {
+        // Key 4 on layer 3 really holds cmd-minus (mods 0x08, code 0x2d).
+        let mut real = vec![0u8; 13];
+        real[0] = 0x03;
+        real[1] = 0xFA;
+        real[2] = 4;
+        real[3] = 3;
+        real[4] = 1;
+        real[10] = 1;
+        real[11] = 0x08;
+        real[12] = 0x2d;
+        assert!(!is_synthetic_default(&real));
+
+        // A media record is never the keyboard-shaped default.
+        let mut media = vec![0u8; 13];
+        media[0] = 0x03;
+        media[1] = 0xFA;
+        media[2] = 7;
+        media[3] = 1;
+        media[4] = 2;
+        media[9] = 0x0a;
+        assert!(!is_synthetic_default(&media));
+
+        // The right shape with the WRONG keycode is a real binding that
+        // happens to be a bare letter.
+        let mut nearly = vec![0u8; 13];
+        nearly[0] = 0x03;
+        nearly[1] = 0xFA;
+        nearly[2] = 7;
+        nearly[3] = 1;
+        nearly[4] = 1;
+        nearly[9] = 0x0b; // key 7 would fabricate 0x0a
+        assert!(!is_synthetic_default(&nearly));
+
+        assert!(!is_synthetic_default(&[]));
     }
 }

@@ -214,12 +214,41 @@ It arms slots 7-11 plus a control on slot 4, captures for 45s, and puts
 every slot back afterwards (confirmed by read-back). The missing step is a
 human twisting the knob.
 
-First real run, 2026-09-07: inconclusive, and twice over. It was run from a
-stale installed binary that predated the control, and its markers collided
-with the buttons. What it did establish is that the capture path works --
-`0x00EA`, `0x00E2` and `0x00E9` were all seen, so the knob's own CCW, press
-and CW fired during the window -- and that slots 7 and 8 did not fire.
-Slots 9-11 were never armed by that build.
+**Answered 2026-09-07, and the answer is that the slot table is the wrong
+place to look.** A calibrated run -- control fired, so the capture was
+demonstrably working -- performed all five gestures and NO candidate fired:
+
+    usage 0x00b7 -> slot 4 fired          (the control: CCW)
+    usage 0x00e2 -> the knob's own        (press, slot 5)
+    usage 0x00e9 -> the knob's own        (CW, slot 6)
+    usage 0x00b6 -> the knob's own        (a button, slot 2)
+    slots 7, 8, 9, 10, 11: silent
+
+That run also settles the key map by OBSERVATION rather than inference: CCW
+emitted slot 4's marker, press and CW emitted slots 5 and 6's own bindings,
+and a button press emitted slot 2's. Keys 1-3 are the buttons and 4-6 the
+knob, measured. The vendor capture's `key 2 = CCW`, still recorded above, is
+definitively wrong for this device.
+
+**And the premise the whole search rested on was a fabrication.** "Slots 7
+and 8 exist and are empty" was never a finding: ask this firmware about ANY
+key id and it answers with a synthetic keyboard record whose keycode is
+`0x04 + key_id - 1`. Key 7 is `g`, key 12 is `l`, key 14 is `0x11`, and the
+progression runs past any plausible slot count. A device that fabricates an
+answer to every question cannot be asked which slots it has.
+`device::verify::is_synthetic_default` recognises the pattern and
+`probe-gestures` now says so before arming.
+
+So this firmware, as this build configures it, has six slots and none of
+them is hold+twist. That is NOT the old false claim that hold+twist does not
+exist -- the vendor binds it on this hardware. It says the vendor does not
+bind it by writing a slot in the table `0xFE` and `0xFD` address.
+
+Next step, and it needs the vendor app: re-capture `tools/hidsnoop/` while
+binding hold+twist, and look for what it sends that is NOT a slot write --
+a mode byte, a gesture-count setting, anything preceding the writes. The
+earlier capture was read for its slot writes and its key numbers, both of
+which turned out to describe something else.
 
 `probe-gestures` now runs a **positive control**: slot 4, the knob's CCW
 gesture, carries a marker of its own, and a run whose control never fires

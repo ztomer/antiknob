@@ -26,13 +26,24 @@ use super::HostConfig;
 ///   * the layer names no mode, which means "leave it alone";
 ///   * the index is out of range, which a caller can produce during a
 ///     config reload and must not be turned into a write to layer 0.
-pub fn led_write_for(cfg: &HostConfig, layer_idx: usize) -> Option<(u8, String)> {
-    let device_layer = cfg.bound_device_layer?;
-    let mode = cfg.layers.get(layer_idx)?.led.as_deref()?.trim();
+pub fn led_writes_for(cfg: &HostConfig, layer_idx: usize) -> Vec<(u8, String)> {
+    let Some(mode) = cfg.layers.get(layer_idx).and_then(|l| l.led.as_deref()) else {
+        return Vec::new();
+    };
+    let mode = mode.trim();
     if mode.is_empty() {
-        return None;
+        return Vec::new();
     }
-    Some((device_layer, mode.to_string()))
+    // EVERY bound layer, not one. `bind-slots` with no `--layer` binds all
+    // three, and nothing on this firmware reports which one the knob is
+    // currently on -- a calibrated 512-query sweep found no such query. So
+    // the only way to be sure the active layer shows the right colour is to
+    // set them all. With one layer bound this is the single write it always
+    // was.
+    cfg.bound_device_layers
+        .iter()
+        .map(|l| (*l, mode.to_string()))
+        .collect()
 }
 
 /// Apply that write, OFF the calling thread.
@@ -47,14 +58,17 @@ pub fn led_write_for(cfg: &HostConfig, layer_idx: usize) -> Option<(u8, String)>
 /// whose light did not follow is still a switch that happened. The layer
 /// change must not fail because the light did not.
 pub fn sync_led(cfg: &HostConfig, layer_idx: usize) {
-    let Some((device_layer, mode)) = led_write_for(cfg, layer_idx) else {
+    let writes = led_writes_for(cfg, layer_idx);
+    if writes.is_empty() {
         return;
-    };
+    }
     std::thread::spawn(move || {
-        let Ok(packet) = crate::protocol::build_led_packet(device_layer, &mode) else {
-            return;
-        };
-        let _ = crate::device::with_device(move |dev| crate::device::send_led(dev, &packet));
+        for (device_layer, mode) in writes {
+            let Ok(packet) = crate::protocol::build_led_packet(device_layer, &mode) else {
+                continue;
+            };
+            let _ = crate::device::with_device(move |dev| crate::device::send_led(dev, &packet));
+        }
     });
 }
 
@@ -71,10 +85,10 @@ mod tests {
         }
     }
 
-    fn cfg(bound: Option<u8>, layers: Vec<HostLayer>) -> HostConfig {
+    fn cfg(bound: Vec<u8>, layers: Vec<HostLayer>) -> HostConfig {
         HostConfig {
             layers,
-            bound_device_layer: bound,
+            bound_device_layers: bound,
             ..HostConfig::default_config()
         }
     }
@@ -82,33 +96,55 @@ mod tests {
     #[test]
     fn a_layer_with_a_mode_writes_it_to_the_bound_device_layer() {
         let c = cfg(
-            Some(1),
+            vec![1],
             vec![layer("Media", Some("red")), layer("Nav", Some("green"))],
         );
-        assert_eq!(led_write_for(&c, 0), Some((1, "red".to_string())));
-        assert_eq!(led_write_for(&c, 1), Some((1, "green".to_string())));
+        assert_eq!(led_writes_for(&c, 0), vec![(1, "red".to_string())]);
+        assert_eq!(led_writes_for(&c, 1), vec![(1, "green".to_string())]);
+    }
+
+    /// THE CASE THAT SHIPPED BROKEN. `bind-slots` with no `--layer` binds
+    /// every device layer, and nothing on this firmware reports which one
+    /// the knob is currently on -- so the only way the active layer shows
+    /// the right colour is to write all of them.
+    ///
+    /// Before the recorded value became a SET this could not even be
+    /// expressed: binding all three recorded `None`, the same value as
+    /// binding nothing, so the backlight silently never fired after the most
+    /// common flash there is.
+    #[test]
+    fn every_bound_layer_is_written_when_all_of_them_are_bound() {
+        let c = cfg(vec![0, 1, 2], vec![layer("Media", Some("green"))]);
+        assert_eq!(
+            led_writes_for(&c, 0),
+            vec![
+                (0, "green".to_string()),
+                (1, "green".to_string()),
+                (2, "green".to_string())
+            ],
+            "a fully bound knob must have every layer set, or the colour \
+             depends on which layer it happens to be on"
+        );
     }
 
     /// Nothing bound means no device layer is host-translated, so there is
-    /// no light this daemon is entitled to drive. Writing to layer 0 anyway
-    /// would recolour a layer the user never asked about.
+    /// no light this daemon is entitled to drive.
     #[test]
     fn nothing_bound_writes_nothing() {
-        let c = cfg(None, vec![layer("Media", Some("red"))]);
-        assert_eq!(led_write_for(&c, 0), None);
+        let c = cfg(Vec::new(), vec![layer("Media", Some("red"))]);
+        assert!(led_writes_for(&c, 0).is_empty());
     }
 
     /// A layer that names no mode leaves the light as it is. This is the
-    /// state every layer written before the field existed loads in, and
-    /// those configs must not start changing the backlight on switch.
+    /// state every layer written before the field existed loads in.
     #[test]
     fn a_layer_without_a_mode_leaves_the_light_alone() {
         let c = cfg(
-            Some(0),
+            vec![0],
             vec![layer("Media", None), layer("Blank", Some("   "))],
         );
-        assert_eq!(led_write_for(&c, 0), None);
-        assert_eq!(led_write_for(&c, 1), None, "whitespace is not a mode");
+        assert!(led_writes_for(&c, 0).is_empty());
+        assert!(led_writes_for(&c, 1).is_empty(), "whitespace is not a mode");
     }
 
     /// An index past the end is producible during a config reload. Falling
@@ -116,8 +152,8 @@ mod tests {
     /// active.
     #[test]
     fn an_out_of_range_layer_writes_nothing() {
-        let c = cfg(Some(0), vec![layer("Media", Some("red"))]);
-        assert_eq!(led_write_for(&c, 7), None);
+        let c = cfg(vec![0], vec![layer("Media", Some("red"))]);
+        assert!(led_writes_for(&c, 7).is_empty());
     }
 
     /// Whatever the mode string is, it must be one `build_led_packet`
@@ -126,10 +162,11 @@ mod tests {
     #[test]
     fn every_mode_a_layer_can_carry_builds_a_packet() {
         for name in crate::led::LED_MODE_NAMES {
-            let c = cfg(Some(0), vec![layer("L", Some(name))]);
-            let (device_layer, mode) = led_write_for(&c, 0).expect(name);
+            let c = cfg(vec![0], vec![layer("L", Some(name))]);
+            let writes = led_writes_for(&c, 0);
+            assert_eq!(writes.len(), 1, "{name}");
             assert!(
-                crate::protocol::build_led_packet(device_layer, &mode).is_ok(),
+                crate::protocol::build_led_packet(writes[0].0, &writes[0].1).is_ok(),
                 "{name} is offered but cannot be sent"
             );
         }

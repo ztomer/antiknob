@@ -31,12 +31,12 @@ mod tests {
     }
 
     fn ctx_with_virtual_layer(app: Arc<FakeApp>) -> ApiContext {
-        ctx_bound_to(app, None)
+        ctx_bound_to(app, Vec::new())
     }
 
-    fn ctx_bound_to(app: Arc<FakeApp>, bound: Option<u8>) -> ApiContext {
+    fn ctx_bound_to(app: Arc<FakeApp>, bound: Vec<u8>) -> ApiContext {
         let cfg = HostConfig {
-            bound_device_layer: bound,
+            bound_device_layers: bound,
             layers: vec![HostLayer {
                 name: "Virtual".into(),
                 twist_l: HostAction::None,
@@ -140,7 +140,7 @@ mod tests {
     #[test]
     fn the_report_says_when_the_daemon_cannot_hear_the_knob_at_all() {
         let app = Arc::new(FakeApp::new(Some("com.apple.Safari")));
-        let mut ctx = ctx_bound_to(app, None);
+        let mut ctx = ctx_bound_to(app, Vec::new());
 
         let v = get(&mut ctx);
         assert_eq!(v["can_fire"], false);
@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn the_report_names_the_bound_layer_and_the_standalone_ones() {
         let app = Arc::new(FakeApp::new(Some("com.apple.Safari")));
-        let mut ctx = ctx_bound_to(app, Some(1));
+        let mut ctx = ctx_bound_to(app, vec![1]);
 
         let v = get(&mut ctx);
         assert_eq!(v["can_fire"], true);

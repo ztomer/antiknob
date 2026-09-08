@@ -76,16 +76,17 @@ pub fn run_bind_slots(
     println!("        Hold+Twist L=ctrl-alt-F19, Hold+Twist R=ctrl-alt-F20.");
     let recorded = host::default_config_path()
         .map_err(anyhow::Error::from)
-        .and_then(|path| host::device_binding::record_bound_layer(&path, &layers));
+        .and_then(|path| host::device_binding::record_bound_layers(&path, &layers));
     match recorded {
-        Ok(Some(layer)) => {
-            let arrangement = host::device_binding::arrangement(Some(layer), device::DEVICE_LAYERS);
+        // Every case records now. "All three" used to record NOTHING and
+        // print a reassuring sentence about it, which left the config saying
+        // the same thing as a knob that had never been flashed -- so the
+        // per-layer backlight, which needs to know where to write, silently
+        // did nothing on the most common flash there is.
+        Ok(bound) => {
+            let arrangement = host::device_binding::arrangement(&bound, device::DEVICE_LAYERS);
             println!("[ Ok  ] {}", arrangement.describe());
-            println!("        Re-run with `--layer N` to move it to another device layer.");
-        }
-        Ok(None) => {
-            println!("        Every layer was bound, so no single one is recorded as THE");
-            println!("        host-translated layer; whichever the knob is on will work.");
+            println!("        Re-run with `--layer N` to bind just one.");
         }
         Err(e) => {
             // The flash landed; only the bookkeeping failed. Saying so beats

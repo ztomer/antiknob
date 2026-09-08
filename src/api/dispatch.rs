@@ -166,7 +166,7 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                 // fires never, so the caller is told the arrangement rather
                 // than left to infer it from silence.
                 let arrangement = crate::host::device_binding::arrangement(
-                    lock.config().bound_device_layer,
+                    &lock.config().bound_device_layers,
                     crate::device::DEVICE_LAYERS,
                 );
                 Ok(json!({
@@ -300,9 +300,10 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
             let bound = crate::host::HostConfig::try_load_json(
                 &std::fs::read_to_string(&ctx.config_path).unwrap_or_default(),
             )
-            .and_then(|c| c.bound_device_layer);
+            .map(|c| c.bound_device_layers)
+            .unwrap_or_default();
             let arrangement =
-                crate::host::device_binding::arrangement(bound, device::DEVICE_LAYERS);
+                crate::host::device_binding::arrangement(&bound, device::DEVICE_LAYERS);
             Ok(json!({
                 "mode": mode.as_str(),
                 "buttons": buttons,

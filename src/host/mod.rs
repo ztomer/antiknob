@@ -210,10 +210,19 @@ pub struct HostConfig {
     /// search for. `bind-slots` writes it and `device_binding` turns it into
     /// something a person can read.
     ///
-    /// `None` means nothing is bound, which is a real state and not a
-    /// missing value: it is what every install starts in.
+    /// Which device layers carry the slot chords. EMPTY means nothing is
+    /// bound, which is a real state and not a missing value: it is what
+    /// every install starts in. All of them is equally real, and is what
+    /// `bind-slots` with no `--layer` produces.
+    /// It replaced a `boundDeviceLayer: Option<u8>`, which could not say
+    /// "all three": `None` meant BOTH "nothing is bound" and "everything
+    /// is bound", and `bind-slots` with no `--layer` produces the second.
+    /// A knob flashed on every layer reported "no host layer can fire" two
+    /// lines under its own reading of the firmware saying host-translate,
+    /// and the per-layer backlight silently never fired. Old configs are
+    /// migrated by `migrate_bound_layer_key` on load.
     #[serde(default)]
-    pub bound_device_layer: Option<u8>,
+    pub bound_device_layers: Vec<u8>,
 }
 
 fn default_double_tap() -> bool {
@@ -281,7 +290,7 @@ impl HostConfig {
             scroll_lines_per_detent: 3,
             // Nothing is bound until `bind-slots` runs, which is the honest
             // starting state: a fresh install's knob is not host-translated.
-            bound_device_layer: None,
+            bound_device_layers: Vec::new(),
         }
     }
 
@@ -294,8 +303,13 @@ impl HostConfig {
     /// Strict load for watchers: `None` means "keep the last-good config"
     /// (e.g. a half-written file mid-save), never silent defaults.
     pub fn try_load_json(text: &str) -> Option<Self> {
-        match serde_json::from_str::<HostConfig>(text) {
-            Ok(cfg) if !cfg.layers.is_empty() => Some(cfg),
+        let value = migrate_bound_layer_key(serde_json::from_str(text).ok()?);
+        match serde_json::from_value::<HostConfig>(value) {
+            Ok(mut cfg) if !cfg.layers.is_empty() => {
+                cfg.bound_device_layers.sort_unstable();
+                cfg.bound_device_layers.dedup();
+                Some(cfg)
+            }
             _ => None,
         }
     }
@@ -303,6 +317,34 @@ impl HostConfig {
     pub fn to_json_pretty(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_default()
     }
+}
+
+/// Fold the retired `boundDeviceLayer` key into `boundDeviceLayers`.
+///
+/// Done on the JSON, before typed decoding, so the struct carries ONE field
+/// with one meaning. Carrying the old field on the struct instead was worse
+/// than it looks: a directly-constructed `HostConfig` never went through the
+/// load path, so a test helper set the legacy field, compiled, and silently
+/// meant nothing.
+///
+/// `Option<u8>` could not express "all three layers", so binding all of them
+/// recorded `None` -- the same value as binding none. That is the bug this
+/// whole change exists to remove; the migration only has to handle the one
+/// shape the old type COULD express.
+fn migrate_bound_layer_key(mut value: serde_json::Value) -> serde_json::Value {
+    let Some(obj) = value.as_object_mut() else {
+        return value;
+    };
+    if !obj.contains_key("boundDeviceLayers") {
+        if let Some(one) = obj
+            .get("boundDeviceLayer")
+            .and_then(serde_json::Value::as_u64)
+        {
+            obj.insert("boundDeviceLayers".into(), serde_json::json!([one]));
+        }
+    }
+    obj.remove("boundDeviceLayer");
+    value
 }
 
 /// One-line human description of a host action for UI surfaces (GUI Host

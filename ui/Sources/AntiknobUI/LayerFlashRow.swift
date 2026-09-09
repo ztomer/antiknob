@@ -44,10 +44,12 @@ struct LayerFlashRow: View {
                     Label(mode.flashActionTitle, systemImage: "bolt.fill")
                 }
             }
-            .disabled(store.isBindingSlots || !store.hardwareConnected)
-            .help(store.hardwareConnected
-                  ? "Writes ⌃⌥F16..F20 into the knob so Antiknob receives its gestures"
-                  : "No knob detected")
+            .disabled(store.isBindingSlots || !store.canFlashHardware)
+            .help(!store.hardwareConnected
+                  ? "No knob detected"
+                  : (!store.canFlashHardware
+                     ? "Connect knob via USB-C cable to flash hardware"
+                     : "Writes ⌃⌥F16..F20 into the knob so Antiknob receives its gestures"))
             .gridColumnAlignment(.leading)
         }
     }

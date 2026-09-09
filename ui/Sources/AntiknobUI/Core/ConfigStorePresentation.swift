@@ -38,6 +38,12 @@ extension ConfigStore {
         case nil: return .secondary
         }
     }
+
+    /// Flashing firmware slots and standalone keymaps requires the vendor configuration
+    /// interface on usage page 0xFF00, which is only present over a wired USB connection.
+    var canFlashHardware: Bool {
+        hardwareConnected && status.link == .usb
+    }
 }
 
 // MARK: - Reaching a layer by index, safely

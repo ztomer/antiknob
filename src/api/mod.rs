@@ -102,6 +102,7 @@ mod tests {
 
         let ctx = ApiContext::new(cfg_path, None);
         let server = SocketServer::start(sock_path.clone(), ctx).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
 
         let resp = call_daemon_socket(&sock_path, &Command::GetStatus {}).unwrap();
         assert!(resp["connected"].is_boolean());

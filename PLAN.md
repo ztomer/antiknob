@@ -10,7 +10,12 @@ plan and does not get pruned.
 
 * Hardware: Anticater VK01 knob, VID `0x514C` (LQKJ), PID `0x8850`
   (serial `EB60121120051103`); vendor usage page `0xFF00`, report `0x03`.
-  2.4GHz receivers and Bluetooth are detected too (see `SUPPORTED_DEVICES`).
+  2.4GHz receivers (`0x25A7:0xFA11`) and Bluetooth are detected too (see `SUPPORTED_DEVICES`).
+  *Fixed 2026-09-09*: Spurious USB keyboard entry (`0x514C:0x4155`) removed from
+  `SUPPORTED_DEVICES` so ordinary host keyboards are never misclassified as knobs;
+  `primary_device` and `primary_transport` aligned so wireless receivers are
+  correctly resolved as primary transport and power source when the USB-C cable
+  is unplugged. UI buttons for hardware flashing are safely gated by `canFlashHardware`.
 * Zero-sudo IOHIDManager access. MIT OR Apache-2.0, native arm64, macOS 26+.
 * **The knob is five gestures at keys 2-6** -- CCW, press, CW, hold+twist
   left, hold+twist right -- and this device has at most ONE button, at key 1.

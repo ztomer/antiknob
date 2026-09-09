@@ -39,12 +39,20 @@ Antiknob is written in 100% pure Rust and native SwiftUI, permissively licensed 
 
 ---
 
-## Hardware Support
+## Hardware Support & Transports
 
 Tested and verified with the following hardware:
-* **Vendor ID**: `0x514C` (LQKJ) / `0x1189` (CH57x)
-* **Product ID**: `0x8850`, `0x8840`, `0x8842`, `0x8851`, `0x8890`
-* **Report Interface**: Report ID `0x03`, 64-byte payload.
+* **Wired Knob (USB-C)**:
+  * **Vendor ID**: `0x514C` (LQKJ) / `0x1189` (CH57x)
+  * **Product ID**: `0x8850`, `0x8840`, `0x8842`, `0x8851`, `0x8890`
+  * **Report Interface**: Vendor Usage Page `0xFF00`, Report ID `0x03`, 64-byte payload.
+  * **Capabilities**: Full hardware configuration (flashing device slot chords, sequence macros, LED modes), plus live host gesture translation.
+* **2.4GHz Wireless Receiver**:
+  * **Vendor ID**: `0x25A7`, **Product ID**: `0xFA11` (`Anticater 2.4G Receiver`).
+  * **Capabilities**: Full host gesture translation via the daemon's keyboard tap when operating wirelessly on battery power.
+  * **Hardware Flashing**: Flashing hardware slot bindings or LED modes requires a direct wired USB-C connection; the settings UI automatically disables flashing controls with explanatory tooltips when operating over wireless.
+* **Bluetooth Wireless**:
+  * Classified via Bluetooth bus enumeration for supported models.
 
 ---
 

@@ -136,7 +136,12 @@ extension HardwarePane {
                                 Label("Flash Keymap to Hardware", systemImage: "arrow.up.doc.fill")
                             }
                         }
-                        .disabled(isFlashingKeymap || !store.hardwareConnected)
+                        .disabled(isFlashingKeymap || !store.canFlashHardware)
+                        .help(!store.hardwareConnected
+                              ? "No knob detected"
+                              : (!store.canFlashHardware
+                                 ? "Connect knob via USB-C cable to flash hardware"
+                                 : "Flash standalone keymap to the knob"))
                         .gridColumnAlignment(.leading)
                     }
                 }

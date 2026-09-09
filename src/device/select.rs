@@ -10,24 +10,7 @@
 use super::{DeviceMatch, TransportType, VENDOR_USAGE_PAGE};
 
 pub fn primary_transport(matches: &[DeviceMatch]) -> Option<TransportType> {
-    if matches.is_empty() {
-        return None;
-    }
-    if matches.iter().any(|m| m.transport == TransportType::Usb) {
-        Some(TransportType::Usb)
-    } else if matches
-        .iter()
-        .any(|m| m.transport == TransportType::Wireless24G)
-    {
-        Some(TransportType::Wireless24G)
-    } else if matches
-        .iter()
-        .any(|m| m.transport == TransportType::Bluetooth)
-    {
-        Some(TransportType::Bluetooth)
-    } else {
-        Some(TransportType::Usb)
-    }
+    primary_device(matches).map(|d| d.transport)
 }
 
 /// The interface every device command actually drives.
@@ -37,11 +20,10 @@ pub fn primary_transport(matches: &[DeviceMatch]) -> Option<TransportType> {
 /// endpoint on usage page 0xFF00. Only the last of those accepts the
 /// commands this tool sends, and it is the one `open_device_on` picks.
 ///
-/// The settings app named `devices[0]` as "Device Model". On this machine
-/// that is a `0x514c:0x4155` keyboard interface, while the knob being
-/// configured is a `0x514c:0x8850` -- so the pane named a different device
-/// from the one every button on it talks to, and did it beside a green
-/// "connected" dot.
+/// If no vendor endpoint is present (e.g. knob operating wirelessly via a
+/// 2.4GHz USB receiver or Bluetooth), prefer the wireless receiver/link so
+/// telemetry and status reflect the actual active knob transport rather
+/// than an arbitrary first interface.
 ///
 /// Same predicate as `open_device_on`, in the same order, including its
 /// fallback for backends that do not report a usage page.
@@ -50,6 +32,16 @@ pub fn primary_device(matches: &[DeviceMatch]) -> Option<&DeviceMatch> {
     matches
         .iter()
         .find(|m| m.usage_page == VENDOR_USAGE_PAGE)
+        .or_else(|| {
+            matches
+                .iter()
+                .find(|m| m.transport == TransportType::Wireless24G)
+        })
+        .or_else(|| {
+            matches
+                .iter()
+                .find(|m| m.transport == TransportType::Bluetooth)
+        })
         .or_else(|| matches.first())
 }
 
@@ -105,5 +97,55 @@ mod tests {
     #[test]
     fn nothing_attached_names_nothing() {
         assert!(primary_device(&[]).is_none());
+        assert!(primary_transport(&[]).is_none());
+    }
+
+    /// When the knob is unplugged from USB, no vendor endpoint is present.
+    /// The 2.4GHz wireless receiver must be picked over any non-knob interface,
+    /// and primary_transport must report Wireless24G so the UI shows 2.4GHz
+    /// rather than claiming a disconnected cable is still wired.
+    #[test]
+    fn wireless_receiver_is_primary_when_no_vendor_endpoint() {
+        let attached = vec![DeviceMatch {
+            vendor_id: 0x25A7,
+            product_id: 0xFA11,
+            name: "Anticater 2.4G Receiver".to_string(),
+            serial_number: None,
+            path: "DevSrvsID:fa11".to_string(),
+            usage_page: 0x0001,
+            usage: 6,
+            interface_number: 0,
+            transport: TransportType::Wireless24G,
+        }];
+        let dev = primary_device(&attached).expect("2.4g receiver present");
+        assert_eq!(dev.product_id, 0xFA11);
+        assert_eq!(
+            primary_transport(&attached),
+            Some(TransportType::Wireless24G)
+        );
+    }
+
+    /// When both a wired knob (with vendor config endpoint) and a 2.4G receiver
+    /// dongle are attached, the wired knob takes precedence because it can
+    /// be flashed and configured directly.
+    #[test]
+    fn wired_knob_preferred_over_wireless_receiver_when_both_present() {
+        let attached = vec![
+            DeviceMatch {
+                vendor_id: 0x25A7,
+                product_id: 0xFA11,
+                name: "Anticater 2.4G Receiver".to_string(),
+                serial_number: None,
+                path: "DevSrvsID:fa11".to_string(),
+                usage_page: 0x0001,
+                usage: 6,
+                interface_number: 0,
+                transport: TransportType::Wireless24G,
+            },
+            iface(0x8850, VENDOR_USAGE_PAGE, "Anticater / LQKJ VK01"),
+        ];
+        let dev = primary_device(&attached).expect("device present");
+        assert_eq!(dev.product_id, 0x8850);
+        assert_eq!(primary_transport(&attached), Some(TransportType::Usb));
     }
 }

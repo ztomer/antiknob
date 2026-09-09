@@ -162,7 +162,12 @@ struct HardwarePane: View {
                                 Label("Flash Slot Bindings", systemImage: "bolt.fill")
                             }
                         }
-                        .disabled(store.isBindingSlots || !store.hardwareConnected)
+                        .disabled(store.isBindingSlots || !store.canFlashHardware)
+                        .help(!store.hardwareConnected
+                              ? "No knob detected"
+                              : (!store.canFlashHardware
+                                 ? "Connect knob via USB-C cable to flash hardware"
+                                 : "Flash host translation chords to the knob"))
                         .gridColumnAlignment(.leading)
                     }
                 }

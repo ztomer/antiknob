@@ -64,12 +64,6 @@ pub const SUPPORTED_DEVICES: &[(u16, u16, &str, TransportType)] = &[
         TransportType::Wireless24G,
     ),
     (
-        0x514C,
-        0x4155,
-        "Anticater / LiQi (0x514c:0x4155)",
-        TransportType::Usb,
-    ),
-    (
         0x1189,
         0x8840,
         "Anticater / CH57x (0x1189:0x8840)",
@@ -218,29 +212,43 @@ pub fn list_devices_on(api: &HidApi) -> Result<Vec<DeviceMatch>> {
 fn open_device_on(api: &HidApi) -> Result<HidDevice> {
     // On macOS, the vendor configuration endpoint has UsagePage 0xFF00
     // This interface does NOT require sudo or root privileges.
-    let target = api
-        .device_list()
-        .find(|d| {
-            let vid = d.vendor_id();
-            let pid = d.product_id();
-            let is_supported = SUPPORTED_DEVICES.iter().any(|(v, p, _, _)| *v == vid && *p == pid);
-            is_supported && d.usage_page() == VENDOR_USAGE_PAGE
-        })
-        .or_else(|| {
-            // Fallback for non-macOS or devices without UsagePage reporting
-            api.device_list().find(|d| {
-                let vid = d.vendor_id();
-                let pid = d.product_id();
-                SUPPORTED_DEVICES.iter().any(|(v, p, _, _)| *v == vid && *p == pid)
-            })
-        })
-        .ok_or_else(|| anyhow!("No supported Anticater/CH57x device found. Please ensure device or receiver is connected."))?;
+    let target = api.device_list().find(|d| {
+        let vid = d.vendor_id();
+        let pid = d.product_id();
+        let is_supported = SUPPORTED_DEVICES
+            .iter()
+            .any(|(v, p, _, _)| *v == vid && *p == pid);
+        is_supported && d.usage_page() == VENDOR_USAGE_PAGE
+    });
 
-    let dev = target.open_device(api).context(
-        "Failed to open device interface. If permission is denied, ensure you have access to USB HID devices."
-    )?;
+    if let Some(target) = target {
+        let dev = target.open_device(api).context(
+            "Failed to open device interface. If permission is denied, ensure you have access to USB HID devices."
+        )?;
+        return Ok(dev);
+    }
 
-    Ok(dev)
+    // If a supported device is present (e.g. 2.4GHz wireless receiver) but lacks
+    // VENDOR_USAGE_PAGE, fail with a clear, actionable error rather than attempting
+    // to open a standard HID mouse/keyboard interface and reporting a misleading
+    // permission-denied error.
+    let has_supported = api.device_list().any(|d| {
+        let vid = d.vendor_id();
+        let pid = d.product_id();
+        SUPPORTED_DEVICES
+            .iter()
+            .any(|(v, p, _, _)| *v == vid && *p == pid)
+    });
+
+    if has_supported {
+        return Err(anyhow!(
+            "Device is connected wirelessly. Hardware configuration (flashing slot bindings and LED modes) requires a direct USB-C wired connection."
+        ));
+    }
+
+    Err(anyhow!(
+        "No supported Anticater/CH57x device found. Please ensure device or receiver is connected."
+    ))
 }
 
 /// Send a 64-byte payload to the device using Report ID 0x03.

@@ -276,8 +276,30 @@ pub fn process_json_rpc(ctx: &mut ApiContext, input: &str) -> Value {
 
 /// Send a command to the daemon socket and return the JSON result.
 pub fn call_daemon_socket(socket_path: &Path, cmd: &Command) -> Result<Value> {
-    let mut stream = UnixStream::connect(socket_path)
-        .with_context(|| format!("Could not connect to socket at {}", socket_path.display()))?;
+    let mut last_err = None;
+    let mut stream_opt = None;
+    for _ in 0..10 {
+        match UnixStream::connect(socket_path) {
+            Ok(s) => {
+                stream_opt = Some(s);
+                break;
+            }
+            Err(e) => {
+                last_err = Some(e);
+                thread::sleep(Duration::from_millis(25));
+            }
+        }
+    }
+    let mut stream = match stream_opt {
+        Some(s) => s,
+        None => {
+            return Err(anyhow::anyhow!(
+                "Could not connect to socket at {}: {}",
+                socket_path.display(),
+                last_err.map(|e| e.to_string()).unwrap_or_default()
+            ));
+        }
+    };
 
     let timeout = Some(Duration::from_secs(5));
     let _ = stream.set_read_timeout(timeout);

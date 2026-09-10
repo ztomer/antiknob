@@ -96,6 +96,9 @@ import os, re, sys
 s = sys.stdin.read()
 s = re.sub(r'version \"[^\"]+\"', 'version \"%s\"' % os.environ['VER'], s, count=1)
 s = re.sub(r'sha256 \"[0-9a-f]+\"', 'sha256 \"%s\"' % os.environ['SHA'], s, count=1)
+# Command substitution strips trailing newlines; the cask must end with one.
+if not s.endswith('\n'):
+    s += '\n'
 sys.stdout.write(s)
 ")"
 if [ "${NEW_CASK}" = "${CUR_CASK}" ]; then

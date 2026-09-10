@@ -106,19 +106,28 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
             Ok(serde_json::to_value(&cfg)?)
         }
 
-        Command::SetConfig { config } => {
-            // Keeps the version it replaces, and writes through a rename.
-            // `fs::write` truncated first and kept nothing, so a bad writer
-            // -- a UI bug, a half-finished edit, a crash mid-save -- took
-            // the config with it and left no way back. One did.
+        Command::SetConfig { mut config } => {
+            let active_sync = if let Some(engine) = &ctx.tap_engine {
+                let mut lock = engine.lock().unwrap();
+                if config.bound_device_layers.is_empty()
+                    && !lock.config().bound_device_layers.is_empty()
+                {
+                    config.bound_device_layers = lock.config().bound_device_layers.clone();
+                }
+                lock.apply_config(config.clone());
+                Some((lock.config().clone(), lock.layer_idx()))
+            } else {
+                None
+            };
+
+            // Keeps the version it replaces, writing safely through a rename.
             crate::host::config_backup::write_with_backup(
                 &ctx.config_path,
                 &config.to_json_pretty(),
             )?;
 
-            if let Some(engine) = &ctx.tap_engine {
-                let mut lock = engine.lock().unwrap();
-                lock.apply_config(config.clone());
+            if let Some((cfg, layer)) = active_sync {
+                crate::host::led_sync::sync_led(&cfg, layer);
             }
 
             Ok(json!({
@@ -317,9 +326,7 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                 // declares the wrong number moves every gesture along
                 // without any surface saying so -- so the surfaces say so.
                 "knob_key_ids": crate::protocol::KnobEvent::ALL
-                    .iter()
-                    .map(|e| crate::protocol::key_id_for_knob(buttons, 0, *e))
-                    .collect::<Vec<u8>>(),
+                    .iter().map(|e| crate::protocol::key_id_for_knob(buttons, 0, *e)).collect::<Vec<u8>>(),
                 "slots_read": table.len(),
                 "host_layers_can_fire": mode == device::mode::KnobMode::HostTranslate,
                 "device_binding": arrangement,
@@ -331,30 +338,34 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
             let target_layers = layers.unwrap_or_else(|| BIND_LAYERS.to_vec());
             let flash_layers = target_layers.clone();
             // Knob slots follow the buttons; see `protocol::key_id_for_knob`.
-            // The fallback is the installed layout, never a constant: a
-            // wrong count writes bindings the firmware never reads and
-            // nothing reports a failure.
             let buttons = match buttons {
                 Some(n) => n,
                 None => installed_button_count().context(
-                    "bind_slots needs the device's button count and no layout was \
-                     readable; pass `buttons` explicitly",
+                    "bind_slots needs the device's button count and no layout was readable; pass `buttons` explicitly",
                 )?,
             };
-            // The key IDs this flash targets, worked out before the write so
-            // they can be reported whether or not it succeeds. A layout that
-            // declares the wrong number of buttons writes a well-formed run
-            // of packets into slots the knob never reads, and the device
-            // reports no error -- so the only way anyone finds out is if the
-            // reply says WHICH keys were written. It used to say only how
-            // many, which is exactly the count a misflash also produces.
             let key_ids: Vec<u8> = crate::protocol::KnobEvent::ALL
                 .iter()
                 .map(|e| crate::protocol::key_id_for_knob(buttons, 0, *e))
                 .collect();
+            let to_flash = flash_layers.clone();
             let count =
-                device::with_device(move |dev| flash_slot_bindings(dev, buttons, &flash_layers))
+                device::with_device(move |dev| flash_slot_bindings(dev, buttons, &to_flash))
                     .context("Cannot flash slot bindings to the Anticater USB device")?;
+
+            if let Some(engine) = &ctx.tap_engine {
+                let mut lock = engine.lock().unwrap();
+                let mut new_cfg = lock.config().clone();
+                new_cfg.bound_device_layers = flash_layers.clone();
+                lock.apply_config(new_cfg);
+                let _ = crate::host::device_binding::record_bound_layers(
+                    &ctx.config_path,
+                    &flash_layers,
+                );
+                let active = lock.layer_idx();
+                crate::host::led_sync::sync_led(lock.config(), active);
+            }
+
             Ok(json!({
                 "ok": true,
                 "flashed_slots": count,
@@ -372,8 +383,6 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                 serde_yaml::from_str(&yaml).context("Invalid keymap YAML configuration")?;
             cfg.validate()?;
 
-            // Every packet is built up front so the HID job owns plain bytes
-            // and borrows nothing from `cfg`.
             let selected: Vec<usize> = match layer {
                 Some(l) => {
                     let idx = l as usize;
@@ -385,7 +394,8 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                 None => (0..cfg.layers.len()).collect(),
             };
 
-            let mut packets: Vec<Vec<u8>> = Vec::new();
+            let mut slot_packets: Vec<Vec<u8>> = Vec::new();
+            let mut led_packets: Vec<Vec<u8>> = Vec::new();
             for layer_idx in selected {
                 let lcfg = &cfg.layers[layer_idx];
                 let layer_u8 = layer_idx as u8;
@@ -394,31 +404,32 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                     for key_str in row {
                         let action = Action::parse(key_str)?;
                         let key_id = protocol::key_id_for_button(button_count);
-                        packets.push(action.to_packet(key_id, layer_u8));
+                        slot_packets.push(action.to_packet(key_id, layer_u8));
                         button_count += 1;
                     }
                 }
-                // Knob slots continue after the buttons; `button_count` is
-                // what places them (see `protocol::key_id_for_knob`).
                 for (knob_idx, knob) in lcfg.knobs.iter().enumerate() {
                     for (event, binding) in knob.bindings() {
                         let key_id = protocol::key_id_for_knob(button_count, knob_idx, event);
-                        packets.push(binding.to_packet(key_id, layer_u8)?);
+                        slot_packets.push(binding.to_packet(key_id, layer_u8)?);
                     }
                 }
                 if let Some(ref led_mode) = lcfg.led {
-                    packets.push(protocol::build_led_packet(layer_u8, led_mode)?);
+                    led_packets.push(protocol::build_led_packet(layer_u8, led_mode)?);
                 }
             }
 
-            device::with_device(move |dev| {
-                for packet in &packets {
-                    device::send_report(dev, packet)?;
-                    sleep(Duration::from_millis(10));
-                }
-                device::send_commit(dev)
-            })
-            .context("Cannot flash the keymap to the Anticater USB device")?;
+            device_cmds::flash_keymap_hardware(slot_packets, led_packets)
+                .context("Cannot flash the keymap to the Anticater USB device")?;
+
+            if let Some(engine) = &ctx.tap_engine {
+                let mut lock = engine.lock().unwrap();
+                let mut new_cfg = lock.config().clone();
+                new_cfg.bound_device_layers.clear();
+                lock.apply_config(new_cfg);
+                let _ = crate::host::device_binding::record_bound_layers(&ctx.config_path, &[]);
+            }
+
             Ok(json!({
                 "ok": true,
                 "message": "Keymap flashed to hardware successfully"

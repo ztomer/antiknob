@@ -87,6 +87,16 @@ struct WireFormatTests {
         #expect(cfg.doubleTapSwitch == true)
         #expect(cfg.doubleTapWindow == 0.25)
         #expect(cfg.scrollLinesPerDetent == 3)
+        #expect(cfg.boundDeviceLayers == [])
+    }
+
+    @Test("bound device layers decodes from camelCase and snake_case")
+    func boundDeviceLayersDecodes() throws {
+        let camel = try decode(Config.self, #"{"layers":[],"boundDeviceLayers":[0, 1, 2]}"#)
+        #expect(camel.boundDeviceLayers == [0, 1, 2])
+
+        let snake = try decode(Config.self, #"{"layers":[],"bound_device_layers":[1, 2]}"#)
+        #expect(snake.boundDeviceLayers == [1, 2])
     }
 
     @Test("bundle ids decode from either spelling")

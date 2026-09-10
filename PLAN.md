@@ -16,6 +16,11 @@ plan and does not get pruned.
   `primary_device` and `primary_transport` aligned so wireless receivers are
   correctly resolved as primary transport and power source when the USB-C cable
   is unplugged. UI buttons for hardware flashing are safely gated by `canFlashHardware`.
+  *Fixed LED Flashing & Sync (2026-09-09)*: Fixed physical LED mode updates by
+  routing standalone uploads through `device::send_led` (`03 FB FB FB` init sequence)
+  rather than raw report writes. Preserved `boundDeviceLayers` in the Swift UI
+  `Config` model so UI saves do not wipe bound layers. Fixed `tap.lock()`
+  self-deadlock in `tests/api_e2e.rs`.
 * Zero-sudo IOHIDManager access. MIT OR Apache-2.0, native arm64, macOS 26+.
 * **The knob is five gestures at keys 2-6** -- CCW, press, CW, hold+twist
   left, hold+twist right -- and this device has at most ONE button, at key 1.

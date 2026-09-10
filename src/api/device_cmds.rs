@@ -141,3 +141,22 @@ pub fn read_slots(
         "slots": results
     }))
 }
+
+/// Flash a standalone keymap's slot packets (committed via `send_commit`),
+/// followed by its LED mode packets (sent via `send_led` with the LED init packet).
+pub fn flash_keymap_hardware(slot_packets: Vec<Vec<u8>>, led_packets: Vec<Vec<u8>>) -> Result<()> {
+    device::with_device(move |dev| {
+        for packet in &slot_packets {
+            device::send_report(dev, packet)?;
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if !slot_packets.is_empty() {
+            device::send_commit(dev)?;
+        }
+        for packet in &led_packets {
+            device::send_led(dev, packet)?;
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        Ok(())
+    })
+}

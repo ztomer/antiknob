@@ -364,6 +364,7 @@ struct Config: Codable, Equatable, Sendable {
     var layerHotkey: KeyChordSpec?
     var layerHotkeyBack: KeyChordSpec?
     var scrollLinesPerDetent: Int32
+    var boundDeviceLayers: [Int]
 
     var doubleTapEnabled: Bool {
         get { doubleTapSwitch }
@@ -384,17 +385,19 @@ struct Config: Codable, Equatable, Sendable {
         case layerHotkey, layer_hotkey
         case layerHotkeyBack, layer_hotkey_back
         case scrollLinesPerDetent, scroll_lines_per_detent
+        case boundDeviceLayers, bound_device_layers
     }
 
     init(layers: [LayerConfig] = [], doubleTapSwitch: Bool = true, doubleTapWindow: Double = 0.25,
          layerHotkey: KeyChordSpec? = nil, layerHotkeyBack: KeyChordSpec? = nil,
-         scrollLinesPerDetent: Int32 = 3) {
+         scrollLinesPerDetent: Int32 = 3, boundDeviceLayers: [Int] = []) {
         self.layers = layers
         self.doubleTapSwitch = doubleTapSwitch
         self.doubleTapWindow = doubleTapWindow
         self.layerHotkey = layerHotkey
         self.layerHotkeyBack = layerHotkeyBack
         self.scrollLinesPerDetent = scrollLinesPerDetent
+        self.boundDeviceLayers = boundDeviceLayers
     }
 
     init(from decoder: Decoder) throws {
@@ -410,6 +413,8 @@ struct Config: Codable, Equatable, Sendable {
             ?? (try? c.decodeIfPresent(KeyChordSpec.self, forKey: .layer_hotkey_back)) ?? nil
         scrollLinesPerDetent = (try? c.decode(Int32.self, forKey: .scrollLinesPerDetent))
             ?? (try? c.decode(Int32.self, forKey: .scroll_lines_per_detent)) ?? 3
+        boundDeviceLayers = (try? c.decode([Int].self, forKey: .boundDeviceLayers))
+            ?? (try? c.decode([Int].self, forKey: .bound_device_layers)) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -420,6 +425,7 @@ struct Config: Codable, Equatable, Sendable {
         try c.encodeIfPresent(layerHotkey, forKey: .layerHotkey)
         try c.encodeIfPresent(layerHotkeyBack, forKey: .layerHotkeyBack)
         try c.encode(scrollLinesPerDetent, forKey: .scrollLinesPerDetent)
+        try c.encode(boundDeviceLayers, forKey: .boundDeviceLayers)
     }
 
     static var defaultPOC: Config {

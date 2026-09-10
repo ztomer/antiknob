@@ -51,7 +51,11 @@ fn test_e2e_socket_server_and_client_roundtrip() {
     assert_eq!(tap.lock().unwrap().layer_idx(), 1);
 
     // 4. set_config
+    let mut c = tap.lock().unwrap().config().clone();
+    c.bound_device_layers = vec![0, 1, 2];
+    tap.lock().unwrap().apply_config(c);
     let mut modified = HostConfig::default_config();
+    modified.bound_device_layers = Vec::new(); // Simulate UI client omitting bound layers
     modified.layers.push(HostLayer {
         name: "TestLayer3".to_string(),
         twist_l: HostAction::None,
@@ -66,8 +70,15 @@ fn test_e2e_socket_server_and_client_roundtrip() {
         call_daemon_socket(&sock_path, &Command::SetConfig { config: modified }).unwrap();
     assert_eq!(set_cfg_res["layers_count"], 3);
 
-    // Verify tap engine dynamic hot-reload
+    // Verify tap engine dynamic hot-reload and bound layers preservation
     assert_eq!(tap.lock().unwrap().config().layers.len(), 3);
+    assert_eq!(
+        tap.lock().unwrap().config().bound_device_layers,
+        vec![0, 1, 2]
+    );
+
+    let cfg_res2 = call_daemon_socket(&sock_path, &Command::GetConfig {}).unwrap();
+    assert_eq!(cfg_res2["boundDeviceLayers"], json!([0, 1, 2]));
 
     // 5. list_apps
     let apps_res = call_daemon_socket(&sock_path, &Command::ListApps {}).unwrap();

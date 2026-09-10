@@ -301,7 +301,7 @@ pub fn call_daemon_socket(socket_path: &Path, cmd: &Command) -> Result<Value> {
         }
     };
 
-    let timeout = Some(Duration::from_secs(5));
+    let timeout = Some(Duration::from_secs(30));
     let _ = stream.set_read_timeout(timeout);
     let _ = stream.set_write_timeout(timeout);
 

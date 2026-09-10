@@ -129,11 +129,12 @@ pub fn run_upload(
     // without leaving the firmware half-programmed, and the HID job owns
     // plain bytes rather than borrowing `cfg`.
     let mut packets: Vec<Vec<u8>> = Vec::new();
+    let mut led_packets: Vec<Vec<u8>> = Vec::new();
     for layer_idx in selected {
         let layer = &cfg.layers[layer_idx];
         let layer_u8 = layer_idx as u8;
 
-        // 1. Program buttons
+        // 1. Program button actions
         let mut button_count = 0;
         for row in &layer.buttons {
             for key_str in row {
@@ -144,8 +145,7 @@ pub fn run_upload(
             }
         }
 
-        // 2. Program knobs. Their slot IDs continue after the buttons, so
-        // the count above is what places them -- see `key_id_for_knob`.
+        // 2. Program knob actions
         for (knob_idx, knob) in layer.knobs.iter().enumerate() {
             for (event, binding) in knob.bindings() {
                 let key_id = protocol::key_id_for_knob(button_count, knob_idx, event);
@@ -158,7 +158,7 @@ pub fn run_upload(
 
         // 3. Program layer LED if specified in config
         if let Some(ref led_mode) = layer.led {
-            packets.push(protocol::build_led_packet(layer_u8, led_mode)?);
+            led_packets.push(protocol::build_led_packet(layer_u8, led_mode)?);
         }
     }
 
@@ -195,7 +195,13 @@ pub fn run_upload(
             device::send_report(dev, packet)?;
             sleep(Duration::from_millis(10));
         }
-        device::send_commit(dev)?;
+        if !packets.is_empty() {
+            device::send_commit(dev)?;
+        }
+        for packet in &led_packets {
+            device::send_led(dev, packet)?;
+            sleep(Duration::from_millis(20));
+        }
         if skip_verify {
             return Ok(Vec::new());
         }

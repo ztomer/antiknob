@@ -35,6 +35,7 @@ identifier_name:
     # daemon's snake_case JSON, so they are not free to be renamed --
     # `host.json` would stop decoding. Adding one is a deliberate act, which
     # is why this list is explicit rather than a blanket snake_case allowance.
+    - bound_device_layers
     - bundle_id
     - delay_ms
     - double_tap_switch

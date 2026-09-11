@@ -34,26 +34,33 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
 /// The knob's mark, drawn for the menu bar: ring plus pointer dot.
 ///
-/// Strokes rather than pixels, legible wherever it lands, and a template
-/// citizen in the menu bar -- light and dark just work.
-struct KnobMark: View {
-    var body: some View {
-        ZStack {
-            Circle().strokeBorder(lineWidth: 2)
-            Circle().fill().frame(width: 3, height: 3).offset(y: -4.5)
-        }
-        .frame(width: 14, height: 14)
-    }
-}
-
+/// Rendered as a vector template NSImage so AppKit status items and SwiftUI
+/// views display it crisply in both light and dark menu bar contexts.
 public struct MenuBarIcon: View {
     public init() {}
 
+    public static let iconImage: NSImage = {
+        let size = NSSize(width: 18, height: 18)
+        let img = NSImage(size: size, flipped: false) { _ in
+            let circleRect = NSRect(x: 2.0, y: 2.0, width: 14.0, height: 14.0)
+            let path = NSBezierPath(ovalIn: circleRect)
+            path.lineWidth = 1.8
+            NSColor.black.setStroke()
+            path.stroke()
+
+            let dotRect = NSRect(x: 7.5, y: 11.5, width: 3.0, height: 3.0)
+            let dotPath = NSBezierPath(ovalIn: dotRect)
+            NSColor.black.setFill()
+            dotPath.fill()
+
+            return true
+        }
+        img.isTemplate = true
+        return img
+    }()
+
     public var body: some View {
-        // Primary, not a fixed ink: the menu bar is dark or light and the
-        // mark must read on both. State lives in the menu itself, not here.
-        KnobMark()
-            .foregroundStyle(.primary)
+        Image(nsImage: Self.iconImage)
     }
 }
 

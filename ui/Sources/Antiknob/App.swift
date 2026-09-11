@@ -36,7 +36,7 @@ struct AntiknobApp: App {
         MenuBarExtra {
             MenuBarView()
         } label: {
-            MenuBarIcon()
+            Image(nsImage: MenuBarIcon.iconImage)
         }
         .menuBarExtraStyle(.menu)
     }

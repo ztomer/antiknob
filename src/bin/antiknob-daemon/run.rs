@@ -190,6 +190,17 @@ fn apply_tray_action(
             handle_events(out, active, tap.config());
             false
         }
+        TrayAction::OpenSettings => {
+            let _ = std::process::Command::new("open")
+                .args(["-b", "com.antiknob.app"])
+                .spawn()
+                .or_else(|_| {
+                    std::process::Command::new("open")
+                        .arg("/Applications/Antiknob/Antiknob.app")
+                        .spawn()
+                });
+            false
+        }
         TrayAction::ReloadNow => {
             force_reload(tap, config_path);
             false

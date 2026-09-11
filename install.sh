@@ -138,7 +138,7 @@ fi
 
 echo "[ Ok  ] Antiknob installed successfully to ${DEST_DIR}!"
 echo "        GUI App: ${APP_BUNDLE}"
-echo "        Daemon App: ${DAEMON_BUNDLE} (menu bar, no dock icon)"
+echo "        Daemon App: ${DAEMON_BUNDLE} (background service, no dock icon)"
 echo "        CLI tool: ${DEST_DIR}/bin/antiknob"
 echo "        Start at login with: ${DAEMON_EXE} --install-login-item"
 

@@ -29,6 +29,10 @@ struct GeneralPane: View {
     private var systemStatusSection: some View {
         Section("Status & Diagnostics") {
             PropertyGrid {
+                StatusRow(label: "Version", value: AppConstants.AppInfo.versionDisplay) {
+                    EmptyView()
+                }
+
                 StatusRow(
                     // The socket in use. This printed `/tmp/antiknob.sock`
                     // as a constant; that path is a symlink the daemon

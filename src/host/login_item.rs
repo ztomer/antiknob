@@ -47,6 +47,7 @@ pub fn render_agent_plist(executable: &Path, config: &Path, log_path: &Path) -> 
             "\t<array>\n",
             "\t\t<string>{}</string>\n",
             "\t\t<string>--active</string>\n",
+            "\t\t<string>--no-tray</string>\n",
             "\t\t<string>--config</string>\n",
             "\t\t<string>{}</string>\n",
             "\t</array>\n",

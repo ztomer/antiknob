@@ -47,4 +47,29 @@ enum AppConstants {
     enum Polling {
         static let statusInterval = 2.0
     }
+
+    /// Application metadata.
+    enum AppInfo {
+        /// Application version string (e.g. "0.14.1").
+        static var version: String {
+            if let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String, !ver.isEmpty {
+                return ver
+            }
+            return "0.14.1"
+        }
+
+        /// Application build number string (e.g. "45").
+        static var build: String {
+            if let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String, !b.isEmpty {
+                return b
+            }
+            return ""
+        }
+
+        /// Combined version presentation string, e.g. "v0.14.0 (45)" or "v0.14.0".
+        static var versionDisplay: String {
+            let b = build
+            return b.isEmpty ? "v\(version)" : "v\(version) (\(b))"
+        }
+    }
 }

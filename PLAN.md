@@ -54,11 +54,16 @@ plan and does not get pruned.
   untouched, restored after) -- writes there stay legal, surfaces say
   "stores, render unmeasured". Whether 3-15 render at all still needs
   eyes; see REFERENCES.md.
-  *Fixed icons (2026-09-11)*: Daemon status in both the status bar and setting
-  panes is now a square (`StatusSquare`, 8x8 `RoundedRectangle`), device connection
-  a circle (`StatusDot`, 8x8 `Circle`); menubar tray icon is a native template knob
-  (`assets/knob-tray.png`); and the app icon was replaced with a modern, high-contrast,
-  legible macOS squircle rotary knob (`assets/antiknob-1024.png`, `Antiknob.icns`).
+  *Fixed icons & unified menu bar presence (2026-09-11)*: Daemon status in both
+  the status bar and setting panes is now a square (`StatusSquare`, 8x8 `RoundedRectangle`),
+  device connection a circle (`StatusDot`, 8x8 `Circle`); the app icon was replaced with
+  a modern, high-contrast, legible macOS squircle rotary knob (`assets/antiknob-1024.png`,
+  `Antiknob.icns`). Resolved duplicate and unidentified double-wide tray icon:
+  `AntiknobDaemon.app` runs `--active --no-tray` in the background, while the native
+  SwiftUI `Antiknob.app` owns the single menu bar icon via `MenuBarExtra`, rendering
+  a crisp 18×18 pt vector template `NSImage`. Clicking the knob opens the full menu with
+  active layer switcher, hardware status, and settings shortcut. Added a dynamic Version
+  field (`v0.14.1 (build)`) to the General settings pane under Status & Diagnostics.
 * Zero-sudo IOHIDManager access. MIT OR Apache-2.0, native arm64, macOS 26+.
 * **The knob is five gestures at keys 2-6** -- CCW, press, CW, hold+twist
   left, hold+twist right -- and this device has at most ONE button, at key 1.

@@ -30,6 +30,7 @@ fn tray_icon() -> Option<Icon> {
 
 pub enum TrayAction {
     SwitchLayer(usize),
+    OpenSettings,
     ReloadNow,
     OpenAccessibility,
     Quit,
@@ -38,12 +39,14 @@ pub enum TrayAction {
 pub struct TrayUi {
     tray: TrayIcon,
     layer_ids: Vec<muda::MenuId>,
+    settings_id: muda::MenuId,
     reload_id: muda::MenuId,
     fix_id: Option<muda::MenuId>,
     quit_id: muda::MenuId,
     last_title: String,
     last_names: Vec<String>,
     last_tap_ok: bool,
+    has_icon: bool,
 }
 
 /// What the menu says when macOS is not letting the daemon read the
@@ -73,6 +76,7 @@ fn layer_label(idx: usize, name: &str, active: bool) -> String {
 struct BuiltMenu {
     menu: Menu,
     layer_ids: Vec<muda::MenuId>,
+    settings_id: muda::MenuId,
     reload_id: muda::MenuId,
     fix_id: Option<muda::MenuId>,
     quit_id: muda::MenuId,
@@ -86,6 +90,10 @@ fn build_menu(names: &[String], active: usize, tap_ok: bool) -> anyhow::Result<B
         layer_ids.push(item.id().clone());
         menu.append(&item)?;
     }
+    menu.append(&PredefinedMenuItem::separator())?;
+    let settings = MenuItem::new("Open Antiknob Settings…", true, None);
+    let settings_id = settings.id().clone();
+    menu.append(&settings)?;
     menu.append(&PredefinedMenuItem::separator())?;
     let fix_id = if tap_ok {
         None
@@ -105,6 +113,7 @@ fn build_menu(names: &[String], active: usize, tap_ok: bool) -> anyhow::Result<B
     Ok(BuiltMenu {
         menu,
         layer_ids,
+        settings_id,
         reload_id,
         fix_id,
         quit_id,
@@ -119,23 +128,28 @@ impl TrayUi {
         };
         let title = format!("{}", idx + 1);
         let built = build_menu(&names, idx, tap_ok)?;
+        let icon_opt = tray_icon();
+        let has_icon = icon_opt.is_some();
         let mut builder = TrayIconBuilder::new()
-            .with_title(title.clone())
             .with_tooltip(tooltip(&title, tap_ok))
             .with_menu(Box::new(built.menu));
-        if let Some(icon) = tray_icon() {
+        if let Some(icon) = icon_opt {
             builder = builder.with_icon(icon).with_icon_as_template(true);
+        } else {
+            builder = builder.with_title(title.clone());
         }
         let tray = builder.build()?;
         Ok(Self {
             tray,
             layer_ids: built.layer_ids,
+            settings_id: built.settings_id,
             reload_id: built.reload_id,
             fix_id: built.fix_id,
             quit_id: built.quit_id,
             last_title: title,
             last_names: names,
             last_tap_ok: tap_ok,
+            has_icon,
         })
     }
 
@@ -145,7 +159,9 @@ impl TrayUi {
         let (names, idx) = (t.layer_names(), t.layer_idx());
         let title = format!("{}", idx + 1);
         if title != self.last_title || tap_ok != self.last_tap_ok {
-            self.tray.set_title(Some(title.clone()));
+            if !self.has_icon {
+                self.tray.set_title(Some(title.clone()));
+            }
             let _ = self.tray.set_tooltip(Some(tooltip(&title, tap_ok)));
             self.last_title = title;
         }
@@ -153,6 +169,7 @@ impl TrayUi {
             if let Ok(built) = build_menu(&names, idx, tap_ok) {
                 self.tray.set_menu(Some(Box::new(built.menu)));
                 self.layer_ids = built.layer_ids;
+                self.settings_id = built.settings_id;
                 self.reload_id = built.reload_id;
                 self.fix_id = built.fix_id;
                 self.quit_id = built.quit_id;
@@ -168,6 +185,8 @@ impl TrayUi {
         while let Ok(ev) = MenuEvent::receiver().try_recv() {
             if ev.id == self.quit_id {
                 out.push(TrayAction::Quit);
+            } else if ev.id == self.settings_id {
+                out.push(TrayAction::OpenSettings);
             } else if ev.id == self.reload_id {
                 out.push(TrayAction::ReloadNow);
             } else if self.fix_id.as_ref() == Some(&ev.id) {

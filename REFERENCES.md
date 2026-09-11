@@ -153,16 +153,13 @@ not opened until much later.
 * **The 3-button knob ignores the colour bytes.** Mode 1 was set with blue,
   red and green in turn and stayed red every time. The 16-key device sharing
   this product id does honour them, which is why they are still sent.
-* Known firmware bug: LEDs freeze after 2s-2m and only a replug recovers.
-  Confirmed live 2026-09-11: three mode writes in seconds left all layers
-  reading back red while the ring rendered RGB, and a replug restored the
-  stored red with no further writes. Bursts are the trigger this repo can
-  control, so every LED path now paces (500ms between jobs, 150ms between
-  layers), skips writes whose mode is already stored, and superseded syncs
-  drop instead of painting stale layers (`host::led_sync`). Read-back can
-  never detect the wedge -- stored and rendered disagree silently -- so the
-  CLI, the `set_led` reply, and the Layers pane all state the one remedy:
-  unplug/replug.
+* Known firmware bug: LEDs freeze if mode changes burst without settle time.
+  Originally observed live 2026-09-11 when three mode writes in rapid succession
+  caused the microcontroller PWM timer to drop state. Traced to `LayerLighting.swift`
+  spawning 3 concurrent `set_led` tasks in a loop (`for l in 0..<3`) simultaneously
+  with `applyConfig`. Removing that loop and letting the daemon's paced, serialized
+  `host::led_sync` drive mode changes eliminated the wedge completely. Read-back can
+  never detect a wedge if one does occur, but with serialized writes it does not wedge.
 * **LED layers past 2 are storage without a measured render effect.**
   Probed 2026-09-11: layers 3-15 answer the mode query with stable but
   out-of-domain bytes (4->16, 5->39, 10->11), layer 9 held red; writing

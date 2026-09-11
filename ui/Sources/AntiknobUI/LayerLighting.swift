@@ -65,11 +65,6 @@ struct LayerLightingRow: View {
         let isSelected = selection?.id == mode?.id
         Button {
             store[layer: idx]?.led = mode?.id
-            if store.canFlashHardware, let modeId = mode?.id, idx == store.activeLayerIdx {
-                for l in 0..<3 {
-                    store.setLed(layer: l, mode: modeId) { _ in }
-                }
-            }
         } label: {
             Image(systemName: mode?.icon ?? "minus")
                 .frame(width: 26, height: 24)

@@ -77,8 +77,15 @@ chmod +x "${DAEMON_BUNDLE}/Contents/MacOS/AntiknobDaemon"
 if [[ -f "assets/Antiknob.icns" ]]; then
     cp "assets/Antiknob.icns" "${DAEMON_BUNDLE}/Contents/Resources/Antiknob.icns"
 fi
-if [[ -f "assets/ak12-1024.png" ]]; then
+if [[ -f "assets/antiknob-1024.png" ]]; then
+    cp "assets/antiknob-1024.png" "${DAEMON_BUNDLE}/Contents/Resources/antiknob-1024.png"
+    cp "assets/antiknob-1024.png" "${DAEMON_BUNDLE}/Contents/Resources/ak12-1024.png"
+elif [[ -f "assets/ak12-1024.png" ]]; then
     cp "assets/ak12-1024.png" "${DAEMON_BUNDLE}/Contents/Resources/ak12-1024.png"
+fi
+if [[ -f "assets/knob-tray.png" ]]; then
+    cp "assets/knob-tray.png" "${DAEMON_BUNDLE}/Contents/Resources/knob-tray.png"
+    cp "assets/knob-tray.png" "${DAEMON_BUNDLE}/Contents/Resources/ak12-tray.png"
 fi
 
 cat << PLIST > "${DAEMON_BUNDLE}/Contents/Info.plist"

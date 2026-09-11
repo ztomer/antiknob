@@ -11,6 +11,9 @@
 //!   it sees keys the walk cannot reach.
 
 use super::{send_report, HidDevice};
+use crate::firmware::{
+    REPORT_LEN, SLOT_BURST_QUERIES, SLOT_BURST_WIDTH, SLOT_QUERY_TIMEOUT_MS, SLOT_TABLE_QUERY_CMD,
+};
 use anyhow::{Context, Result};
 
 /// Slot-table read query, reverse-engineered from the vendor app's
@@ -19,25 +22,19 @@ use anyhow::{Context, Result};
 /// `group` selects the slot bank (`0x0F` / `0x19` observed), `counter`
 /// walks entries 1..=3 within the bank.
 pub fn read_slot(dev: &HidDevice, group: u8, counter: u8) -> Result<Vec<u8>> {
-    let mut payload = [0u8; 64];
-    payload[0] = 0xFA;
+    let mut payload = [0u8; REPORT_LEN];
+    payload[0] = SLOT_TABLE_QUERY_CMD;
     payload[1] = group;
     payload[2] = 0x00;
     payload[3] = counter;
     send_report(dev, &payload)?;
 
-    let mut buf = [0u8; 64];
+    let mut buf = [0u8; REPORT_LEN];
     let n = dev
-        .read_timeout(&mut buf, 500)
+        .read_timeout(&mut buf, SLOT_QUERY_TIMEOUT_MS as i32)
         .context("Timed out reading slot dump from device")?;
     Ok(buf[..n].to_vec())
 }
-
-/// Slots one burst query returns, and the widest the firmware answers.
-pub const BURST_WIDTH: u8 = 25;
-
-/// How many queries cover the whole table. The vendor sends exactly three.
-pub const BURST_QUERIES: u8 = 3;
 
 /// Read the WHOLE slot table: every key, every layer, in three queries.
 ///
@@ -58,16 +55,16 @@ pub const BURST_QUERIES: u8 = 3;
 pub fn read_full_table(dev: &HidDevice) -> Vec<Vec<u8>> {
     let mut out: Vec<Vec<u8>> = Vec::new();
     let mut seen: Vec<(u8, u8)> = Vec::new();
-    for counter in 1..=BURST_QUERIES {
-        let mut payload = [0u8; 64];
-        payload[0] = 0xFA;
-        payload[1] = BURST_WIDTH;
+    for counter in 1..=SLOT_BURST_QUERIES {
+        let mut payload = [0u8; REPORT_LEN];
+        payload[0] = SLOT_TABLE_QUERY_CMD;
+        payload[1] = SLOT_BURST_WIDTH;
         payload[3] = counter;
         if send_report(dev, &payload).is_err() {
             continue;
         }
-        let mut buf = [0u8; 64];
-        for _ in 0..BURST_WIDTH {
+        let mut buf = [0u8; REPORT_LEN];
+        for _ in 0..SLOT_BURST_WIDTH {
             match dev.read_timeout(&mut buf, 500) {
                 Ok(n) if n > 0 => {
                     let record = buf[..n].to_vec();

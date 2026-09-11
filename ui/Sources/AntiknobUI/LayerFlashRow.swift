@@ -49,7 +49,8 @@ struct LayerFlashRow: View {
                   ? "No knob detected"
                   : (!store.canFlashHardware
                      ? "Connect knob via USB-C cable to flash hardware"
-                     : "Writes ⌃⌥F16..F20 into the knob so Antiknob receives its gestures"))
+                     : "Writes ⌃⌥⇧F16..F20 into the knob so Antiknob receives its gestures. "
+                       + "Takes a few seconds; the row reads Flashed when it lands."))
             .gridColumnAlignment(.leading)
         }
     }

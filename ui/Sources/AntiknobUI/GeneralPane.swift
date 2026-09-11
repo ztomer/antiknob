@@ -39,7 +39,7 @@ struct GeneralPane: View {
                         ? "Connected (\(store.socketPath ?? "path unknown"))"
                         : "Not running — changes are saved but not applied"
                 ) {
-                    StatusDot(color: store.daemonConnected ? .green : .orange)
+                    StatusSquare(color: store.daemonConnected ? .green : .orange)
                 }
 
                 StatusRow(label: "Device", value: store.hardwareProduct) {

@@ -124,4 +124,46 @@ mod tests {
         drop(server);
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
+
+    /// Connections run on their own threads behind a per-request lock: N
+    /// concurrent callers must all get answers, never deadlock each other,
+    /// and never need to arrive in order. Runs the calls on threads the
+    /// way real clients do, rather than asserting about the locking from
+    /// one thread.
+    #[test]
+    fn concurrent_socket_calls_all_answer() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("antiknob_test_conc_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let sock_path = temp_dir.join("test.sock");
+        let cfg_path = temp_dir.join("host.json");
+
+        let ctx = ApiContext::new(cfg_path, None);
+        let server = SocketServer::start(sock_path.clone(), ctx).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let handles: Vec<_> = (0..8)
+            .map(|i| {
+                let path = sock_path.clone();
+                std::thread::spawn(move || {
+                    let cmd = if i % 2 == 0 {
+                        Command::GetStatus {}
+                    } else {
+                        Command::GetConfig {}
+                    };
+                    call_daemon_socket(&path, &cmd)
+                })
+            })
+            .collect();
+        for h in handles {
+            let resp = h.join().expect("client thread live").expect("RPC answers");
+            assert!(
+                resp.get("connected").is_some() || resp.get("layers").is_some(),
+                "unexpected reply: {resp}"
+            );
+        }
+
+        drop(server);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
 }

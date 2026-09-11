@@ -7,7 +7,8 @@
 //! they exist to prevent is a pane naming one device while every command on
 //! it drives another.
 
-use super::{DeviceMatch, TransportType, VENDOR_USAGE_PAGE};
+use super::DeviceMatch;
+use crate::firmware::{TransportType, VENDOR_USAGE_PAGE};
 
 pub fn primary_transport(matches: &[DeviceMatch]) -> Option<TransportType> {
     primary_device(matches).map(|d| d.transport)

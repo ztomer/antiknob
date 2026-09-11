@@ -4,7 +4,7 @@
 // the Bluetooth branches cannot be reached by any hardware on hand, and this
 // is the only way to pin them at all.
 
-use super::{TransportType, SUPPORTED_DEVICES};
+use crate::firmware::{TransportType, SUPPORTED_DEVICES};
 
 /// Does this product string look like an Anticater knob?
 fn looks_like_anticater(product: &str) -> bool {

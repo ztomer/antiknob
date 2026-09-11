@@ -48,10 +48,19 @@ EOF
 if [[ -f "${ROOT_DIR}/assets/Antiknob.icns" ]]; then
     cp "${ROOT_DIR}/assets/Antiknob.icns" "${RESOURCES_DIR}/Antiknob.icns"
 fi
-if [[ -f "${ROOT_DIR}/assets/ak12-1024.png" ]]; then
+if [[ -f "${ROOT_DIR}/assets/antiknob-1024.png" ]]; then
+    cp "${ROOT_DIR}/assets/antiknob-1024.png" "${RESOURCES_DIR}/antiknob-1024.png"
+    cp "${ROOT_DIR}/assets/antiknob-1024.png" "${RESOURCES_DIR}/ak12-1024.png"
+elif [[ -f "${ROOT_DIR}/assets/ak12-1024.png" ]]; then
     cp "${ROOT_DIR}/assets/ak12-1024.png" "${RESOURCES_DIR}/ak12-1024.png"
-    sips -z 18 18 "${ROOT_DIR}/assets/ak12-1024.png" --out "${RESOURCES_DIR}/ak12-tray.png" >/dev/null 2>&1 || true
-    sips -z 36 36 "${ROOT_DIR}/assets/ak12-1024.png" --out "${RESOURCES_DIR}/ak12-tray@2x.png" >/dev/null 2>&1 || true
+fi
+if [[ -f "${ROOT_DIR}/assets/knob-tray.png" ]]; then
+    cp "${ROOT_DIR}/assets/knob-tray.png" "${RESOURCES_DIR}/knob-tray.png"
+    cp "${ROOT_DIR}/assets/knob-tray.png" "${RESOURCES_DIR}/ak12-tray.png"
+fi
+if [[ -f "${ROOT_DIR}/assets/knob-tray@2x.png" ]]; then
+    cp "${ROOT_DIR}/assets/knob-tray@2x.png" "${RESOURCES_DIR}/knob-tray@2x.png"
+    cp "${ROOT_DIR}/assets/knob-tray@2x.png" "${RESOURCES_DIR}/ak12-tray@2x.png"
 fi
 
 echo "[ ==> ] Compiling Swift sources into Antiknob.app (v${VERSION} build ${BUILD})..."

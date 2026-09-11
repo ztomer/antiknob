@@ -152,7 +152,9 @@ public final class ConfigStore: ObservableObject {
     }
 
     private func startPolling() {
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        pollTimer = Timer.scheduledTimer(
+            withTimeInterval: AppConstants.Polling.statusInterval, repeats: true
+        ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.refreshStatus()
             }

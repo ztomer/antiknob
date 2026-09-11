@@ -11,10 +11,15 @@
 //! Pure matching lives here so the comparison is testable without hardware;
 //! the read loop that feeds it lives in the CLI.
 
+use crate::firmware::{
+    DEVICE_LAYERS, FD_CMD, FD_KIND_KEYBOARD, FE_CHORD_CMD, REPORT_ID, SLOT_MAX_KEY_ID,
+    SLOT_TABLE_QUERY_CMD,
+};
+
 /// The largest key id any supported layout reaches: a 4x4 grid plus four
 /// knobs. Anything above it in byte 2 is a subcommand, not a slot.
-const MAX_KEY_ID: u8 = 40;
-
+/// The bound lives in the firmware map; the fabrication it guards
+/// against is documented below.
 /// One slot as the device reports it: `03 FA <key_id> <layer> <kind> ...`.
 ///
 /// `layer` is the wire value, which is 1-based -- the same convention
@@ -54,7 +59,7 @@ pub fn is_synthetic_default(record: &[u8]) -> bool {
     let Some((addr, action)) = parse_record(record) else {
         return false;
     };
-    action.kind == 1
+    action.kind == FD_KIND_KEYBOARD
         && action.mods == 0
         && action.media == 0x04u8.wrapping_add(addr.key_id).wrapping_sub(1)
 }
@@ -64,10 +69,10 @@ pub fn is_synthetic_default(record: &[u8]) -> bool {
 /// Byte 1 is `0xFE` on a write and `0xFA` on a read; everything the two
 /// share sits at the same offsets, which is why one parser serves both.
 pub fn parse_record(record: &[u8]) -> Option<(SlotAddr, SlotAction)> {
-    if record.len() < 13 || record[0] != 0x03 {
+    if record.len() < 13 || record[0] != REPORT_ID {
         return None;
     }
-    if record[1] != 0xFE && record[1] != 0xFA {
+    if record[1] != FE_CHORD_CMD && record[1] != SLOT_TABLE_QUERY_CMD {
         return None;
     }
     let (key_id, layer, kind) = (record[2], record[3], record[4]);
@@ -75,7 +80,7 @@ pub fn parse_record(record: &[u8]) -> Option<(SlotAddr, SlotAction)> {
     // subcommand (`03 FE B0 <layer> <mode>`), and reading it as key 176
     // made a flash with per-layer LEDs report "20 slots, 2 unconfirmed" --
     // counting writes the slot table was never going to contain.
-    if key_id == 0 || key_id > MAX_KEY_ID || layer == 0 || layer > 3 {
+    if key_id == 0 || key_id > SLOT_MAX_KEY_ID || layer == 0 || layer > DEVICE_LAYERS {
         return None;
     }
     Some((
@@ -111,14 +116,14 @@ pub enum SlotVerdict {
 /// mean something else there. Addressing is the one thing all three commands
 /// agree on, so it gets its own reader.
 fn record_addr(record: &[u8]) -> Option<SlotAddr> {
-    if record.len() < 7 || record[0] != 0x03 {
+    if record.len() < 7 || record[0] != REPORT_ID {
         return None;
     }
-    if !matches!(record[1], 0xFE | 0xFA | crate::fd::CMD) {
+    if !matches!(record[1], FE_CHORD_CMD | SLOT_TABLE_QUERY_CMD | FD_CMD) {
         return None;
     }
     let (key_id, layer) = (record[2], record[3]);
-    if key_id == 0 || key_id > MAX_KEY_ID || layer == 0 || layer > 3 {
+    if key_id == 0 || key_id > SLOT_MAX_KEY_ID || layer == 0 || layer > DEVICE_LAYERS {
         return None;
     }
     Some(SlotAddr { key_id, layer })
@@ -134,7 +139,7 @@ pub fn verify(written: &[Vec<u8>], observed: &[Vec<u8>]) -> Vec<(SlotAddr, SlotV
         // media usage and a chord. Left to the path below, every sequence
         // would be dropped from the comparison and a flash that wrote
         // nothing would report as clean. Compare those whole instead.
-        if record.get(1) == Some(&crate::fd::CMD) {
+        if record.get(1) == Some(&FD_CMD) {
             let Some(addr) = record_addr(record) else {
                 continue;
             };

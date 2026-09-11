@@ -10,15 +10,11 @@
 //! success, measured on a `514c:8850` on 2026-09-08.
 
 use super::{send_report, HidDevice};
+use crate::firmware::{
+    LED_INIT_SETTLE_MS, LED_MAX_SKIPPED_REPORTS, LED_QUERY_CMD, LED_QUERY_SUB, LED_READ_TIMEOUT_MS,
+    LED_REPLY_TAG, REPORT_LEN,
+};
 use anyhow::{Context, Result};
-
-/// The command byte the device puts on a vendor QUERY reply.
-const VENDOR_REPLY: u8 = 0xFA;
-/// How many unrelated reports to skip before giving up on finding the reply.
-///
-/// Small on purpose: this drains a queue, it does not wait out a silent
-/// device. One stale report is the case seen in practice.
-const MAX_SKIPPED_REPORTS: usize = 8;
 
 /// The LED mode a report carries, or `None` when it is not a reply to the
 /// vendor query at all.
@@ -27,7 +23,7 @@ const MAX_SKIPPED_REPORTS: usize = 8;
 /// a knob: the device's answer to the LED init packet (`03 FB 00 01 0B ...`)
 /// was being read as a mode, and its byte 2 is zero.
 fn led_mode_of(report: &[u8]) -> Option<u8> {
-    (report.len() >= 3 && report[1] == VENDOR_REPLY).then(|| report[2])
+    (report.len() >= 3 && report[1] == LED_REPLY_TAG).then(|| report[2])
 }
 
 /// LED state read-back, mirroring the vendor app's
@@ -48,16 +44,16 @@ fn led_mode_of(report: &[u8]) -> Option<u8> {
 /// firmware ignores writes, which is exactly the wrong conclusion this
 /// device has already caused once.
 pub fn read_led_mode(dev: &HidDevice, layer: u8) -> Result<u8> {
-    let mut payload = [0u8; 64];
-    payload[0] = VENDOR_REPLY;
-    payload[1] = 0xB0;
+    let mut payload = [0u8; REPORT_LEN];
+    payload[0] = LED_QUERY_CMD;
+    payload[1] = LED_QUERY_SUB;
     payload[2] = layer;
     send_report(dev, &payload)?;
 
-    for _ in 0..MAX_SKIPPED_REPORTS {
-        let mut buf = [0u8; 64];
+    for _ in 0..LED_MAX_SKIPPED_REPORTS {
+        let mut buf = [0u8; REPORT_LEN];
         let n = dev
-            .read_timeout(&mut buf, 500)
+            .read_timeout(&mut buf, LED_READ_TIMEOUT_MS as i32)
             .context("Timed out reading LED state from device")?;
         if n < 3 {
             anyhow::bail!("Short LED reply ({} bytes)", n);
@@ -68,7 +64,7 @@ pub fn read_led_mode(dev: &HidDevice, layer: u8) -> Result<u8> {
     }
     anyhow::bail!(
         "No LED reply from the device after {} report(s)",
-        MAX_SKIPPED_REPORTS
+        LED_MAX_SKIPPED_REPORTS
     )
 }
 
@@ -88,7 +84,7 @@ pub fn read_led_mode(dev: &HidDevice, layer: u8) -> Result<u8> {
 /// keymap commit (`FD FE FF`) is a different instruction.
 pub fn send_led(dev: &HidDevice, packet: &[u8]) -> Result<()> {
     send_report(dev, &crate::led::led_init_packet())?;
-    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::thread::sleep(std::time::Duration::from_millis(LED_INIT_SETTLE_MS));
     send_report(dev, packet)?;
     Ok(())
 }

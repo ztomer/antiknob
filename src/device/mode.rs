@@ -12,7 +12,8 @@
 //! assumes. Pure: a table in, a mode out.
 
 use super::verify::parse_record;
-use crate::protocol::{key_id_for_knob, KnobEvent, GESTURES_PER_KNOB};
+use crate::firmware::{FD_KIND_KEYBOARD as KIND_KEYBOARD, SLOT_CHORD_MODS, SLOT_KEYCODES};
+use crate::protocol::{key_id_for_knob, KnobEvent};
 
 /// What the firmware will do when the knob is turned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,24 +45,24 @@ impl KnobMode {
 /// Three when `bind-slots` wrote three. A knob whose hold+twist slots
 /// carried F19/F20 and whose other three had been reflashed standalone
 /// would then read as Standalone -- a mode the daemon can in fact hear.
-const SLOT_KEYCODES: [u8; GESTURES_PER_KNOB] = [0x6B, 0x6C, 0x6D, 0x6E, 0x6F];
-/// Control + Alt, the modifier pair those chords carry.
-const SLOT_MODS: u8 = 0x01 | 0x04;
-/// Slot records are keyboard actions.
-const KIND_KEYBOARD: u8 = 1;
-
+///
+/// Values live in the firmware map; the classifier that must agree with
+/// the flasher lives here. `SLOT_CHORD_MODS` is the modifier pair those
+/// chords carry (Control + Alt); compared records are keyboard actions
+/// (`KIND_KEYBOARD`).
 /// Read the mode off a slot-table dump.
 ///
 /// `button_count` places the knob's slots -- the same layout question that
 /// decides where bindings are written, so a wrong count here misreads the
-/// table exactly as it would misflash it.
+/// table exactly as it would misflash it. A count no slot table can hold
+/// yields no ids and reads as Unknown; the flash paths refuse it outright.
 pub fn classify(records: &[Vec<u8>], button_count: usize) -> KnobMode {
     // All five gestures, not the first three: hold+twist occupies real
     // slots on this firmware, and a classifier that never looks at them
     // reports on two thirds of the knob while sounding certain about it.
     let knob_ids: Vec<u8> = KnobEvent::ALL
         .iter()
-        .map(|e| key_id_for_knob(button_count, 0, *e))
+        .filter_map(|e| key_id_for_knob(button_count, 0, *e).ok())
         .collect();
 
     let mut saw_knob_slot = false;
@@ -77,7 +78,7 @@ pub fn classify(records: &[Vec<u8>], button_count: usize) -> KnobMode {
         }
         saw_knob_slot = true;
         if action.kind == KIND_KEYBOARD
-            && action.mods == SLOT_MODS
+            && action.mods == SLOT_CHORD_MODS
             && SLOT_KEYCODES.contains(&action.code)
         {
             saw_chord = true;
@@ -94,6 +95,7 @@ pub fn classify(records: &[Vec<u8>], button_count: usize) -> KnobMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::firmware::GESTURES_PER_KNOB;
 
     /// `03 FA <key> <layer> <kind> .. .. .. .. <media> .. <mods> <code>`
     fn rec(key_id: u8, kind: u8, media: u8, mods: u8, code: u8) -> Vec<u8> {
@@ -124,9 +126,9 @@ mod tests {
     fn host_translate_table() -> Vec<Vec<u8>> {
         vec![
             rec(1, 1, 0, 0x08, 0x06),
-            rec(4, 1, 0, SLOT_MODS, 0x6B),
-            rec(5, 1, 0, SLOT_MODS, 0x6C),
-            rec(6, 1, 0, SLOT_MODS, 0x6D),
+            rec(4, 1, 0, SLOT_CHORD_MODS, 0x6B),
+            rec(5, 1, 0, SLOT_CHORD_MODS, 0x6C),
+            rec(6, 1, 0, SLOT_CHORD_MODS, 0x6D),
         ]
     }
 
@@ -172,11 +174,11 @@ mod tests {
     fn the_hold_twist_slots_are_read_too() {
         // One button, so gestures sit at keys 2..6 and hold+twist at 5/6.
         let only_hold_twist = vec![
-            rec(2, 2, 0xEA, 0, 0),         // CCW: volume down, standalone
-            rec(3, 2, 0xE2, 0, 0),         // press: mute, standalone
-            rec(4, 2, 0xE9, 0, 0),         // CW: volume up, standalone
-            rec(5, 1, 0, SLOT_MODS, 0x6E), // hold+twist L: ctrl-alt-F19
-            rec(6, 1, 0, SLOT_MODS, 0x6F), // hold+twist R: ctrl-alt-F20
+            rec(2, 2, 0xEA, 0, 0),               // CCW: volume down, standalone
+            rec(3, 2, 0xE2, 0, 0),               // press: mute, standalone
+            rec(4, 2, 0xE9, 0, 0),               // CW: volume up, standalone
+            rec(5, 1, 0, SLOT_CHORD_MODS, 0x6E), // hold+twist L: ctrl-alt-F19
+            rec(6, 1, 0, SLOT_CHORD_MODS, 0x6F), // hold+twist R: ctrl-alt-F20
         ];
         assert_eq!(classify(&only_hold_twist, 1), KnobMode::HostTranslate);
     }
@@ -185,7 +187,7 @@ mod tests {
     #[test]
     fn a_fully_bound_one_button_knob_reads_as_host_translate() {
         let bound: Vec<Vec<u8>> = (0..GESTURES_PER_KNOB)
-            .map(|i| rec(2 + i as u8, 1, 0, SLOT_MODS, SLOT_KEYCODES[i]))
+            .map(|i| rec(2 + i as u8, 1, 0, SLOT_CHORD_MODS, SLOT_KEYCODES[i]))
             .collect();
         assert_eq!(classify(&bound, 1), KnobMode::HostTranslate);
     }
@@ -195,7 +197,7 @@ mod tests {
     #[test]
     fn a_partially_bound_knob_is_host_translate() {
         let mixed = vec![
-            rec(4, 1, 0, SLOT_MODS, 0x6B),
+            rec(4, 1, 0, SLOT_CHORD_MODS, 0x6B),
             rec(5, 2, 0xE2, 0, 0),
             rec(6, 2, 0xE9, 0, 0),
         ];

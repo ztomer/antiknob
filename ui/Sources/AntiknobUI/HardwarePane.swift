@@ -21,9 +21,10 @@
 //   so flashing any template wrote `ccw` to a dead slot, `press` to twist,
 //   and `cw` to press. The device accepts all of it and reports no error.
 //
-// The chord text was wrong in the other direction: it said ⌃⌥F16..F20 while
-// `bind-slots` flashed three chords. It flashes five now, so the text is
-// true and the two hold+twist gestures can reach the daemon.
+// The chord text named ⌃⌥F16..F20 for years while the flasher wrote
+// ctrl-alt-SHIFT -- the missing modifier, unnoticed because nothing
+// renders these strings against the packets. Both surfaces now name
+// ⌃⌥⇧F16..F20, as `SLOT_SPECS` sends them.
 
 import AppKit
 import SwiftUI
@@ -107,13 +108,11 @@ struct HardwarePane: View {
         }
     }
 
-    /// The vendor configuration endpoint, which is the one every command
-    /// goes to. Nineteen near-identical rows with nothing marking the one
-    /// that matters is a list, not information.
-    private static let vendorUsagePage = 0xFF00
-
     private func endpointRow(index: Int, device dev: [String: Any]) -> some View {
-        let isTarget = (dev["usage_page"] as? Int) == Self.vendorUsagePage
+        // The vendor configuration endpoint is the one every command goes
+        // to. Nineteen near-identical rows with nothing marking it is a
+        // list, not information.
+        let isTarget = (dev["usage_page"] as? Int) == AppConstants.Firmware.vendorUsagePage
         return GridRow {
             Text("\(index + 1)")
                 .font(.caption.monospacedDigit())
@@ -167,7 +166,7 @@ struct HardwarePane: View {
                               ? "No knob detected"
                               : (!store.canFlashHardware
                                  ? "Connect knob via USB-C cable to flash hardware"
-                                 : "Flash host translation chords to the knob"))
+                                 : "Flash host translation chords (⌃⌥⇧F16..F20) to the knob. Takes a few seconds."))
                         .gridColumnAlignment(.leading)
                     }
                 }
@@ -180,8 +179,8 @@ struct HardwarePane: View {
             Text("Host Translation Chords")
         } footer: {
             Text("""
-                Twist Left=⌃⌥F16, Press=⌃⌥F17, Twist Right=⌃⌥F18, \
-                Hold+Twist Left=⌃⌥F19, Hold+Twist Right=⌃⌥F20.
+                Twist Left=⌃⌥⇧F16, Press=⌃⌥⇧F17, Twist Right=⌃⌥⇧F18, \
+                Hold+Twist Left=⌃⌥⇧F19, Hold+Twist Right=⌃⌥⇧F20.
                 """)
         }
     }

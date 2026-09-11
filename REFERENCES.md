@@ -154,6 +154,23 @@ not opened until much later.
   red and green in turn and stayed red every time. The 16-key device sharing
   this product id does honour them, which is why they are still sent.
 * Known firmware bug: LEDs freeze after 2s-2m and only a replug recovers.
+  Confirmed live 2026-09-11: three mode writes in seconds left all layers
+  reading back red while the ring rendered RGB, and a replug restored the
+  stored red with no further writes. Bursts are the trigger this repo can
+  control, so every LED path now paces (500ms between jobs, 150ms between
+  layers), skips writes whose mode is already stored, and superseded syncs
+  drop instead of painting stale layers (`host::led_sync`). Read-back can
+  never detect the wedge -- stored and rendered disagree silently -- so the
+  CLI, the `set_led` reply, and the Layers pane all state the one remedy:
+  unplug/replug.
+* **LED layers past 2 are storage without a measured render effect.**
+  Probed 2026-09-11: layers 3-15 answer the mode query with stable but
+  out-of-domain bytes (4->16, 5->39, 10->11), layer 9 held red; writing
+  green to layer 9 stored green there while layers 0-2 stayed red (no
+  aliasing), and writing red back restored it. `set_led`/`led` say so for
+  layers past the firmware's three rather than letting "stored" read as
+  "showing". Whether 3-15 render at all is unmeasured -- that needs eyes,
+  not packets.
 
 An earlier version of this file said the LED packet layout was "correct as
 written" and that mode 5 carried a palette. Both were wrong, and both were

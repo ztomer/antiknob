@@ -131,7 +131,7 @@ impl DeviceConfig {
     /// This is `read_slot`'s first parameter -- the device wants to be told
     /// how wide a layer is before it will walk the table.
     pub fn slots_per_layer(&self) -> usize {
-        self.button_count() + self.knobs * crate::protocol::GESTURES_PER_KNOB
+        self.button_count() + self.knobs * crate::firmware::GESTURES_PER_KNOB
     }
 
     /// True when this layout puts knob slots at key IDs 1/2/3.
@@ -176,6 +176,39 @@ impl DeviceConfig {
         Ok(())
     }
 
+    /// Refuse a layout whose slots cannot be addressed.
+    ///
+    /// Key IDs are `u8`, and past `SLOT_MAX_KEY_ID` is subcommand space,
+    /// not slots -- so a layout declaring hundreds of buttons would wrap
+    /// onto someone else's slots in release or trap in debug. Caught here,
+    /// where the numbers are quoted back, with checked arithmetic throughout
+    /// so even the `rows * columns` product itself cannot be the trap.
+    pub fn check_slot_bounds(&self) -> Result<()> {
+        let buttons = self
+            .rows
+            .checked_mul(self.columns)
+            .context("layout rows x columns overflows")?;
+        let knob_slots = self
+            .knobs
+            .checked_mul(crate::firmware::GESTURES_PER_KNOB)
+            .context("layout knob count overflows")?;
+        let total = buttons
+            .checked_add(knob_slots)
+            .context("layout slot count overflows")?;
+        if total > crate::firmware::SLOT_MAX_KEY_ID as usize {
+            anyhow::bail!(
+                "Layout declares {} slots (rows {} x columns {} plus {} knob(s)), \
+                 past the addressable slot space (max {}).",
+                total,
+                self.rows,
+                self.columns,
+                self.knobs,
+                crate::firmware::SLOT_MAX_KEY_ID
+            );
+        }
+        Ok(())
+    }
+
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let content = fs::read_to_string(path.as_ref())
             .with_context(|| format!("Failed to read config file at {:?}", path.as_ref()))?;
@@ -189,6 +222,7 @@ impl DeviceConfig {
             anyhow::bail!("Configuration must contain at least one layer.");
         }
         self.check_slot_layout()?;
+        self.check_slot_bounds()?;
 
         for (idx, layer) in self.layers.iter().enumerate() {
             for row in &layer.buttons {

@@ -17,6 +17,7 @@
 //! purpose is the thing being determined.
 
 use antiknob::device;
+use antiknob::firmware::DEVICE_LAYERS;
 use antiknob::host::gesture_probe::{self, ProbeSlot, Verdict};
 
 use anyhow::{Context, Result};
@@ -27,11 +28,7 @@ use std::time::{Duration, Instant};
 fn snapshot(slots: &[ProbeSlot], layer: u8, slots_per_layer: u8) -> Result<Vec<Vec<u8>>> {
     let wanted: Vec<u8> = slots.iter().map(|s| s.key_id).collect();
     let table = device::with_device(move |dev| {
-        Ok(device::read_slot_table(
-            dev,
-            slots_per_layer,
-            device::DEVICE_LAYERS,
-        ))
+        Ok(device::read_slot_table(dev, slots_per_layer, DEVICE_LAYERS))
     })
     .context("cannot read the slot table; refusing to write to slots it cannot restore")?;
     Ok(table
@@ -89,15 +86,14 @@ pub fn run_map(keys: Vec<u8>, layer: u8, capture_secs: u64, devices: Vec<String>
     device::with_device(move |dev| {
         for p in &armed {
             device::send_report(dev, p)?;
-            sleep(Duration::from_millis(15));
+            sleep(Duration::from_millis(antiknob::firmware::SLOT_WRITE_GAP_MS));
         }
         device::send_commit(dev)
     })
     .context("could not arm the probe")?;
 
-    let check = device::with_device(move |dev| {
-        Ok(device::read_slot_table(dev, width, device::DEVICE_LAYERS))
-    })?;
+    let check =
+        device::with_device(move |dev| Ok(device::read_slot_table(dev, width, DEVICE_LAYERS)))?;
     let verdicts = device::verify::verify(&packets, &check);
     let confirmed = verdicts
         .iter()
@@ -166,7 +162,8 @@ pub fn run_map(keys: Vec<u8>, layer: u8, capture_secs: u64, devices: Vec<String>
                 let expected: Vec<u8> = antiknob::protocol::KnobEvent::ALL
                     .iter()
                     .map(|e| antiknob::protocol::key_id_for_knob(buttons, 0, *e))
-                    .collect();
+                    .collect::<Result<Vec<_>, _>>()
+                    .unwrap_or_default();
                 println!(
                     "        `protocol::key_id_for_knob`, which for the declared {buttons} \
                      button(s)"
@@ -197,11 +194,7 @@ pub fn run(
 ) -> Result<()> {
     println!("[ ==> ] Reading the device's own bindings so the markers cannot collide...");
     let table = device::with_device(move |dev| {
-        Ok(device::read_slot_table(
-            dev,
-            slots_per_layer,
-            device::DEVICE_LAYERS,
-        ))
+        Ok(device::read_slot_table(dev, slots_per_layer, DEVICE_LAYERS))
     })
     .context("cannot read the slot table; refusing to probe blind")?;
     let in_use = gesture_probe::usages_in_use(&table);
@@ -223,7 +216,7 @@ pub fn run(
     device::with_device(move |dev| {
         for p in &armed {
             device::send_report(dev, p)?;
-            sleep(Duration::from_millis(15));
+            sleep(Duration::from_millis(antiknob::firmware::SLOT_WRITE_GAP_MS));
         }
         device::send_commit(dev)
     })
@@ -232,11 +225,7 @@ pub fn run(
     // Confirm the markers actually landed. Without this a gesture that
     // produces nothing is ambiguous: unbound slot, or a write that missed?
     let check = device::with_device(move |dev| {
-        Ok(device::read_slot_table(
-            dev,
-            slots_per_layer,
-            device::DEVICE_LAYERS,
-        ))
+        Ok(device::read_slot_table(dev, slots_per_layer, DEVICE_LAYERS))
     })?;
     let verdicts = device::verify::verify(&packets, &check);
     let confirmed = verdicts
@@ -333,13 +322,15 @@ fn restore(before: &[Vec<u8>]) {
     }
     let packets: Vec<Vec<u8>> = before.iter().map(|r| to_write(r)).collect();
     let mut last = String::new();
-    for attempt in 1..=5 {
-        sleep(Duration::from_millis(300 * attempt));
+    for attempt in 1..=antiknob::policy::PROBE_RESTORE_ATTEMPTS {
+        sleep(Duration::from_millis(
+            antiknob::firmware::PROBE_READ_RETRY_BASE_MS * attempt,
+        ));
         let batch = packets.clone();
         match device::with_device(move |dev| {
             for p in &batch {
                 device::send_report(dev, p)?;
-                sleep(Duration::from_millis(15));
+                sleep(Duration::from_millis(antiknob::firmware::SLOT_WRITE_GAP_MS));
             }
             device::send_commit(dev)
         }) {
@@ -353,7 +344,10 @@ fn restore(before: &[Vec<u8>]) {
             Err(e) => last = e.to_string(),
         }
     }
-    println!("[ Wrn ] Could not restore the candidate slots after 5 attempts: {last}");
+    println!(
+        "[ Wrn ] Could not restore the candidate slots after {} attempts: {last}",
+        antiknob::policy::PROBE_RESTORE_ATTEMPTS
+    );
     println!("        Put them back with: antiknob upload");
 }
 
@@ -368,10 +362,9 @@ fn confirm_restored(before: &[Vec<u8>], packets: &[Vec<u8>]) -> Result<()> {
         .iter()
         .filter_map(|r| device::verify::parse_record(r).map(|(a, _)| a.key_id))
         .max()
-        .unwrap_or(device::DEVICE_LAYERS);
-    let table = device::with_device(move |dev| {
-        Ok(device::read_slot_table(dev, width, device::DEVICE_LAYERS))
-    })?;
+        .unwrap_or(DEVICE_LAYERS);
+    let table =
+        device::with_device(move |dev| Ok(device::read_slot_table(dev, width, DEVICE_LAYERS)))?;
     let verdicts = device::verify::verify(packets, &table);
     match device::verify::summarize(&verdicts) {
         None => Ok(()),
@@ -383,8 +376,8 @@ fn confirm_restored(before: &[Vec<u8>], packets: &[Vec<u8>]) -> Result<()> {
 /// every offset; only the tag byte differs (0xFA read, 0xFE write).
 fn to_write(record: &[u8]) -> Vec<u8> {
     let mut p = record.to_vec();
-    p.resize(64, 0);
-    p[1] = 0xFE;
+    p.resize(antiknob::firmware::REPORT_LEN, 0);
+    p[1] = antiknob::firmware::FE_CHORD_CMD;
     p
 }
 
@@ -398,10 +391,13 @@ fn capture(secs: u64, devices: &[String]) -> Result<Vec<u16>> {
     device::with_hid(move |api| {
         let ifaces = device::open_all_interfaces_on(api, &filters)?;
         let mut seen: Vec<u16> = Vec::new();
-        let mut buf = [0u8; 64];
+        let mut buf = [0u8; antiknob::firmware::REPORT_LEN];
         while Instant::now() < deadline {
             for iface in &ifaces {
-                if let Ok(n) = iface.device.read_timeout(&mut buf, 20) {
+                if let Ok(n) = iface
+                    .device
+                    .read_timeout(&mut buf, antiknob::policy::CAPTURE_POLL_MS as i32)
+                {
                     // A consumer report is a report id plus a 16-bit usage.
                     if n == 3 && buf[1] != 0 {
                         let usage = u16::from(buf[1]) | (u16::from(buf[2]) << 8);

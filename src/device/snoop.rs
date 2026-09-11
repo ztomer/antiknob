@@ -143,7 +143,7 @@ pub fn decode_input(usages: &[(u16, u16)], buf: &[u8]) -> String {
     // report are the same length, and only the consumer page carries a
     // 16-bit usage, so it must be offered the buffer first.
     const ORDER: [(u16, u16); 4] = [
-        (0xFF00, 0x0001),
+        (crate::firmware::VENDOR_USAGE_PAGE, 0x0001),
         (0x000C, 0x0001),
         (0x0001, 0x0006),
         (0x0001, 0x0002),
@@ -218,7 +218,11 @@ fn decode_as(usage_page: u16, usage: u16, buf: &[u8]) -> String {
                 body.get(3).map_or(0, |w| *w as i8)
             )
         }
-        (0xFF00, _) if buf.len() > 2 && buf[0] == 0x03 && (16..=27).contains(&buf[2]) => {
+        (crate::firmware::VENDOR_USAGE_PAGE, _)
+            if buf.len() > 2
+                && buf[0] == crate::firmware::REPORT_ID
+                && (16..=27).contains(&buf[2]) =>
+        {
             format!("<-- vendor slot key_id={}", buf[2])
         }
         _ => String::new(),

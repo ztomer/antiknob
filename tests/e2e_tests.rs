@@ -69,7 +69,7 @@ layers:
     // Verify knob packets
     let ccw_action = Action::parse(&layer.knobs[0].ccw.as_ref().unwrap().names()[0]).unwrap();
     let buttons: usize = layer.buttons.iter().map(Vec::len).sum();
-    let ccw_id = key_id_for_knob(buttons, 0, KnobEvent::RotateCCW);
+    let ccw_id = key_id_for_knob(buttons, 0, KnobEvent::RotateCCW).unwrap();
     let ccw_pkt = ccw_action.to_packet(ccw_id, 0);
     assert_eq!(ccw_pkt[0], 0x03);
     // 0xFD: keyboard and media single actions share the sequence encoder,
@@ -82,7 +82,7 @@ layers:
 
     // Verify button packet
     let btn_action = Action::parse(&layer.buttons[0][0]).unwrap();
-    let btn_id = key_id_for_button(0);
+    let btn_id = key_id_for_button(0).unwrap();
     let btn_pkt = btn_action.to_packet(btn_id, 0);
     assert_eq!(btn_pkt[0], 0x03);
     assert_eq!(btn_pkt[1], 0xFD);

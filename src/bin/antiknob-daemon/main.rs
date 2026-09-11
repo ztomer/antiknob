@@ -15,6 +15,7 @@
 //! without them it exits 2 with an honest message. GUI and CLI stay
 //! completely TCC-free: all permission needs live in this binary alone.
 
+use antiknob::policy::{BOOTOUT_POLLS, BOOTOUT_POLL_MS};
 use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::{Path, PathBuf};
@@ -112,11 +113,11 @@ fn bootout_and_wait(target: &str) {
     let _ = std::process::Command::new("launchctl")
         .args(["bootout", target])
         .output();
-    for _ in 0..50 {
+    for _ in 0..BOOTOUT_POLLS {
         if !agent_is_loaded(target) {
             return;
         }
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(std::time::Duration::from_millis(BOOTOUT_POLL_MS));
     }
 }
 

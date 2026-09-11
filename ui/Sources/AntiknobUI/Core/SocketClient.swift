@@ -77,6 +77,39 @@ enum SocketWire {
         }
         return json["result"] ?? [:]
     }
+
+    /// Params for `bind_slots`: the registry/CLI contract is the singular
+    /// `layer` (omit for all layers). The daemon used to read only the
+    /// plural `layers`, so a single-layer request silently flashed all of
+    /// them; it accepts both now, and this sends the contract spelling.
+    /// No `dry_run`: the registry marks it CLI-only, and sending it over
+    /// the socket implied the daemon honors it, which it does not.
+    static func bindSlotsParams(layer: Int?) -> [String: Any] {
+        var params: [String: Any] = [:]
+        if let l = layer { params["layer"] = l }
+        return params
+    }
+
+    /// Human summary of a `bind_slots` result. Built from the daemon's
+    /// read-back (`flashed_slots`, `layers`, `key_ids`), never a literal:
+    /// the caller used to read a `status` key the daemon has never sent,
+    /// so its `?? "OK"` fallback fired every time and success reported a
+    /// string the app made up.
+    static func bindSlotsMessage(from result: [String: Any]) throws -> String {
+        guard let count = result["flashed_slots"] as? Int else {
+            throw SocketError.parseError("bind_slots did not report flashed_slots.")
+        }
+        let layers = result["layers"] as? [Int] ?? []
+        let keyIds = result["key_ids"] as? [Int] ?? []
+        var msg = "Flashed \(count) slot binding\(count == 1 ? "" : "s")"
+        if !layers.isEmpty {
+            msg += " (layers \(layers.map(String.init).joined(separator: ", ")))"
+        }
+        if !keyIds.isEmpty {
+            msg += " — key IDs \(keyIds.map(String.init).joined(separator: ", "))"
+        }
+        return msg
+    }
 }
 
 final class SocketClient: @unchecked Sendable {
@@ -93,8 +126,8 @@ final class SocketClient: @unchecked Sendable {
     private var candidatePaths: [String] {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         return [
-            "/tmp/antiknob.sock",
-            "\(home)/Library/Application Support/antiknob/antiknob.sock"
+            AppConstants.Socket.tmpPath,
+            "\(home)/\(AppConstants.Socket.appSupportSubpath)"
         ]
     }
 
@@ -112,7 +145,7 @@ final class SocketClient: @unchecked Sendable {
 
     var localConfigURL: URL {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        return home.appendingPathComponent("Library/Application Support/antiknob/host.json")
+        return home.appendingPathComponent(AppConstants.Socket.hostConfigSubpath)
     }
 
     private var nextReqId = 1
@@ -120,7 +153,11 @@ final class SocketClient: @unchecked Sendable {
 
     // MARK: - Low-Level Unix Socket RPC
 
-    func rpcCall(method: String, params: [String: Any] = [:], timeoutSecs: Int = 2) throws -> Any {
+    func rpcCall(
+        method: String,
+        params: [String: Any] = [:],
+        timeoutSecs: Int = AppConstants.RpcTimeout.standard
+    ) throws -> Any {
         let reqId: Int = queue.sync {
             let id = nextReqId
             nextReqId += 1
@@ -220,7 +257,7 @@ final class SocketClient: @unchecked Sendable {
 
     func isConnected() -> Bool {
         do {
-            _ = try rpcCall(method: "get_status", params: [:], timeoutSecs: 1)
+            _ = try rpcCall(method: "get_status", params: [:], timeoutSecs: AppConstants.RpcTimeout.getStatus)
             return true
         } catch {
             return false
@@ -286,7 +323,7 @@ final class SocketClient: @unchecked Sendable {
     /// hand-kept copy of a generated table is a list of things that are not
     /// true yet.
     func listCommands() throws -> [DaemonCommand] {
-        let res = try rpcCall(method: "list_commands", timeoutSecs: 3)
+        let res = try rpcCall(method: "list_commands", timeoutSecs: AppConstants.RpcTimeout.listCommands)
         guard let dict = res as? [String: Any],
               let raw = dict["commands"] as? [[String: Any]] else {
             throw SocketError.parseError("list_commands did not return a command list.")
@@ -298,15 +335,16 @@ final class SocketClient: @unchecked Sendable {
     /// gesture. The layer view needs this before it can honestly draw a
     /// host layer as live.
     func getKnobMode() throws -> [String: Any] {
-        let res = try rpcCall(method: "get_knob_mode", timeoutSecs: 5)
+        let res = try rpcCall(method: "get_knob_mode", timeoutSecs: AppConstants.RpcTimeout.knobMode)
         return (res as? [String: Any]) ?? [:]
     }
 
-    func bindSlots(layer: Int? = nil, dryRun: Bool = false) throws -> String {
-        var params: [String: Any] = ["dry_run": dryRun]
-        if let l = layer { params["layer"] = l }
-        let res = try rpcCall(method: "bind_slots", params: params)
-        return (res as? [String: Any])?["status"] as? String ?? "OK"
+    func bindSlots(layer: Int? = nil) throws -> String {
+        let res = try rpcCall(method: "bind_slots", params: SocketWire.bindSlotsParams(layer: layer))
+        guard let dict = res as? [String: Any] else {
+            throw SocketError.parseError("bind_slots result is not an object")
+        }
+        return try SocketWire.bindSlotsMessage(from: dict)
     }
 
     func uploadKeymap(yaml: String, layer: Int? = nil) throws -> String {

@@ -59,7 +59,7 @@ fn test_mouse_action_parsing() {
 #[test]
 fn test_packet_structure() {
     let action = Action::parse("space").unwrap();
-    let pkt = action.to_packet(key_id_for_button(0), 0);
+    let pkt = action.to_packet(key_id_for_button(0).unwrap(), 0);
     assert_eq!(pkt.len(), 64);
     assert_eq!(pkt[0], 0x03);
     // 0xFD, the encoder that writes an entry count. 0xFE records had none
@@ -103,18 +103,19 @@ fn test_led_packet_generation() {
 #[test]
 fn test_key_id_knob_and_buttons() {
     // Buttons are 1-based and unchanged.
-    assert_eq!(key_id_for_button(0), 0x01);
-    assert_eq!(key_id_for_button(1), 0x02);
+    assert_eq!(key_id_for_button(0).unwrap(), 0x01);
+    assert_eq!(key_id_for_button(1).unwrap(), 0x02);
 
     // The knob follows however many buttons the device declares.
-    assert_eq!(key_id_for_knob(3, 0, KnobEvent::RotateCCW), 4);
-    assert_eq!(key_id_for_knob(3, 0, KnobEvent::Press), 5);
-    assert_eq!(key_id_for_knob(3, 0, KnobEvent::RotateCW), 6);
+    let kid = |b, e| key_id_for_knob(b, 0, e).unwrap();
+    assert_eq!(kid(3, KnobEvent::RotateCCW), 4);
+    assert_eq!(kid(3, KnobEvent::Press), 5);
+    assert_eq!(kid(3, KnobEvent::RotateCW), 6);
 
     // A 15-key macropad is the layout the old constant happened to fit.
-    assert_eq!(key_id_for_knob(15, 0, KnobEvent::RotateCCW), 0x10);
-    assert_eq!(key_id_for_knob(15, 0, KnobEvent::Press), 0x11);
-    assert_eq!(key_id_for_knob(15, 0, KnobEvent::RotateCW), 0x12);
+    assert_eq!(kid(15, KnobEvent::RotateCCW), 0x10);
+    assert_eq!(kid(15, KnobEvent::Press), 0x11);
+    assert_eq!(kid(15, KnobEvent::RotateCW), 0x12);
 }
 
 #[test]

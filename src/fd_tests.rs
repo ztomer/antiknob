@@ -111,8 +111,8 @@ fn a_media_usage_spans_two_entries_low_byte_first() {
 /// vendor app itself wrote, `len = 0x13`.
 #[test]
 fn nineteen_entries_fill_the_report_and_twenty_are_refused() {
-    assert_eq!(MAX_ENTRIES, 19);
-    assert_eq!(HEADER_LEN + MAX_ENTRIES * ENTRY_LEN, 64);
+    assert_eq!(FD_MAX_ENTRIES, 19);
+    assert_eq!(FD_HEADER_LEN + FD_MAX_ENTRIES * FD_ENTRY_LEN, REPORT_LEN);
 
     let ok: Vec<Step> = (0..19).map(|_| kb("a")).collect();
     assert_eq!(build_packet(2, 0, &ok).expect("19 fits")[6], 19);
@@ -204,7 +204,7 @@ fn a_readback_of_what_was_written_matches() {
 #[test]
 fn a_readback_differing_in_any_binding_byte_is_rejected() {
     let sent = build_packet(7, 0, &[kb("a"), kb("b")]).unwrap();
-    let end = HEADER_LEN + 2 * ENTRY_LEN;
+    let end = FD_HEADER_LEN + 2 * FD_ENTRY_LEN;
     for i in (2..5).chain(6..end).chain(std::iter::once(0)) {
         let mut bad = sent.clone();
         bad[1] = 0xFA;

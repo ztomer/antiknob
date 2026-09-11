@@ -77,19 +77,19 @@ impl PowerStatus {
     pub fn current(devices: &[crate::device::DeviceMatch]) -> Self {
         if let Some(transport) = crate::device::primary_transport(devices) {
             match transport {
-                crate::device::TransportType::Usb => Self {
+                crate::firmware::TransportType::Usb => Self {
                     source: "usb_bus".to_string(),
                     transport: "usb".to_string(),
                     battery_percent: None,
                     description: "Wired (USB Bus Powered)".to_string(),
                 },
-                crate::device::TransportType::Wireless24G => Self {
+                crate::firmware::TransportType::Wireless24G => Self {
                     source: "battery".to_string(),
                     transport: "wireless_2_4g".to_string(),
                     battery_percent: None,
                     description: "2.4GHz Wireless (Battery Powered)".to_string(),
                 },
-                crate::device::TransportType::Bluetooth => Self {
+                crate::firmware::TransportType::Bluetooth => Self {
                     source: "battery".to_string(),
                     transport: "bluetooth".to_string(),
                     battery_percent: None,
@@ -149,7 +149,16 @@ pub enum Command {
 
     #[serde(rename = "bind_slots")]
     BindSlots {
+        /// Plural form; the UI historically sent the singular `layer`
+        /// below while this struct only read `layers`, so a single-layer
+        /// request silently flashed ALL layers. Both are accepted now and
+        /// `layers` wins when both are present.
+        #[serde(default)]
         layers: Option<Vec<u8>>,
+        /// Singular form from the registry/CLI/MCP schema (`layer: Int`,
+        /// "Device layer to bind (default: all)"). The one the UI sends.
+        #[serde(default)]
+        layer: Option<u8>,
         /// Physical button count; knob slot IDs follow the buttons. No
         /// default: a wrong count writes bindings nothing reads.
         #[serde(default)]
@@ -216,18 +225,19 @@ pub enum Command {
 /// "press" -- it is the rainbow, which is the multicoloured effect this
 /// device ships in.
 pub fn led_mode_name(mode: u8) -> &'static str {
+    use crate::firmware::*;
     match mode {
-        0 => "off",
+        LED_MODE_OFF => "off",
         // Modes 1 and 2 are fixed colours on this device, not the effects
         // the reference project's table names them for.
-        1 => "red",
-        2 => "green",
-        3 => "ripple",
-        4 => "rainbow",
+        LED_MODE_RED => "red",
+        LED_MODE_GREEN => "green",
+        LED_MODE_RIPPLE => "ripple",
+        LED_MODE_RAINBOW => "rainbow",
         // Sent by the vendor app like any other mode, captured on this
         // hardware. It was reported here as unsupported on the strength of
         // one wedged LED renderer that mode 5 did not cause.
-        5 => "rgb",
+        LED_MODE_RGB => "rgb",
         _ => "unknown",
     }
 }

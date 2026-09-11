@@ -11,17 +11,15 @@
 //! Cheap enough to be unconditional: the file is under a kilobyte, and a
 //! rotation of a handful of them costs less than one screenshot.
 
+use crate::policy::BACKUP_KEEP_COUNT as KEEP;
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
-/// How many previous versions to keep.
-///
-/// Enough to survive a run of bad writes -- the damage that prompted this
-/// was three writes deep by the time anyone looked -- and few enough that
-/// the directory stays readable.
-pub const KEEP: usize = 5;
-
 /// The rotation slot paths, newest first: `host.json.1` .. `host.json.N`.
+/// Keeps `KEEP` previous versions (policy map): enough to survive a run of
+/// bad writes -- the damage that prompted this was three writes deep by
+/// the time anyone looked -- and few enough that the directory stays
+/// readable.
 pub fn slots(config_path: &Path) -> Vec<PathBuf> {
     (1..=KEEP)
         .map(|i| {

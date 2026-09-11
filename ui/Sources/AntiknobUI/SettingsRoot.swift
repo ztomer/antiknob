@@ -111,11 +111,13 @@ struct StatusBar: View {
     /// drives it, so "connected knob, nothing happening" -- the state a
     /// stopped daemon produces -- looked exactly like a working setup. The
     /// Status & Diagnostics rows say the same thing, but only on one tab.
+    ///
+    /// A filled square indicator for daemon status: green when running,
+    /// orange when stopped.
     private var daemon: some View {
-        Image(systemName: store.daemonConnected
-              ? "bolt.horizontal.circle.fill"
-              : "bolt.horizontal.circle")
-            .foregroundStyle(store.daemonConnected ? Color.green : Color.orange)
+        RoundedRectangle(cornerRadius: 2)
+            .fill(store.daemonConnected ? Color.green : Color.orange)
+            .frame(width: 8, height: 8)
             .help(store.daemonConnected
                   ? "Daemon running (\(store.socketPath ?? "socket"))"
                   : "Daemon not running — changes are saved but not applied")

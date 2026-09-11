@@ -13,9 +13,9 @@ use muda::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use std::sync::{Arc, Mutex};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
-/// Embedded app artwork, downscaled for the menu bar. Decode failure
+/// Embedded knob artwork for the menu bar. Decode failure
 /// degrades to the title-only tray (the layer number stays primary).
-const TRAY_ICON_PNG: &[u8] = include_bytes!("../../../assets/ak12-1024.png");
+const TRAY_ICON_PNG: &[u8] = include_bytes!("../../../assets/knob-tray.png");
 const TRAY_ICON_PX: u32 = 64;
 
 fn tray_icon() -> Option<Icon> {
@@ -124,7 +124,7 @@ impl TrayUi {
             .with_tooltip(tooltip(&title, tap_ok))
             .with_menu(Box::new(built.menu));
         if let Some(icon) = tray_icon() {
-            builder = builder.with_icon(icon);
+            builder = builder.with_icon(icon).with_icon_as_template(true);
         }
         let tray = builder.build()?;
         Ok(Self {
@@ -192,8 +192,8 @@ mod tests {
 
     #[test]
     fn embedded_artwork_decodes_to_tray_icon() {
-        assert!(tray_icon().is_some(), "bundled AK12 PNG must decode");
+        assert!(tray_icon().is_some(), "bundled knob tray PNG must decode");
         let img = image::load_from_memory(TRAY_ICON_PNG).expect("valid PNG");
-        assert_eq!((img.width(), img.height()), (1024, 1024));
+        assert_eq!((img.width(), img.height()), (64, 64));
     }
 }

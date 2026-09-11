@@ -1,3 +1,4 @@
+use crate::firmware::{FD_KIND_MOUSE, FE_CHORD_CMD, GESTURES_PER_KNOB, REPORT_ID, REPORT_LEN};
 use anyhow::{anyhow, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,7 +37,9 @@ impl KnobEvent {
 /// 1-6, all five gestures performed in a stated order, and the device named
 /// them 2, 3, 4, 5, 6 for CCW, press, CW, hold-left, hold-right. Key 1 was
 /// never driven.
-pub const GESTURES_PER_KNOB: usize = 5;
+///
+/// The count lives in the firmware map; the gesture order that must match
+/// it lives here.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
@@ -140,21 +143,21 @@ impl Action {
             Action::MouseClick { .. } | Action::MouseWheel { .. } => {}
         }
 
-        let mut packet = vec![0u8; 64];
-        packet[0] = 0x03;
-        packet[1] = 0xFE;
+        let mut packet = vec![0u8; REPORT_LEN];
+        packet[0] = REPORT_ID;
+        packet[1] = FE_CHORD_CMD;
         packet[2] = key_id;
         packet[3] = layer + 1;
 
         match self {
             Action::Key { .. } | Action::Media(_) => unreachable!("returned above"),
             Action::MouseClick { button } => {
-                packet[4] = 3; // Kind = Mouse
+                packet[4] = FD_KIND_MOUSE; // Kind = Mouse
                 packet[10] = 0x01; // Click
                 packet[12] = *button;
             }
             Action::MouseWheel { delta } => {
-                packet[4] = 3; // Kind = Mouse
+                packet[4] = FD_KIND_MOUSE; // Kind = Mouse
                 packet[10] = 0x03; // Wheel
                 packet[15] = *delta as u8;
             }
@@ -164,8 +167,16 @@ impl Action {
     }
 }
 
-pub fn key_id_for_button(button_index: usize) -> u8 {
-    (button_index + 1) as u8
+pub fn key_id_for_button(button_index: usize) -> Result<u8> {
+    button_index
+        .checked_add(1)
+        .and_then(|id| u8::try_from(id).ok())
+        .ok_or_else(|| {
+            anyhow!(
+                "button index {} is past the addressable slots",
+                button_index
+            )
+        })
 }
 
 /// Slot key ID for one knob gesture.
@@ -173,6 +184,12 @@ pub fn key_id_for_button(button_index: usize) -> u8 {
 /// Knob slots continue the 1-based key-ID space after the buttons, so the
 /// base is `button_count + 1` -- NOT a constant. A knob occupies FIVE slots,
 /// not three: CCW, press, CW, hold-twist-left, hold-twist-right.
+///
+/// Fallible on purpose: the arithmetic is `u8` and the inputs arrive from
+/// a layout file or a JSON parameter, so an absurd count must refuse with
+/// the numbers quoted back rather than wrap onto someone else's slot in
+/// release or trap in debug. Both failure shapes have shipped here as
+/// "a flash that changed nothing, reported as success".
 ///
 /// Measured 2026-09-08 with `probe-gestures --map`, which puts a distinct
 /// marker on keys 1-6, asks for all five gestures in a stated order, and
@@ -198,7 +215,7 @@ pub fn key_id_for_button(button_index: usize) -> u8 {
 ///
 /// Since keys 2-6 are all gestures, this device has AT MOST ONE button.
 /// A layout that declares more pushes every gesture off by that many.
-pub fn key_id_for_knob(button_count: usize, knob_index: usize, event: KnobEvent) -> u8 {
+pub fn key_id_for_knob(button_count: usize, knob_index: usize, event: KnobEvent) -> Result<u8> {
     let offset = match event {
         KnobEvent::RotateCCW => 0,
         KnobEvent::Press => 1,
@@ -206,7 +223,31 @@ pub fn key_id_for_knob(button_count: usize, knob_index: usize, event: KnobEvent)
         KnobEvent::HoldTwistL => 3,
         KnobEvent::HoldTwistR => 4,
     };
-    (button_count as u8) + 1 + (knob_index as u8) * (GESTURES_PER_KNOB as u8) + offset
+    let base = button_count
+        .checked_add(1)
+        .and_then(|b| {
+            knob_index
+                .checked_mul(GESTURES_PER_KNOB)
+                .and_then(|s| b.checked_add(s))
+        })
+        .and_then(|b| b.checked_add(offset));
+    match base {
+        Some(id) => u8::try_from(id).map_err(|_| {
+            anyhow!(
+                "knob slot for {:?} sits past the addressable slots \
+                 (buttons {}, knob {}, event offset {})",
+                event,
+                button_count,
+                knob_index,
+                offset
+            )
+        }),
+        None => Err(anyhow!(
+            "knob slot arithmetic overflowed (buttons {}, knob {})",
+            button_count,
+            knob_index
+        )),
+    }
 }
 
 /// Look up a key name in the shared vocabulary.
@@ -219,7 +260,8 @@ fn parse_keycode(s: &str) -> Option<u8> {
 
 // Re-exported so the many `protocol::build_led_packet` call sites keep
 // working after the split; the implementation lives in `crate::led`.
-pub use crate::led::{build_led_packet, LED_MODE_NAMES};
+pub use crate::firmware::LED_MODE_NAMES;
+pub use crate::led::{build_led_packet, led_mode_number};
 
 #[cfg(test)]
 mod tests {
@@ -295,7 +337,10 @@ mod tests {
     #[test]
     fn test_packet_structure() {
         let action = Action::parse("volumedown").unwrap();
-        let packet = action.to_packet(key_id_for_knob(15, 0, KnobEvent::RotateCCW), 0);
+        let packet = action.to_packet(
+            key_id_for_knob(15, 0, KnobEvent::RotateCCW).expect("small counts address"),
+            0,
+        );
         assert_eq!(packet.len(), 64);
         assert_eq!(packet[0], 0x03);
         // 0xFD, not 0xFE. This assertion said 0xFE for as long as the
@@ -347,7 +392,7 @@ mod tests {
             // the first, because a media usage below 0x100 has a zero HIGH
             // byte and that zero is real data (`volumeup` is `e9 00`).
             assert_ne!(
-                packet[crate::fd::HEADER_LEN + 2],
+                packet[crate::firmware::FD_HEADER_LEN + 2],
                 0,
                 "{name} counts entries but the first one is empty"
             );
@@ -362,7 +407,7 @@ mod tests {
     /// device answered rather than as the old three-button model assumed.
     #[test]
     fn the_five_gestures_are_keys_two_through_six_on_a_vk01() {
-        let ids = KnobEvent::ALL.map(|e| key_id_for_knob(1, 0, e));
+        let ids = KnobEvent::ALL.map(|e| key_id_for_knob(1, 0, e).expect("small counts address"));
         assert_eq!(ids, [2, 3, 4, 5, 6]);
     }
 
@@ -371,16 +416,20 @@ mod tests {
     /// hold-twist gestures.
     #[test]
     fn a_second_knob_starts_five_slots_after_the_first() {
-        assert_eq!(key_id_for_knob(1, 1, KnobEvent::RotateCCW), 7);
-        assert_eq!(key_id_for_knob(1, 1, KnobEvent::HoldTwistR), 11);
+        let ccw = |b, k| key_id_for_knob(b, k, KnobEvent::RotateCCW).expect("small counts address");
+        assert_eq!(ccw(1, 1), 7);
+        assert_eq!(
+            key_id_for_knob(1, 1, KnobEvent::HoldTwistR).expect("small counts address"),
+            11
+        );
         // Every gesture of knob 0 and knob 1 is distinct.
         let a: Vec<u8> = KnobEvent::ALL
             .iter()
-            .map(|e| key_id_for_knob(1, 0, *e))
+            .map(|e| key_id_for_knob(1, 0, *e).expect("small counts address"))
             .collect();
         let b: Vec<u8> = KnobEvent::ALL
             .iter()
-            .map(|e| key_id_for_knob(1, 1, *e))
+            .map(|e| key_id_for_knob(1, 1, *e).expect("small counts address"))
             .collect();
         assert!(a.iter().all(|k| !b.contains(k)), "{a:?} overlaps {b:?}");
     }
@@ -390,21 +439,25 @@ mod tests {
     /// That is how `ccw` came to be written to key 4 -- the CW gesture.
     #[test]
     fn a_wrongly_declared_button_count_shifts_every_gesture() {
-        assert_eq!(key_id_for_knob(3, 0, KnobEvent::RotateCCW), 4);
-        assert_eq!(key_id_for_knob(1, 0, KnobEvent::RotateCW), 4);
+        let id = |b, e| key_id_for_knob(b, 0, e).expect("small counts address");
+        assert_eq!(id(3, KnobEvent::RotateCCW), 4);
+        assert_eq!(id(1, KnobEvent::RotateCW), 4);
         // Same slot, different gesture: the whole defect in one line.
-        assert_eq!(
-            key_id_for_knob(3, 0, KnobEvent::RotateCCW),
-            key_id_for_knob(1, 0, KnobEvent::RotateCW)
-        );
+        assert_eq!(id(3, KnobEvent::RotateCCW), id(1, KnobEvent::RotateCW));
     }
 
     /// Buttons and knobs must never claim the same slot, whatever the layout.
     #[test]
     fn button_and_knob_slots_never_collide() {
         for buttons in 0..20usize {
-            let last_button = (0..buttons).map(key_id_for_button).max();
-            let first_knob = key_id_for_knob(buttons, 0, KnobEvent::RotateCCW);
+            let last_button = (0..buttons)
+                .map(key_id_for_button)
+                .collect::<Result<Vec<_>, _>>()
+                .expect("small button counts address")
+                .into_iter()
+                .max();
+            let first_knob =
+                key_id_for_knob(buttons, 0, KnobEvent::RotateCCW).expect("small counts address");
             assert!(
                 last_button.is_none_or(|b| b < first_knob),
                 "{} buttons: last button {:?} collides with knob {}",
@@ -413,6 +466,17 @@ mod tests {
                 first_knob
             );
         }
+    }
+
+    /// Absurd counts refuse with the numbers quoted, rather than wrapping
+    /// onto someone else's slot in release or trapping in debug.
+    #[test]
+    fn absurd_counts_refuse_rather_than_wrap() {
+        assert!(key_id_for_knob(usize::MAX, 0, KnobEvent::RotateCCW).is_err());
+        assert!(key_id_for_knob(300, 0, KnobEvent::RotateCCW).is_err());
+        assert!(key_id_for_knob(1, usize::MAX, KnobEvent::RotateCCW).is_err());
+        assert!(key_id_for_button(usize::MAX).is_err());
+        assert!(key_id_for_button(300).is_err());
     }
 
     #[test]

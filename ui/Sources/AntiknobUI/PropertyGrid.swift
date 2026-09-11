@@ -78,13 +78,24 @@ struct StatusRow<Indicator: View>: View {
     }
 }
 
-/// A filled state dot, sized so every indicator column lines up whether it
-/// holds a dot or an SF Symbol.
+/// A filled circular state dot (e.g. for hardware/device connection).
 struct StatusDot: View {
     let color: Color
 
     var body: some View {
         Circle()
+            .fill(color)
+            .frame(width: 8, height: 8)
+            .frame(width: 16, alignment: .center)
+    }
+}
+
+/// A filled square state light (e.g. for daemon status).
+struct StatusSquare: View {
+    let color: Color
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 2)
             .fill(color)
             .frame(width: 8, height: 8)
             .frame(width: 16, alignment: .center)

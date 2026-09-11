@@ -229,7 +229,7 @@ pub fn migrate_preset(preset: &Preset) -> (MigratedPreset, Vec<String>) {
         // COLOUR is not carried: each mode on this device holds its own, and
         // storing "white" beside mode 1 would record a colour the firmware
         // never shows.
-        led: crate::led::LED_MODE_NAMES
+        led: crate::firmware::LED_MODE_NAMES
             .get(preset.led_mode as usize)
             .map(|m| (*m).to_string()),
     };

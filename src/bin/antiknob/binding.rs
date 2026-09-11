@@ -6,6 +6,7 @@
 //! directly. Grouping them keeps that reasoning in one file.
 
 use crate::cmds::layout_path;
+use antiknob::firmware::{DEVICE_LAYERS, GESTURES_PER_KNOB};
 use antiknob::{config, device, fd, host};
 
 use anyhow::{Context, Result};
@@ -20,6 +21,15 @@ pub fn button_count_for(config: Option<PathBuf>) -> Result<usize> {
 
 fn resolve_button_count(config: Option<PathBuf>, buttons: Option<usize>) -> Result<usize> {
     if let Some(n) = buttons {
+        // A flag is distrusted like any remote input: past the slot space
+        // it would wrap onto someone else's slot.
+        if n > antiknob::firmware::SLOT_MAX_KEY_ID as usize {
+            anyhow::bail!(
+                "button count {} is past the addressable slots (max {})",
+                n,
+                antiknob::firmware::SLOT_MAX_KEY_ID
+            );
+        }
         return Ok(n);
     }
     let path = layout_path(config)?;
@@ -46,7 +56,7 @@ pub fn run_bind_slots(
     );
     let layers: Vec<u8> = match layer {
         Some(l) => vec![l],
-        None => host::bind::BIND_LAYERS.to_vec(),
+        None => antiknob::firmware::BIND_LAYERS.to_vec(),
     };
     if dry_run {
         println!("[ ==> ] Slot binding plan (dry run, no hardware touched):");
@@ -62,7 +72,9 @@ pub fn run_bind_slots(
                 .map(|i| {
                     format!(
                         "{:02x}",
-                        packet[antiknob::fd::HEADER_LEN + i * antiknob::fd::ENTRY_LEN + 2]
+                        packet[antiknob::firmware::FD_HEADER_LEN
+                            + i * antiknob::firmware::FD_ENTRY_LEN
+                            + 2]
                     )
                 })
                 .collect();
@@ -81,7 +93,7 @@ pub fn run_bind_slots(
         // printed directly above it.
         println!(
             "        {} slots x {} layer(s): CCW/press/CW/hold+twist L/hold+twist R.",
-            antiknob::protocol::GESTURES_PER_KNOB,
+            GESTURES_PER_KNOB,
             layers.len()
         );
         return Ok(());
@@ -108,7 +120,7 @@ pub fn run_bind_slots(
         // per-layer backlight, which needs to know where to write, silently
         // did nothing on the most common flash there is.
         Ok(bound) => {
-            let arrangement = host::device_binding::arrangement(&bound, device::DEVICE_LAYERS);
+            let arrangement = host::device_binding::arrangement(&bound, DEVICE_LAYERS);
             println!("[ Ok  ] {}", arrangement.describe());
             println!("        Re-run with `--layer N` to bind just one.");
         }
@@ -137,11 +149,11 @@ pub fn run_bind_seq(
     delay_ms: u16,
     actions: Vec<String>,
 ) -> Result<()> {
-    if layer >= device::DEVICE_LAYERS {
+    if layer >= DEVICE_LAYERS {
         anyhow::bail!(
             "layer {} does not exist; this firmware has layers 0..{}",
             layer,
-            device::DEVICE_LAYERS - 1
+            DEVICE_LAYERS - 1
         );
     }
     let mut parsed = fd::parse_sequence(&actions)?;
@@ -189,10 +201,10 @@ pub fn run_bind_seq(
         // bytes' worth and leaves the rest, so a short sequence written over
         // a long one strands the old tail in the slot.
         device::send_report(dev, &wipe)?;
-        sleep(Duration::from_millis(15));
+        sleep(Duration::from_millis(antiknob::firmware::SLOT_WRITE_GAP_MS));
         device::send_commit(dev)?;
         device::send_report(dev, &packet)?;
-        sleep(Duration::from_millis(15));
+        sleep(Duration::from_millis(antiknob::firmware::SLOT_WRITE_GAP_MS));
         device::send_commit(dev)?;
         // The table is walked, not addressed. A lone query for counter 7
         // never answers, while the same query as step 7 of a walk from 1
@@ -201,7 +213,7 @@ pub fn run_bind_seq(
         // table is what `upload --verify` already does for exactly this
         // reason; a single-slot shortcut here would time out and report a
         // write that landed as UNCONFIRMED.
-        Ok(device::read_slot_table(dev, width, device::DEVICE_LAYERS))
+        Ok(device::read_slot_table(dev, width, DEVICE_LAYERS))
     })?;
     let readback = readback
         .into_iter()

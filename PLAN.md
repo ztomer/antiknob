@@ -21,6 +21,44 @@ plan and does not get pruned.
   rather than raw report writes. Preserved `boundDeviceLayers` in the Swift UI
   `Config` model so UI saves do not wipe bound layers. Fixed `tap.lock()`
   self-deadlock in `tests/api_e2e.rs`.
+  *Fixed 2026-09-11*: `bind_slots` honored only the plural `layers` while the
+  registry, CLI, MCP schema and UI all send singular `layer` -- single-layer
+  flashes silently flashed everything, and the UI never re-read the knob mode
+  so "Not flashed" stuck after a good flash. The daemon accepts both now
+  (plural wins), the UI reports the real `flashed_slots`/`layers`/`key_ids`
+  and refreshes mode + status, like the keymap flash already did.
+  *Fixed LED renderer wedge (2026-09-11, live)*: three mode writes in seconds
+  left every layer reading back red while the ring rendered RGB; a replug
+  restored the stored red with no further writes. Bursts are the trigger this
+  repo controls, so LED jobs pace (500ms between jobs, 150ms between layers),
+  superseded syncs drop, no-op writes are skipped via read-before-write, and
+  `led-probe` finally goes through `send_led`. Every surface states the one
+  remedy (unplug/replug): CLI text, `set_led` reply note, Layers pane footer.
+  Read-back can never detect the wedge, by construction.
+  *Hardware map (2026-09-11)*: every firmware address and value lives in
+  `src/firmware.rs`, every process budget in `src/policy.rs`, and the Swift
+  side mirrors both in `Core/AppConstants.swift` (agreement by citation --
+  Swift cannot include a Rust module). Test fixtures keep independent
+  literals: they pin the maps rather than repeating them.
+  *Fixed firmware-review findings (2026-09-11)*: slot addressing is now
+  fallible end to end (`key_id_for_*` return `Result`, layouts past the
+  slot space are refused at load with the numbers quoted, `--buttons` and
+  socket `buttons` validated, `layer_idx as u8` gone from both upload
+  paths); `send_report` refuses oversize payloads instead of clamping;
+  the sync supersede ticket is re-checked after the read and between
+  layers; the skip filter requires an exact canonical spec, not just the
+  mode number; the socket server handles each connection on its own
+  thread behind a per-request lock (pinned by an 8-client test);
+  `led-probe` warns about the wedge up front. Measured, not assumed:
+  LED layers past 2 store without aliasing 0-2 (green stored at 9, 0-2
+  untouched, restored after) -- writes there stay legal, surfaces say
+  "stores, render unmeasured". Whether 3-15 render at all still needs
+  eyes; see REFERENCES.md.
+  *Fixed icons (2026-09-11)*: Daemon status in both the status bar and setting
+  panes is now a square (`StatusSquare`, 8x8 `RoundedRectangle`), device connection
+  a circle (`StatusDot`, 8x8 `Circle`); menubar tray icon is a native template knob
+  (`assets/knob-tray.png`); and the app icon was replaced with a modern, high-contrast,
+  legible macOS squircle rotary knob (`assets/antiknob-1024.png`, `Antiknob.icns`).
 * Zero-sudo IOHIDManager access. MIT OR Apache-2.0, native arm64, macOS 26+.
 * **The knob is five gestures at keys 2-6** -- CCW, press, CW, hold+twist
   left, hold+twist right -- and this device has at most ONE button, at key 1.

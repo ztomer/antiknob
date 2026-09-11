@@ -1,3 +1,7 @@
+use crate::firmware::{
+    TransportType, COMMIT_SETTLE_MS, REPORT_ID, REPORT_LEN, SLOT_COMMIT_PREFIX,
+    SLOT_TABLE_READ_GAP_MS, SUPPORTED_DEVICES, VENDOR_USAGE_PAGE,
+};
 use anyhow::{anyhow, Context, Result};
 use hidapi::HidApi;
 use serde::{Deserialize, Serialize};
@@ -15,142 +19,12 @@ pub mod verify;
 pub use classify::classify_device;
 pub use led_state::{read_led_mode, send_led};
 pub use select::{primary_device, primary_transport};
-pub use slot_read::{read_full_table, read_slot, BURST_QUERIES, BURST_WIDTH};
+pub use slot_read::{read_full_table, read_slot};
 pub use thread::{enumeration_refreshes, with_device, with_hid, HidDevice};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum TransportType {
-    #[serde(rename = "usb")]
-    Usb,
-    #[serde(rename = "wireless_2_4g")]
-    Wireless24G,
-    #[serde(rename = "bluetooth")]
-    Bluetooth,
-}
-
-impl TransportType {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Usb => "usb",
-            Self::Wireless24G => "wireless_2_4g",
-            Self::Bluetooth => "bluetooth",
-        }
-    }
-
-    pub fn display_name(&self) -> &'static str {
-        match self {
-            Self::Usb => "USB (Wired)",
-            Self::Wireless24G => "2.4GHz Wireless",
-            Self::Bluetooth => "Bluetooth Wireless",
-        }
-    }
-}
 
 fn default_transport() -> TransportType {
     TransportType::Usb
 }
-
-pub const SUPPORTED_DEVICES: &[(u16, u16, &str, TransportType)] = &[
-    (
-        0x514C,
-        0x8850,
-        "Anticater / LQKJ VK01 (0x514c:0x8850)",
-        TransportType::Usb,
-    ),
-    (
-        0x514C,
-        0x8851,
-        "Anticater / LQKJ 2.4G (0x514c:0x8851)",
-        TransportType::Wireless24G,
-    ),
-    (
-        0x1189,
-        0x8840,
-        "Anticater / CH57x (0x1189:0x8840)",
-        TransportType::Usb,
-    ),
-    (
-        0x1189,
-        0x8842,
-        "Anticater / CH57x (0x1189:0x8842)",
-        TransportType::Usb,
-    ),
-    (
-        0x1189,
-        0x8850,
-        "Anticater / CH57x (0x1189:0x8850)",
-        TransportType::Usb,
-    ),
-    (
-        0x1189,
-        0x8851,
-        "Anticater / CH57x 2.4G (0x1189:0x8851)",
-        TransportType::Wireless24G,
-    ),
-    (
-        0x1189,
-        0x8890,
-        "Anticater / CH57x (0x1189:0x8890)",
-        TransportType::Usb,
-    ),
-    (
-        0x1189,
-        0x8830,
-        "Anticater / CH57x 2.4G (0x1189:0x8830)",
-        TransportType::Wireless24G,
-    ),
-    (
-        0x1189,
-        0x8831,
-        "Anticater / CH57x 2.4G (0x1189:0x8831)",
-        TransportType::Wireless24G,
-    ),
-    (
-        0x1189,
-        0x8832,
-        "Anticater / CH57x 2.4G (0x1189:0x8832)",
-        TransportType::Wireless24G,
-    ),
-    (
-        0x1189,
-        0x8833,
-        "Anticater / CH57x 2.4G (0x1189:0x8833)",
-        TransportType::Wireless24G,
-    ),
-    (
-        0x514C,
-        0x8830,
-        "Anticater / LQKJ 2.4G (0x514c:0x8830)",
-        TransportType::Wireless24G,
-    ),
-    (
-        0x514C,
-        0x8831,
-        "Anticater / LQKJ 2.4G (0x514c:0x8831)",
-        TransportType::Wireless24G,
-    ),
-    (
-        0x514C,
-        0x8832,
-        "Anticater / LQKJ 2.4G (0x514c:0x8832)",
-        TransportType::Wireless24G,
-    ),
-    (
-        0x514C,
-        0x8833,
-        "Anticater / LQKJ 2.4G (0x514c:0x8833)",
-        TransportType::Wireless24G,
-    ),
-    (
-        0x25A7,
-        0xFA11,
-        "Anticater 2.4G Receiver (0x25a7:0xfa11)",
-        TransportType::Wireless24G,
-    ),
-];
-
-pub const VENDOR_USAGE_PAGE: u16 = 0xFF00;
-pub const REPORT_ID: u8 = 0x03;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceMatch {
@@ -251,19 +125,28 @@ fn open_device_on(api: &HidApi) -> Result<HidDevice> {
     ))
 }
 
-/// Send a 64-byte payload to the device using Report ID 0x03.
-/// If the passed payload already starts with Report ID 0x03 (e.g. legacy 64B or 65B packets),
+/// Send a `REPORT_LEN`-byte payload to the device using Report ID.
+/// If the passed payload already starts with Report ID (e.g. legacy 64B or 65B packets),
 /// the redundant prefix is stripped so the command byte lands at wire byte 1.
+///
+/// Oversize payloads are REFUSED, never clamped: a truncated packet is a
+/// well-formed packet to the wrong slot, which is exactly the defect class
+/// this repo is built around.
 pub fn send_report(dev: &HidDevice, payload: &[u8]) -> Result<()> {
     let payload = if !payload.is_empty() && payload[0] == REPORT_ID {
         &payload[1..]
     } else {
         payload
     };
-    let mut buf = [0u8; 65];
+    anyhow::ensure!(
+        payload.len() <= REPORT_LEN,
+        "HID payload is {} bytes; one report carries {}",
+        payload.len(),
+        REPORT_LEN
+    );
+    let mut buf = [0u8; REPORT_LEN + 1];
     buf[0] = REPORT_ID;
-    let len = payload.len().min(64);
-    buf[1..1 + len].copy_from_slice(&payload[..len]);
+    buf[1..1 + payload.len()].copy_from_slice(payload);
 
     dev.write(&buf)
         .context("Failed to write HID report to device")?;
@@ -380,24 +263,19 @@ pub fn read_slot_table(dev: &HidDevice, slots_per_layer: u8, layers: u8) -> Vec<
         if let Ok(bytes) = read_slot(dev, group, counter) {
             out.push(bytes);
         }
-        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::thread::sleep(std::time::Duration::from_millis(SLOT_TABLE_READ_GAP_MS));
     }
     out
 }
-
-/// How many device layers the firmware holds.
-pub const DEVICE_LAYERS: u8 = 3;
 
 /// Commit staged key writes, mirroring the vendor app's `HID_write`
 /// tail (`[FD FE FF]` + sleep): without it the firmware may ignore
 /// flashed packets. Call once after a batch of key writes, never for
 /// LED-only updates (uncharted; LED path untouched).
 pub fn send_commit(dev: &HidDevice) -> Result<()> {
-    let mut payload = [0u8; 64];
-    payload[0] = 0xFD;
-    payload[1] = 0xFE;
-    payload[2] = 0xFF;
+    let mut payload = [0u8; REPORT_LEN];
+    payload[..SLOT_COMMIT_PREFIX.len()].copy_from_slice(&SLOT_COMMIT_PREFIX);
     send_report(dev, &payload)?;
-    std::thread::sleep(std::time::Duration::from_millis(50));
+    std::thread::sleep(std::time::Duration::from_millis(COMMIT_SETTLE_MS));
     Ok(())
 }

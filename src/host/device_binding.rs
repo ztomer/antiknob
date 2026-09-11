@@ -212,7 +212,7 @@ pub fn record_bound_layers(path: &Path, layers: &[u8]) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::device::DEVICE_LAYERS;
+    use crate::firmware::DEVICE_LAYERS;
 
     #[test]
     fn one_bound_layer_leaves_the_others_standalone() {

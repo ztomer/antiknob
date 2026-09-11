@@ -4,35 +4,43 @@
 //! vendor app's, read out of its binary rather than guessed:
 //! `03 FE B0 <layer> <mode>` followed by sixteen RGB triples from offset 5.
 
+use crate::firmware::{
+    BASE_COLOR_OFFSET, LED_CMD, LED_INIT_CMD, LED_MODE_GREEN, LED_MODE_OFF, LED_MODE_RAINBOW,
+    LED_MODE_RED, LED_MODE_RGB, LED_MODE_RIPPLE, LED_WRITE_SUB, PALETTE_ENTRIES, PALETTE_OFFSET,
+    REPORT_ID, REPORT_LEN, VENDOR_RAINBOW,
+};
 use anyhow::{anyhow, Result};
 
-/// Every LED mode name this build can send, in mode order.
+/// The mode number a spec string names, or `None` when it names nothing.
 ///
-/// Named for what the knob DOES, because that is what was finally looked
-/// at. The previous names came from `kriomant/ch57x-keyboard-tool#173` and
-/// describe effects (`static`, `reactive`) rather than this device's
-/// behaviour: on a `514c:8850` mode 1 is red and mode 2 is green, fixed,
-/// whatever colour bytes are sent. That is why setting mode 1 to blue, red
-/// and green in turn produced red three times -- not a device that ignores
-/// colour arbitrarily, but a mode that IS red.
-///
-/// Mode 5 is here. It was refused for weeks as "crashes the firmware", and
-/// it does not: a capture of ANTICATER.app walking its own mode buttons
-/// shows `03 FE B0 00 05` sent like any other, and the knob renders a
-/// second multicoloured effect. Whatever wedged the LED renderer once was
-/// not mode 5 -- the likeliest candidate is the known freeze bug
-/// (kriomant/ch57x-keyboard-tool#175), which strikes 2s-2m after ANY mode
-/// change and needs a replug.
-///
-/// Mode 3 is the one name here still taken on trust from #173; nobody has
-/// reported what this device shows for it.
-pub const LED_MODE_NAMES: [&str; 6] = ["off", "red", "green", "ripple", "rainbow", "rgb"];
+/// The same alias table `build_led_packet` matches on, factored out so a
+/// caller can compare "what the layer wants" against "what the device
+/// holds" without building (and sending) a packet to find out. The two
+/// matches name the same modes; `mode_number_names_its_index` pins the
+/// canonical half, and the alias cases below pin the rest.
+pub fn led_mode_number(spec: &str) -> Option<u8> {
+    let first = spec
+        .trim()
+        .to_ascii_lowercase()
+        .split_whitespace()
+        .next()?
+        .to_string();
+    match first.as_str() {
+        "off" | "mode0" => Some(LED_MODE_OFF),
+        "red" | "static" | "backlight" | "steady" | "mode1" => Some(LED_MODE_RED),
+        "green" | "reactive" | "shock" | "mode2" => Some(LED_MODE_GREEN),
+        "ripple" | "shock2" | "mode3" => Some(LED_MODE_RIPPLE),
+        "rainbow" | "press" | "mode4" => Some(LED_MODE_RAINBOW),
+        "rgb" | "custom" | "mode5" => Some(LED_MODE_RGB),
+        _ => None,
+    }
+}
 
 pub fn build_led_packet(layer: u8, mode: &str) -> Result<Vec<u8>> {
-    let mut packet = vec![0u8; 64];
-    packet[0] = 0x03;
-    packet[1] = 0xFE;
-    packet[2] = 0xB0;
+    let mut packet = vec![0u8; REPORT_LEN];
+    packet[0] = REPORT_ID;
+    packet[1] = LED_CMD;
+    packet[2] = LED_WRITE_SUB;
     packet[3] = layer;
 
     let mode_lower = mode.trim().to_ascii_lowercase();
@@ -60,27 +68,27 @@ pub fn build_led_packet(layer: u8, mode: &str) -> Result<Vec<u8>> {
     // `reactive`) are kept as aliases so existing configs keep loading.
     match parts[0] {
         "off" | "mode0" => {
-            packet[4] = 0;
+            packet[4] = LED_MODE_OFF;
         }
         "red" | "static" | "backlight" | "steady" | "mode1" => {
             let entries = parse_palette(parts.get(1).copied().unwrap_or("white"))?;
-            packet[4] = 1;
+            packet[4] = LED_MODE_RED;
             fill_palette_entries(&mut packet, &entries);
         }
         "green" | "reactive" | "shock" | "mode2" => {
             let entries = parse_palette(parts.get(1).copied().unwrap_or("red"))?;
-            packet[4] = 2;
+            packet[4] = LED_MODE_GREEN;
             fill_palette_entries(&mut packet, &entries);
         }
         "ripple" | "shock2" | "mode3" => {
             let entries = parse_palette(parts.get(1).copied().unwrap_or("blue"))?;
-            packet[4] = 3;
+            packet[4] = LED_MODE_RIPPLE;
             fill_palette_entries(&mut packet, &entries);
         }
         // The multicoloured effect this device ships in.
         "rainbow" | "press" | "mode4" => {
             let entries = parse_palette(parts.get(1).copied().unwrap_or("rainbow"))?;
-            packet[4] = 4;
+            packet[4] = LED_MODE_RAINBOW;
             fill_palette_entries(&mut packet, &entries);
         }
         // The second multicoloured effect. Refused for weeks as "crashes the
@@ -89,7 +97,7 @@ pub fn build_led_packet(layer: u8, mode: &str) -> Result<Vec<u8>> {
         // hardware, and the knob renders it.
         "rgb" | "custom" | "mode5" => {
             let entries = parse_palette(parts.get(1).copied().unwrap_or("rainbow"))?;
-            packet[4] = 5;
+            packet[4] = LED_MODE_RGB;
             fill_palette_entries(&mut packet, &entries);
         }
         other => {
@@ -115,20 +123,10 @@ pub fn build_led_packet(layer: u8, mode: &str) -> Result<Vec<u8>> {
 ///
 /// `fill_palette` wrote one colour to all sixteen entries, which is why this
 /// build could only ever produce a solid colour.
-pub const PALETTE_ENTRIES: usize = 16;
-
-/// The vendor's own rainbow, in its own order, cycled to fill the palette.
-const RAINBOW: [(u8, u8, u8); 6] = [
-    (0xFF, 0x00, 0x00),
-    (0xFF, 0x80, 0x30),
-    (0xFF, 0xFF, 0x30),
-    (0x00, 0xFF, 0x00),
-    (0x00, 0xFF, 0xFF),
-    (0x00, 0x00, 0xFF),
-];
-
+///
 /// Resolve a palette argument into sixteen entries.
 ///
+/// Counts and the vendor palette live in the firmware map.
 /// A bare colour fills every entry, as before. `rainbow` reproduces the
 /// vendor's. A comma-separated list sets entries in order and repeats to
 /// fill, so `red,blue` alternates.
@@ -136,7 +134,7 @@ pub fn parse_palette(spec: &str) -> Result<Vec<(u8, u8, u8)>> {
     let spec = spec.trim();
     if spec.eq_ignore_ascii_case("rainbow") {
         return Ok((0..PALETTE_ENTRIES)
-            .map(|i| RAINBOW[i % RAINBOW.len()])
+            .map(|i| VENDOR_RAINBOW[i % VENDOR_RAINBOW.len()])
             .collect());
     }
     let listed: Vec<(u8, u8, u8)> = spec
@@ -173,9 +171,9 @@ pub fn parse_palette(spec: &str) -> Result<Vec<(u8, u8, u8)>> {
 /// base colour with the first one. Re-reading the vendor capture with the
 /// right frame, `ff 00 00` at 5-7 is the base and `ff 80 30 ...` from 8 is
 /// the palette -- the same bytes, and I had read them as one array.
-const BASE_COLOR_OFFSET: usize = 5;
-const PALETTE_OFFSET: usize = 8;
-
+///
+/// Offsets live in the firmware map; the layout note stays here, where the
+/// writer that must honour it lives.
 fn fill_palette_entries(packet: &mut [u8], entries: &[(u8, u8, u8)]) {
     // The base colour is what the single-colour modes actually display.
     if let Some((r, g, b)) = entries.first() {
@@ -198,11 +196,11 @@ fn fill_palette_entries(packet: &mut [u8], entries: &[(u8, u8, u8)]) {
 /// session several wrong conclusions. The vendor app sends it on connect.
 /// Documented in kriomant/ch57x-keyboard-tool#173.
 pub fn led_init_packet() -> Vec<u8> {
-    let mut p = vec![0u8; 64];
-    p[0] = 0x03;
-    p[1] = 0xFB;
-    p[2] = 0xFB;
-    p[3] = 0xFB;
+    let mut p = vec![0u8; REPORT_LEN];
+    p[0] = REPORT_ID;
+    p[1] = LED_INIT_CMD;
+    p[2] = LED_INIT_CMD;
+    p[3] = LED_INIT_CMD;
     p
 }
 
@@ -226,6 +224,7 @@ fn parse_color(s: &str) -> Result<(u8, u8, u8)> {
 #[cfg(test)]
 mod palette_tests {
     use super::*;
+    use crate::firmware::LED_MODE_NAMES;
 
     /// This knob ignores the colour bytes -- three different values all came
     /// out red -- but the 16-key variant sharing its product id honours
@@ -297,6 +296,41 @@ mod palette_tests {
         for (mode, name) in LED_MODE_NAMES.iter().enumerate() {
             let p = build_led_packet(0, name).unwrap_or_else(|e| panic!("{name}: {e}"));
             assert_eq!(p[4] as usize, mode, "{name}");
+        }
+    }
+
+    /// The number mapping agrees with the packet builder everywhere they
+    /// overlap: canonical names hit their own index, aliases hit the same
+    /// mode the packet carries, and unknown words are `None` rather than a
+    /// mode that would read back as a mismatch. `sync_led` trusts this to
+    /// skip writes, so a wrong entry here silently drops a light change.
+    #[test]
+    fn mode_number_names_its_index() {
+        for (mode, name) in LED_MODE_NAMES.iter().enumerate() {
+            assert_eq!(led_mode_number(name), Some(mode as u8), "{name}");
+        }
+        for (spec, mode) in [
+            ("static", 1u8),
+            ("backlight", 1),
+            ("steady", 1),
+            ("mode1", 1),
+            ("reactive", 2),
+            ("shock", 2),
+            ("mode2", 2),
+            ("shock2", 3),
+            ("mode3", 3),
+            ("press", 4),
+            ("mode4", 4),
+            ("custom", 5),
+            ("mode5", 5),
+            ("mode0", 0),
+            ("red white", 1),
+            ("  GREEN  ", 2),
+        ] {
+            assert_eq!(led_mode_number(spec), Some(mode), "{spec}");
+        }
+        for spec in ["", "   ", "chartreuse", "mode6", "reddish"] {
+            assert_eq!(led_mode_number(spec), None, "{spec}");
         }
     }
 

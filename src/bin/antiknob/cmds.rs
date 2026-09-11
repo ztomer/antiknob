@@ -1,6 +1,6 @@
 //! `antiknob` command handlers (split from main.rs for the file gate).
 
-use antiknob::{api, apps, config, device, host, protocol};
+use antiknob::{api, apps, config, device, firmware, host, protocol};
 
 use anyhow::{Context, Result};
 use std::path::PathBuf;
@@ -132,14 +132,14 @@ pub fn run_upload(
     let mut led_packets: Vec<Vec<u8>> = Vec::new();
     for layer_idx in selected {
         let layer = &cfg.layers[layer_idx];
-        let layer_u8 = layer_idx as u8;
+        let layer_u8 = u8::try_from(layer_idx).context("layer index out of range")?;
 
         // 1. Program button actions
         let mut button_count = 0;
         for row in &layer.buttons {
             for key_str in row {
                 let action = protocol::Action::parse(key_str)?;
-                let key_id = protocol::key_id_for_button(button_count);
+                let key_id = protocol::key_id_for_button(button_count)?;
                 packets.push(action.to_packet(key_id, layer_u8));
                 button_count += 1;
             }
@@ -148,7 +148,7 @@ pub fn run_upload(
         // 2. Program knob actions
         for (knob_idx, knob) in layer.knobs.iter().enumerate() {
             for (event, binding) in knob.bindings() {
-                let key_id = protocol::key_id_for_knob(button_count, knob_idx, event);
+                let key_id = protocol::key_id_for_knob(button_count, knob_idx, event)?;
                 // A sequence needs the 0xFD writer; a single action keeps the
                 // 0xFE path. `Binding::to_packet` decides, so the CLI and the
                 // daemon cannot drift on it.
@@ -186,30 +186,30 @@ pub fn run_upload(
     let observed = device::with_device(move |dev| {
         for wipe in &wipes {
             device::send_report(dev, wipe)?;
-            sleep(Duration::from_millis(10));
+            sleep(Duration::from_millis(firmware::UPLOAD_PACKET_GAP_MS));
         }
         if !wipes.is_empty() {
             device::send_commit(dev)?;
         }
         for packet in &packets {
             device::send_report(dev, packet)?;
-            sleep(Duration::from_millis(10));
+            sleep(Duration::from_millis(firmware::UPLOAD_PACKET_GAP_MS));
         }
         if !packets.is_empty() {
             device::send_commit(dev)?;
         }
         for packet in &led_packets {
             device::send_led(dev, packet)?;
-            sleep(Duration::from_millis(20));
+            sleep(Duration::from_millis(firmware::LED_INTER_LAYER_SETTLE_MS));
         }
         if skip_verify {
             return Ok(Vec::new());
         }
-        sleep(Duration::from_millis(100));
+        sleep(Duration::from_millis(firmware::SLOT_VERIFY_SETTLE_MS));
         Ok(device::read_slot_table(
             dev,
             slots_per_layer,
-            device::DEVICE_LAYERS,
+            firmware::DEVICE_LAYERS,
         ))
     })?;
 
@@ -267,8 +267,31 @@ pub fn run_led(layer: u8, mode: Vec<String>) -> Result<()> {
         layer, mode_str
     );
     let packet = protocol::build_led_packet(layer, &mode_str)?;
-    device::with_device(move |dev| device::send_led(dev, &packet))?;
-    println!("[ Ok  ] LED configuration sent to device.");
+    // Read before writing: re-setting the stored mode is a no-op change,
+    // and mode changes are what wedge this firmware's renderer until a
+    // replug. A skipped write is reported as what it is, not as a failure.
+    let want = protocol::led_mode_number(&mode_str);
+    let skipped = device::with_device(move |dev| {
+        if let (Some(w), Ok(current)) = (want, device::read_led_mode(dev, layer)) {
+            if current == w {
+                return Ok(true);
+            }
+        }
+        device::send_led(dev, &packet)?;
+        Ok(false)
+    })?;
+    if skipped {
+        println!("[ Ok  ] Layer {layer} already holds that mode; no write sent.");
+    } else {
+        println!("[ Ok  ] LED configuration sent to device.");
+        println!("        If the ring doesn't follow, unplug/replug the knob -- its renderer can wedge after a mode change.");
+        if layer >= firmware::DEVICE_LAYERS {
+            println!(
+                "        Layer {layer} is past the firmware's {} layers: it stores, render unmeasured.",
+                firmware::DEVICE_LAYERS
+            );
+        }
+    }
     Ok(())
 }
 pub fn run_led_read(layer: u8, raw: bool) -> Result<()> {
@@ -276,14 +299,15 @@ pub fn run_led_read(layer: u8, raw: bool) -> Result<()> {
     let (mode, dump) = device::with_device(move |dev| {
         let mode = device::read_led_mode(dev, layer);
         let dump = if raw {
-            let mut payload = [0u8; 64];
-            payload[0] = 0xFA;
-            payload[1] = 0xB0;
+            let mut payload = [0u8; firmware::REPORT_LEN];
+            payload[0] = firmware::LED_QUERY_CMD;
+            payload[1] = firmware::LED_QUERY_SUB;
             payload[2] = layer;
-            let mut buf = [0u8; 64];
-            match device::send_report(dev, &payload)
-                .and_then(|()| dev.read_timeout(&mut buf, 500).map_err(anyhow::Error::from))
-            {
+            let mut buf = [0u8; firmware::REPORT_LEN];
+            match device::send_report(dev, &payload).and_then(|()| {
+                dev.read_timeout(&mut buf, firmware::LED_READ_TIMEOUT_MS as i32)
+                    .map_err(anyhow::Error::from)
+            }) {
                 Ok(n) => Some(buf[..n].to_vec()),
                 Err(_) => None,
             }

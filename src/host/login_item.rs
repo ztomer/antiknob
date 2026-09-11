@@ -9,8 +9,11 @@
 
 use std::path::{Path, PathBuf};
 
-/// LaunchAgent label for the daemon.
-pub const AGENT_LABEL: &str = "com.antiknob.daemon";
+/// LaunchAgent label for the daemon. Defined once in the policy map: the
+/// installer, the uninstaller, and the target strings must all name the
+/// same label, and three spellings of it is how a label stops matching
+/// itself.
+pub use crate::policy::LOGIN_AGENT_LABEL as AGENT_LABEL;
 
 /// `~/Library/LaunchAgents/<label>.plist` under the given home dir.
 pub fn agent_plist_path(home: &Path) -> PathBuf {

@@ -5,6 +5,10 @@
 
 use super::dispatch::{execute_command, ApiContext};
 use super::types::Command;
+use crate::policy::{
+    LOOP_TICK_MS, SOCKET_CALL_TIMEOUT_SECS, SOCKET_CONNECT_RETRIES, SOCKET_CONNECT_RETRY_MS,
+    SOCKET_FILE_MODE, SOCKET_IO_TIMEOUT_SECS, STATE_DIR_MODE,
+};
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -12,18 +16,19 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-/// Maximum payload size per JSON-RPC request line (64 KB).
-pub const MAX_REQUEST_SIZE: usize = 65_536;
-
-/// Maximum concurrent active socket client connections.
-pub const MAX_CONCURRENT_CLIENTS: usize = 16;
+/// Capacities, timeouts, and paths live in the policy map; the server
+/// that enforces them lives here.
+pub use crate::policy::{MAX_CONCURRENT_CLIENTS, MAX_REQUEST_SIZE, TMP_SOCKET_PATH};
 
 /// Active concurrent clients tracking counter.
 static ACTIVE_CLIENTS: AtomicUsize = AtomicUsize::new(0);
+
+/// Connection thread names. Diagnostics only.
+static CONN_IDS: AtomicUsize = AtomicUsize::new(0);
 
 struct ConnectionGuard;
 impl Drop for ConnectionGuard {
@@ -40,13 +45,10 @@ pub fn default_socket_path() -> Result<PathBuf> {
         .join("Application Support")
         .join("antiknob");
     std::fs::create_dir_all(&dir)?;
-    // Enforce 0700 permissions on the daemon state directory
-    let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    // Enforce user-only permissions on the daemon state directory
+    let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(STATE_DIR_MODE));
     Ok(dir.join("antiknob.sock"))
 }
-
-/// Fallback / convenience symlink location in /tmp.
-pub const TMP_SOCKET_PATH: &str = "/tmp/antiknob.sock";
 
 /// Spawns the Unix domain socket server on a background thread.
 pub struct SocketServer {
@@ -56,7 +58,7 @@ pub struct SocketServer {
 }
 
 impl SocketServer {
-    pub fn start(socket_path: PathBuf, mut ctx: ApiContext) -> Result<Self> {
+    pub fn start(socket_path: PathBuf, ctx: ApiContext) -> Result<Self> {
         // Clean up any stale socket files from prior runs
         let _ = std::fs::remove_file(&socket_path);
         let _ = std::fs::remove_file(TMP_SOCKET_PATH);
@@ -64,8 +66,11 @@ impl SocketServer {
         let listener = UnixListener::bind(&socket_path)
             .with_context(|| format!("Failed to bind Unix socket at {}", socket_path.display()))?;
 
-        // Enforce 0600 permissions on the socket file (user-only read/write)
-        let _ = std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600));
+        // Enforce user-only permissions on the socket file
+        let _ = std::fs::set_permissions(
+            &socket_path,
+            std::fs::Permissions::from_mode(SOCKET_FILE_MODE),
+        );
 
         // Create /tmp symlink for easy client discovery
         #[cfg(unix)]
@@ -74,6 +79,11 @@ impl SocketServer {
         let running = Arc::new(AtomicBool::new(true));
         let running_clone = running.clone();
         let path_clone = socket_path.clone();
+        // Shared across connection threads; locked per REQUEST, never per
+        // connection, so a slow RPC (a paced LED write, a table walk)
+        // stalls only the requests behind its own lock acquisition, not
+        // the accept loop and not other connections' fast paths.
+        let shared_ctx = Arc::new(Mutex::new(ctx));
 
         let handle = thread::spawn(move || {
             let _ = listener.set_nonblocking(true);
@@ -91,7 +101,7 @@ impl SocketServer {
                                 "error": {
                                     "code": -32000,
                                     "message": "Server busy: connection capacity reached",
-                                    "data": { "retry_after_ms": 50 }
+                                    "data": { "retry_after_ms": LOOP_TICK_MS }
                                 }
                             });
                             let mut msg = serde_json::to_string(&refusal).unwrap_or_default();
@@ -103,11 +113,21 @@ impl SocketServer {
                         }
 
                         ACTIVE_CLIENTS.fetch_add(1, Ordering::Relaxed);
-                        let _guard = ConnectionGuard;
-                        handle_client(stream, &mut ctx);
+                        let conn_ctx = Arc::clone(&shared_ctx);
+                        let id = CONN_IDS.fetch_add(1, Ordering::Relaxed);
+                        if thread::Builder::new()
+                            .name(format!("antiknob-conn-{id}"))
+                            .spawn(move || {
+                                let _guard = ConnectionGuard;
+                                handle_client(stream, conn_ctx);
+                            })
+                            .is_err()
+                        {
+                            ACTIVE_CLIENTS.fetch_sub(1, Ordering::Relaxed);
+                        }
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(50));
+                        thread::sleep(Duration::from_millis(LOOP_TICK_MS));
                     }
                     Err(_) => {
                         break;
@@ -166,8 +186,8 @@ pub fn read_bounded_line<R: BufRead>(
     Ok(Some(s))
 }
 
-fn handle_client(mut stream: UnixStream, ctx: &mut ApiContext) {
-    let timeout = Some(Duration::from_secs(5));
+fn handle_client(mut stream: UnixStream, ctx: Arc<Mutex<ApiContext>>) {
+    let timeout = Some(Duration::from_secs(SOCKET_IO_TIMEOUT_SECS));
     let _ = stream.set_read_timeout(timeout);
     let _ = stream.set_write_timeout(timeout);
 
@@ -183,7 +203,15 @@ fn handle_client(mut stream: UnixStream, ctx: &mut ApiContext) {
                 if trimmed.is_empty() {
                     continue;
                 }
-                let resp = process_json_rpc(ctx, trimmed);
+                // Per request, never per connection: a slow RPC must not
+                // hold the daemon's state hostage from its neighbors.
+                // Poisoning recovers rather than wedges: the context holds
+                // no invariants a panic could leave half-made (command
+                // execution itself is panic-isolated per request below).
+                let resp = match ctx.lock() {
+                    Ok(mut guard) => process_json_rpc(&mut guard, trimmed),
+                    Err(poisoned) => process_json_rpc(&mut poisoned.into_inner(), trimmed),
+                };
                 let mut out = serde_json::to_string(&resp).unwrap_or_else(|_| "{}".to_string());
                 out.push('\n');
                 if stream.write_all(out.as_bytes()).is_err() {
@@ -278,7 +306,7 @@ pub fn process_json_rpc(ctx: &mut ApiContext, input: &str) -> Value {
 pub fn call_daemon_socket(socket_path: &Path, cmd: &Command) -> Result<Value> {
     let mut last_err = None;
     let mut stream_opt = None;
-    for _ in 0..10 {
+    for _ in 0..SOCKET_CONNECT_RETRIES {
         match UnixStream::connect(socket_path) {
             Ok(s) => {
                 stream_opt = Some(s);
@@ -286,7 +314,7 @@ pub fn call_daemon_socket(socket_path: &Path, cmd: &Command) -> Result<Value> {
             }
             Err(e) => {
                 last_err = Some(e);
-                thread::sleep(Duration::from_millis(25));
+                thread::sleep(Duration::from_millis(SOCKET_CONNECT_RETRY_MS));
             }
         }
     }
@@ -301,7 +329,7 @@ pub fn call_daemon_socket(socket_path: &Path, cmd: &Command) -> Result<Value> {
         }
     };
 
-    let timeout = Some(Duration::from_secs(30));
+    let timeout = Some(Duration::from_secs(SOCKET_CALL_TIMEOUT_SECS));
     let _ = stream.set_read_timeout(timeout);
     let _ = stream.set_write_timeout(timeout);
 

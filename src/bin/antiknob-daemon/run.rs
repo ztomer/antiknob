@@ -8,6 +8,7 @@ use antiknob::host::engine::{EngineEvent, FiredAction};
 use antiknob::host::output::plan;
 use antiknob::host::tap::TapEngine;
 use antiknob::host::HostConfig;
+use antiknob::policy::{LOOP_TICK_MS, TAP_REBUILD_DELAY_SECS};
 
 use super::synth::synthesize;
 use super::tray::{TrayAction, TrayUi};
@@ -232,7 +233,7 @@ pub(crate) fn run_observe(
             h.error = Some(reason.clone());
         }
         let _ = tx.send(DaemonMsg::TapDead(reason));
-        std::thread::sleep(Duration::from_secs(3));
+        std::thread::sleep(Duration::from_secs(TAP_REBUILD_DELAY_SECS));
     });
 
     let mut watch = ConfigWatch::new(config_path);
@@ -249,7 +250,7 @@ pub(crate) fn run_observe(
         None
     };
     let start = Instant::now();
-    let tick = Duration::from_millis(50);
+    let tick = Duration::from_millis(LOOP_TICK_MS);
 
     loop {
         if timeout_secs > 0 && start.elapsed().as_secs() >= timeout_secs {
@@ -332,7 +333,7 @@ pub(crate) fn run_active(
         let start = Instant::now();
         let mut watch = ConfigWatch::new(&watch_path);
         loop {
-            std::thread::sleep(Duration::from_millis(50));
+            std::thread::sleep(Duration::from_millis(LOOP_TICK_MS));
             let now_ms = start.elapsed().as_millis() as u64;
             if let Ok(mut t) = timer_tap.lock() {
                 maybe_reload(&mut t, &mut watch);
@@ -419,7 +420,7 @@ pub(crate) fn run_active(
                 h.error = Some(reason.clone());
             }
             log_tap_warning(&mut last_warning, &reason);
-            std::thread::sleep(Duration::from_secs(3));
+            std::thread::sleep(Duration::from_secs(TAP_REBUILD_DELAY_SECS));
         }
     });
 
@@ -435,7 +436,7 @@ pub(crate) fn run_active(
         None
     };
     loop {
-        std::thread::sleep(Duration::from_millis(50));
+        std::thread::sleep(Duration::from_millis(LOOP_TICK_MS));
         if let Some(tray) = tray.as_mut() {
             tray.refresh(&tap, tap_is_up(&tap_health));
             if let Ok(mut t) = tap.lock() {

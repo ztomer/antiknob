@@ -15,7 +15,7 @@
 use std::path::PathBuf;
 
 use antiknob::api::registry::{self, Kind};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Arg, ArgAction, ArgMatches, Command};
 
 mod binding;
@@ -204,7 +204,8 @@ fn main() -> Result<()> {
                     binding::button_count_for(config)?,
                     0,
                     antiknob::protocol::KnobEvent::RotateCCW,
-                ),
+                )
+                .context("knob slot out of range")?,
             };
             probe::run(control, candidates, layer, width, capture_secs, devices)?
         }

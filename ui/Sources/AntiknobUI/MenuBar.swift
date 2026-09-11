@@ -32,32 +32,28 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
 // MARK: - Menu Bar Icon & Menu
 
+/// The knob's mark, drawn for the menu bar: ring plus pointer dot.
+///
+/// Strokes rather than pixels, legible wherever it lands, and a template
+/// citizen in the menu bar -- light and dark just work.
+struct KnobMark: View {
+    var body: some View {
+        ZStack {
+            Circle().strokeBorder(lineWidth: 2)
+            Circle().fill().frame(width: 3, height: 3).offset(y: -4.5)
+        }
+        .frame(width: 14, height: 14)
+    }
+}
+
 public struct MenuBarIcon: View {
     public init() {}
 
-    private var iconImage: NSImage {
-        if let url = Bundle.main.url(forResource: "ak12-tray@2x", withExtension: "png"),
-           let img = NSImage(contentsOf: url) {
-            img.size = NSSize(width: 18, height: 18)
-            return img
-        }
-        if let url = Bundle.main.url(forResource: "ak12-tray", withExtension: "png"),
-           let img = NSImage(contentsOf: url) {
-            img.size = NSSize(width: 18, height: 18)
-            return img
-        }
-        if let url = Bundle.main.url(forResource: "ak12-1024", withExtension: "png"),
-           let img = NSImage(contentsOf: url) {
-            img.size = NSSize(width: 18, height: 18)
-            return img
-        }
-        let fallback = NSImage(systemSymbolName: "dial.low.fill", accessibilityDescription: "Antiknob") ?? NSImage()
-        fallback.size = NSSize(width: 18, height: 18)
-        return fallback
-    }
-
     public var body: some View {
-        Image(nsImage: iconImage)
+        // Primary, not a fixed ink: the menu bar is dark or light and the
+        // mark must read on both. State lives in the menu itself, not here.
+        KnobMark()
+            .foregroundStyle(.primary)
     }
 }
 

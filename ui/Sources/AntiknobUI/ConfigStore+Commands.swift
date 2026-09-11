@@ -73,10 +73,29 @@ extension ConfigStore {
         isBindingSlots = true
         Task.detached(priority: .userInitiated) {
             do {
-                let status = try SocketClient.shared.bindSlots(layer: layer, dryRun: false)
+                let status = try SocketClient.shared.bindSlots(layer: layer)
                 await MainActor.run { [weak self] in
-                    self?.isBindingSlots = false
-                    self?.statusMessage = status
+                    guard let self else { return }
+                    self.isBindingSlots = false
+                    // Say when the light cannot have followed: the daemon
+                    // syncs the active host layer's mode after a flash, and
+                    // a layer that names no mode implies no write. Without
+                    // this a successful flash with an unchanged light reads
+                    // as a failed one.
+                    var msg = status
+                    let led = self.cfg.layers.indices.contains(self.activeLayerIdx)
+                        ? self.cfg.layers[self.activeLayerIdx].led?
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        : nil
+                    if led == nil || led!.isEmpty {
+                        msg += " — active layer names no backlight mode, light unchanged"
+                    }
+                    self.statusMessage = msg
+                    // The knob's mode changed underneath the layer panes;
+                    // they must not keep drawing the old answer. Same as
+                    // flashKeymap below, which already did this.
+                    self.refreshKnobMode()
+                    self.refreshStatus()
                 }
             } catch {
                 await MainActor.run { [weak self] in

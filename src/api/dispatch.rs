@@ -6,7 +6,7 @@ use super::types::{led_mode_name, Command, PowerStatus};
 use crate::apps;
 use crate::config::DeviceConfig;
 use crate::device;
-use crate::host::bind::{flash_slot_bindings, BIND_LAYERS};
+use crate::firmware::{DEVICE_LAYERS, GESTURES_PER_KNOB};
 use crate::host::HostConfig;
 use crate::protocol::{self, Action};
 use anyhow::{Context, Result};
@@ -34,7 +34,7 @@ use describe::describe_commands;
 
 #[path = "device_cmds.rs"]
 mod device_cmds;
-use device_cmds::{bind_sequence, read_slots, vocabulary_reply};
+use device_cmds::{bind_sequence, bind_slots, read_slots, set_led, vocabulary_reply};
 
 pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
     match cmd {
@@ -181,7 +181,7 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                 // than left to infer it from silence.
                 let arrangement = crate::host::device_binding::arrangement(
                     &lock.config().bound_device_layers,
-                    crate::device::DEVICE_LAYERS,
+                    crate::firmware::DEVICE_LAYERS,
                 );
                 Ok(json!({
                     "layer": layer.name,
@@ -244,37 +244,7 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
             None => anyhow::bail!("Daemon tap engine not running; cannot pin a variant"),
         },
 
-        Command::SetLed { layer, mode, color } => {
-            if mode.len() > 64 {
-                anyhow::bail!("LED mode string exceeds 64 characters");
-            }
-            if layer >= 16 {
-                anyhow::bail!("Layer index {} exceeds maximum of 15", layer);
-            }
-            let spec = match color {
-                Some(c) if !c.is_empty() => format!("{} {}", mode, c),
-                _ => mode,
-            };
-            let packet = protocol::build_led_packet(layer, &spec)?;
-            // Written and then READ BACK on the same device handle. This
-            // firmware accepts an LED write, stores it, and changes nothing
-            // when the init packet is missing, so "the bytes went out" has
-            // never been evidence that the light changed. The reply carries
-            // what the device holds now, and the settings app renders that
-            // instead of the word "OK" it used to invent.
-            let applied = device::with_device(move |dev| {
-                device::send_led(dev, &packet)?;
-                device::read_led_mode(dev, layer)
-            })
-            .context("Cannot drive the Anticater USB device")?;
-            Ok(json!({
-                "ok": true,
-                "layer": layer,
-                "spec": spec,
-                "mode": applied,
-                "mode_name": led_mode_name(applied)
-            }))
-        }
+        Command::SetLed { layer, mode, color } => set_led(layer, mode, color),
 
         Command::GetLed { layer } => {
             let mode = device::with_device(move |dev| device::read_led_mode(dev, layer))
@@ -297,11 +267,16 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
             // Five slots per knob, not three. Reading `buttons + 3` stopped
             // the walk two slots short of the hold+twist pair, so the two
             // gestures the classifier now examines were never in the table
-            // it examined them in.
-            let slots =
-                u8::try_from(buttons + crate::protocol::GESTURES_PER_KNOB).unwrap_or(u8::MAX);
+            // it examined them in. Absurd counts refuse instead of
+            // saturating into a 255-wide walk at the firmware.
+            let slots = u8::try_from(
+                buttons
+                    .checked_add(GESTURES_PER_KNOB)
+                    .context("button count out of range")?,
+            )
+            .context("button count out of range")?;
             let table = device::with_device(move |dev| {
-                Ok(device::read_slot_table(dev, slots, device::DEVICE_LAYERS))
+                Ok(device::read_slot_table(dev, slots, DEVICE_LAYERS))
             })
             .context("Cannot read the slot table from the Anticater USB device")?;
             let mode = device::mode::classify(&table, buttons);
@@ -316,8 +291,7 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
             )
             .map(|c| c.bound_device_layers)
             .unwrap_or_default();
-            let arrangement =
-                crate::host::device_binding::arrangement(&bound, device::DEVICE_LAYERS);
+            let arrangement = crate::host::device_binding::arrangement(&bound, DEVICE_LAYERS);
             Ok(json!({
                 "mode": mode.as_str(),
                 "buttons": buttons,
@@ -326,7 +300,7 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                 // declares the wrong number moves every gesture along
                 // without any surface saying so -- so the surfaces say so.
                 "knob_key_ids": crate::protocol::KnobEvent::ALL
-                    .iter().map(|e| crate::protocol::key_id_for_knob(buttons, 0, *e)).collect::<Vec<u8>>(),
+                    .iter().map(|e| crate::protocol::key_id_for_knob(buttons, 0, *e)).collect::<Result<Vec<u8>, _>>().context("knob slots out of range")?,
                 "slots_read": table.len(),
                 "host_layers_can_fire": mode == device::mode::KnobMode::HostTranslate,
                 "device_binding": arrangement,
@@ -334,49 +308,14 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
             }))
         }
 
-        Command::BindSlots { layers, buttons } => {
-            let target_layers = layers.unwrap_or_else(|| BIND_LAYERS.to_vec());
-            let flash_layers = target_layers.clone();
-            // Knob slots follow the buttons; see `protocol::key_id_for_knob`.
-            let buttons = match buttons {
-                Some(n) => n,
-                None => installed_button_count().context(
-                    "bind_slots needs the device's button count and no layout was readable; pass `buttons` explicitly",
-                )?,
-            };
-            let key_ids: Vec<u8> = crate::protocol::KnobEvent::ALL
-                .iter()
-                .map(|e| crate::protocol::key_id_for_knob(buttons, 0, *e))
-                .collect();
-            let to_flash = flash_layers.clone();
-            let count =
-                device::with_device(move |dev| flash_slot_bindings(dev, buttons, &to_flash))
-                    .context("Cannot flash slot bindings to the Anticater USB device")?;
-
-            if let Some(engine) = &ctx.tap_engine {
-                let mut lock = engine.lock().unwrap();
-                let mut new_cfg = lock.config().clone();
-                new_cfg.bound_device_layers = flash_layers.clone();
-                lock.apply_config(new_cfg);
-                let _ = crate::host::device_binding::record_bound_layers(
-                    &ctx.config_path,
-                    &flash_layers,
-                );
-                let active = lock.layer_idx();
-                crate::host::led_sync::sync_led(lock.config(), active);
-            }
-
-            Ok(json!({
-                "ok": true,
-                "flashed_slots": count,
-                "layers": target_layers,
-                "buttons": buttons,
-                "key_ids": key_ids
-            }))
-        }
+        Command::BindSlots {
+            layers,
+            layer,
+            buttons,
+        } => bind_slots(ctx, layers, layer, buttons),
 
         Command::UploadKeymap { yaml, layer } => {
-            if yaml.len() > 65_536 {
+            if yaml.len() > crate::policy::KEYMAP_YAML_MAX_BYTES {
                 anyhow::bail!("Keymap YAML exceeds 64KB size limit");
             }
             let cfg: DeviceConfig =
@@ -398,19 +337,19 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
             let mut led_packets: Vec<Vec<u8>> = Vec::new();
             for layer_idx in selected {
                 let lcfg = &cfg.layers[layer_idx];
-                let layer_u8 = layer_idx as u8;
+                let layer_u8 = u8::try_from(layer_idx).context("layer index out of range")?;
                 let mut button_count = 0;
                 for row in &lcfg.buttons {
                     for key_str in row {
                         let action = Action::parse(key_str)?;
-                        let key_id = protocol::key_id_for_button(button_count);
+                        let key_id = protocol::key_id_for_button(button_count)?;
                         slot_packets.push(action.to_packet(key_id, layer_u8));
                         button_count += 1;
                     }
                 }
                 for (knob_idx, knob) in lcfg.knobs.iter().enumerate() {
                     for (event, binding) in knob.bindings() {
-                        let key_id = protocol::key_id_for_knob(button_count, knob_idx, event);
+                        let key_id = protocol::key_id_for_knob(button_count, knob_idx, event)?;
                         slot_packets.push(binding.to_packet(key_id, layer_u8)?);
                     }
                 }
@@ -461,7 +400,7 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
         } => bind_sequence(key, layer, &actions, delay_ms),
 
         Command::SendRaw { bytes } => {
-            if bytes.len() > 64 {
+            if bytes.len() > crate::policy::RAW_PAYLOAD_MAX_LEN {
                 anyhow::bail!(
                     "Raw payload exceeds 64-byte limit (received {} elements)",
                     bytes.len()

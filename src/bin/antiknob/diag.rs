@@ -6,6 +6,7 @@
 //! for protocol work. Nothing here interprets a config.
 
 use antiknob::device;
+use antiknob::firmware::{DEVICE_LAYERS, SLOT_BURST_QUERIES, SLOT_BURST_WIDTH};
 
 use anyhow::{Context, Result};
 use std::thread::sleep;
@@ -59,7 +60,7 @@ pub fn run_listen(timeout_secs: u64, devices: Vec<String>) -> Result<()> {
             "[ ==> ] Snooping for {}s: twist / press / hold the knob (mouse stays usable)...",
             timeout_secs
         );
-        let mut buf = [0u8; 64];
+        let mut buf = [0u8; antiknob::firmware::REPORT_LEN];
         while Instant::now() < deadline {
             for iface in &ifaces {
                 match iface.device.read_timeout(&mut buf, 20) {
@@ -99,8 +100,7 @@ pub fn run_read_full() -> Result<()> {
     println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
     println!(
         "[ ==> ] Reading the whole table ({} burst queries at width {})...",
-        device::BURST_QUERIES,
-        device::BURST_WIDTH
+        SLOT_BURST_QUERIES, SLOT_BURST_WIDTH
     );
     let table = device::with_device(|dev| Ok(device::read_full_table(dev)))?;
     let mut bound = 0usize;
@@ -128,14 +128,14 @@ pub fn run_read_slots(slots_per_layer: u8, wide: bool) -> Result<()> {
     // asks the device for its actual table using the addressing scheme in
     // `device::slot_table_addresses`.
     let groups: Vec<u8> = if wide {
-        (0x00u8..=0x40u8).collect()
+        (antiknob::policy::WIDE_GROUP_FIRST..=antiknob::policy::WIDE_GROUP_LAST).collect()
     } else {
         vec![slots_per_layer]
     };
     let counters: u8 = if wide {
-        8
+        antiknob::policy::WIDE_COUNTERS
     } else {
-        slots_per_layer.saturating_mul(device::DEVICE_LAYERS)
+        slots_per_layer.saturating_mul(DEVICE_LAYERS)
     };
     println!(
         "[ ==> ] Reading slot table ({} group(s), counters 1-{})...",
@@ -163,7 +163,7 @@ pub fn run_read_slots(slots_per_layer: u8, wide: bool) -> Result<()> {
                         );
                     }
                 }
-                sleep(Duration::from_millis(50));
+                sleep(Duration::from_millis(antiknob::firmware::SLOT_WALK_GAP_MS));
             }
         }
         Ok(())
@@ -186,9 +186,9 @@ pub fn run_raw(bytes: Vec<String>, read: bool, reads: usize) -> Result<()> {
         // not answer at all is a normal outcome when sweeping, so a timeout
         // ends the burst rather than failing.
         let mut out = Vec::new();
-        let mut buf = [0u8; 64];
+        let mut buf = [0u8; antiknob::firmware::REPORT_LEN];
         for _ in 0..reads {
-            match dev.read_timeout(&mut buf, 250) {
+            match dev.read_timeout(&mut buf, antiknob::policy::RAW_READ_TIMEOUT_MS as i32) {
                 Ok(n) if n > 0 => out.push(buf[..n].to_vec()),
                 _ => break,
             }
@@ -218,7 +218,7 @@ pub fn run_raw(bytes: Vec<String>, read: bool, reads: usize) -> Result<()> {
 /// fails to apply: a diagnostic that leaves the hardware changed is a
 /// diagnostic nobody runs twice.
 pub fn run_led_probe(layer: u8, dwell_secs: u64, color: &str) -> Result<()> {
-    use antiknob::protocol::LED_MODE_NAMES;
+    use antiknob::firmware::LED_MODE_NAMES;
 
     let before = device::with_device(move |dev| device::read_led_mode(dev, layer))
         .context("cannot read the layer's current LED mode; refusing to change it")?;
@@ -227,6 +227,9 @@ pub fn run_led_probe(layer: u8, dwell_secs: u64, color: &str) -> Result<()> {
         layer, before
     );
     println!("        Watch the knob. Report which mode, if any, BREATHES.");
+    println!("        If a mode stops rendering mid-walk, the firmware renderer");
+    println!("        has wedged: unplug/replug the knob, then re-run -- the modes");
+    println!("        already shown are still valid.");
     for (idx, name) in LED_MODE_NAMES.iter().enumerate() {
         let spec = if *name == "off" {
             (*name).to_string()
@@ -241,8 +244,11 @@ pub fn run_led_probe(layer: u8, dwell_secs: u64, color: &str) -> Result<()> {
             }
         };
         let readback = device::with_device(move |dev| {
-            device::send_report(dev, &packet)?;
-            device::send_commit(dev)?;
+            // Through `send_led`, like every other LED write: a bare
+            // report stores the mode without rendering it, which would
+            // make every probed mode read back correctly while the knob
+            // shows none of them -- a probe that cannot fail is no probe.
+            device::send_led(dev, &packet)?;
             sleep(Duration::from_millis(150));
             device::read_led_mode(dev, layer)
         });
@@ -254,12 +260,8 @@ pub fn run_led_probe(layer: u8, dwell_secs: u64, color: &str) -> Result<()> {
     }
 
     let restore = format!("mode{before}");
-    let restored = antiknob::protocol::build_led_packet(layer, &restore).and_then(|p| {
-        device::with_device(move |dev| {
-            device::send_report(dev, &p)?;
-            device::send_commit(dev)
-        })
-    });
+    let restored = antiknob::protocol::build_led_packet(layer, &restore)
+        .and_then(|p| device::with_device(move |dev| device::send_led(dev, &p)));
     match restored {
         Ok(()) => println!("[ Ok  ] Restored layer {layer} to mode {before}."),
         Err(e) => println!(

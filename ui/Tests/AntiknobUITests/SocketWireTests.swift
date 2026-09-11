@@ -109,4 +109,47 @@ struct SocketWireTests {
         let result = try SocketWire.decodeResponse(data)
         #expect((result as? [String: Any])?.isEmpty == true)
     }
+
+    /// `bind_slots` speaks the registry contract: singular `layer`, omitted
+    /// for all layers, and no `dry_run` (registry: CLI-only). The client
+    /// used to send `dry_run` always and the daemon ignored it.
+    @Test("bind_slots params use the singular layer and no dry_run")
+    func bindSlotsParamsShape() {
+        let all = SocketWire.bindSlotsParams(layer: nil)
+        #expect(all["layer"] == nil)
+        #expect(all["layers"] == nil)
+        #expect(all["dry_run"] == nil)
+        #expect(all["dryRun"] == nil)
+
+        let one = SocketWire.bindSlotsParams(layer: 1)
+        #expect(one["layer"] as? Int == 1)
+        #expect(one["layers"] == nil)
+        #expect(one["dry_run"] == nil)
+    }
+
+    /// The summary is built from the daemon's read-back, never a literal.
+    /// The client used to read a `status` key the daemon never sends, so a
+    /// `?? "OK"` fallback reported success with a string the app made up.
+    @Test("bind_slots message names what the daemon flashed")
+    func bindSlotsMessageFromReadback() throws {
+        let msg = try SocketWire.bindSlotsMessage(from: [
+            "ok": true, "flashed_slots": 15,
+            "layers": [0, 1, 2], "key_ids": [2, 3, 4, 5, 6]
+        ])
+        #expect(msg.contains("15"))
+        #expect(msg.contains("0, 1, 2"))
+        #expect(msg.contains("2, 3, 4, 5, 6"))
+        #expect(!msg.contains("OK"))
+    }
+
+    @Test("bind_slots message without a count throws instead of inventing one")
+    func bindSlotsMessageWithoutCountThrows() {
+        #expect(throws: SocketError.self) {
+            try SocketWire.bindSlotsMessage(from: ["ok": true])
+        }
+        // The old fallback shape must never read as success again.
+        #expect(throws: SocketError.self) {
+            try SocketWire.bindSlotsMessage(from: ["status": "OK"])
+        }
+    }
 }

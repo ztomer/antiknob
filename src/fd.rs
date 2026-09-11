@@ -40,27 +40,18 @@
 //! at byte 21 -- and only the buttons (1 left, 2 right, 4 middle) and the
 //! wheel (`01` / `ff`) have been measured, not the remaining two bytes.
 
+use crate::firmware::{
+    FD_CMD, FD_ENTRY_LEN, FD_HEADER_LEN, FD_MAX_ENTRIES, FD_MOD_ENTRY_BASE, REPORT_ID, REPORT_LEN,
+};
 use crate::protocol::Action;
 use anyhow::{anyhow, Result};
 
-/// The write command byte. `0xFE` is the other one; see the module note.
-pub const CMD: u8 = 0xFD;
-
-/// Bytes before the first entry: report, command, key, layer, kind, b5, len.
-pub const HEADER_LEN: usize = 7;
-
-/// Delay hi, delay lo, value.
-pub const ENTRY_LEN: usize = 3;
-
-/// How many entries fit in one 64-byte report.
-pub const MAX_ENTRIES: usize = (64 - HEADER_LEN) / ENTRY_LEN;
-
-/// The modifier entry for HID modifier bit `n`, `0xF1 + n`.
+/// The modifier entry for HID modifier bit `n`, `FD_MOD_ENTRY_BASE + n`.
 ///
 /// Measured one at a time: `Ctrl+` is `F1`, `Shift+` `F2`, `Alt+` `F3`,
 /// `Win+` and `command` both `F4`, then `F5..F8` for the right-hand four.
 pub fn modifier_entry(bit: u8) -> u8 {
-    0xF1 + bit
+    FD_MOD_ENTRY_BASE + bit
 }
 
 /// What a record declares itself to hold.
@@ -195,19 +186,19 @@ pub fn build_packet(key_id: u8, layer: u8, steps: &[Step]) -> Result<Vec<u8>> {
         ));
     }
 
-    if entries.len() > MAX_ENTRIES {
+    if entries.len() > FD_MAX_ENTRIES {
         return Err(anyhow!(
             "this sequence needs {} entries but one slot holds {}; a truncated \
              sequence would flash as a success and run the wrong thing. Note a \
              chord costs one entry per modifier plus one for the key",
             entries.len(),
-            MAX_ENTRIES
+            FD_MAX_ENTRIES
         ));
     }
 
-    let mut packet = vec![0u8; 64];
-    packet[0] = 0x03;
-    packet[1] = CMD;
+    let mut packet = vec![0u8; REPORT_LEN];
+    packet[0] = REPORT_ID;
+    packet[1] = FD_CMD;
     packet[2] = key_id;
     packet[3] = layer + 1;
     packet[4] = kind as u8;
@@ -216,7 +207,7 @@ pub fn build_packet(key_id: u8, layer: u8, steps: &[Step]) -> Result<Vec<u8>> {
     packet[6] = entries.len() as u8;
 
     for (i, (delay, value)) in entries.iter().enumerate() {
-        let at = HEADER_LEN + i * ENTRY_LEN;
+        let at = FD_HEADER_LEN + i * FD_ENTRY_LEN;
         packet[at] = (delay >> 8) as u8;
         packet[at + 1] = (delay & 0xFF) as u8;
         packet[at + 2] = *value;
@@ -234,20 +225,20 @@ pub fn build_packet(key_id: u8, layer: u8, steps: &[Step]) -> Result<Vec<u8>> {
 /// mean nothing, which is exactly the sort of thing this repo has misread
 /// before.
 pub fn wipe_packet(key_id: u8, layer: u8) -> Vec<u8> {
-    let mut packet = vec![0u8; 64];
-    packet[0] = 0x03;
-    packet[1] = CMD;
+    let mut packet = vec![0u8; REPORT_LEN];
+    packet[0] = REPORT_ID;
+    packet[1] = FD_CMD;
     packet[2] = key_id;
     packet[3] = layer + 1;
     packet[4] = Kind::Keyboard as u8;
-    packet[6] = MAX_ENTRIES as u8 - 1;
+    packet[6] = FD_MAX_ENTRIES as u8 - 1;
     packet
 }
 
 /// How many bytes of a record carry the binding.
 fn significant_len(record: &[u8]) -> Option<usize> {
     let entries = *record.get(6)? as usize;
-    let end = HEADER_LEN + entries * ENTRY_LEN;
+    let end = FD_HEADER_LEN + entries * FD_ENTRY_LEN;
     (end <= record.len()).then_some(end)
 }
 

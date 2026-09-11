@@ -65,6 +65,19 @@ struct LayerDetail: View {
                     }
                 } header: {
                     Text("Layers")
+                } footer: {
+                    // Expectation-setting, not decoration. Two facts users
+                    // otherwise discover by worrying: a flash takes seconds
+                    // and ends in the row above reading Flashed, and a color
+                    // change can REQUIRE a power-cycle -- a wedged renderer
+                    // holds its last effect while every readout answers
+                    // correctly, so no further write will reach it.
+                    Text("Flash Knob writes ⌃⌥⇧F16..F20 into the knob so its gestures reach Antiknob; "
+                        + "it takes a few seconds and the row reads Flashed when it lands. "
+                        + "If a new color is stored but the ring doesn't change, unplug and replug "
+                        + "the knob — only a power-cycle reaches a wedged renderer.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             }
             .formStyle(.grouped)

@@ -18,11 +18,9 @@
 
 use crate::device::send_report;
 use crate::device::HidDevice;
-use crate::protocol::{key_id_for_knob, Action, KnobEvent, GESTURES_PER_KNOB};
-use anyhow::Result;
-
-/// Device layers that carry the slot bindings (3-layer firmware model).
-pub const BIND_LAYERS: [u8; 3] = [0, 1, 2];
+use crate::firmware::{GESTURES_PER_KNOB, SLOT_WRITE_GAP_MS};
+use crate::protocol::{key_id_for_knob, Action, KnobEvent};
+use anyhow::{Context, Result};
 
 /// (gesture, slot F-key name) pairs bound by the plan, in flash order.
 ///
@@ -93,7 +91,9 @@ pub fn slot_binding_plan(button_count: usize, layers: &[u8]) -> Result<Vec<SlotB
     for &layer in layers {
         for (event, chord) in SLOT_SPECS {
             plan.push(SlotBinding {
-                key_id: key_id_for_knob(button_count, 0, event),
+                key_id: key_id_for_knob(button_count, 0, event).with_context(|| {
+                    format!("knob slot out of range for {button_count} button(s)")
+                })?,
                 layer,
                 action: Action::parse(chord)?,
             });
@@ -119,7 +119,7 @@ pub fn flash_slot_bindings(dev: &HidDevice, button_count: usize, layers: &[u8]) 
     for packet in binding_packets(button_count, layers)? {
         send_report(dev, &packet)?;
         sent += 1;
-        std::thread::sleep(std::time::Duration::from_millis(15));
+        std::thread::sleep(std::time::Duration::from_millis(SLOT_WRITE_GAP_MS));
     }
     crate::device::send_commit(dev)?;
     Ok(sent)
@@ -128,6 +128,7 @@ pub fn flash_slot_bindings(dev: &HidDevice, button_count: usize, layers: &[u8]) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::firmware::BIND_LAYERS;
     use crate::host::{slot_chord, Gesture};
 
     /// The device layout this VK01 actually has: one button, so the knob's
@@ -267,7 +268,8 @@ mod tests {
         {
             let p = &packets[i + 1];
             assert_eq!(p[2], key_id, "slot {i}");
-            let last = crate::fd::HEADER_LEN + (p[6] as usize - 1) * crate::fd::ENTRY_LEN;
+            let last = crate::firmware::FD_HEADER_LEN
+                + (p[6] as usize - 1) * crate::firmware::FD_ENTRY_LEN;
             assert_eq!(p[last + 2], code, "slot {i}");
         }
         // Layer 1 uses 1-based layer byte 2.

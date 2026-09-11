@@ -4,7 +4,8 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::device::{slot_table_addresses, DEVICE_LAYERS};
+    use crate::device::slot_table_addresses;
+    use crate::firmware::DEVICE_LAYERS;
 
     /// Every slot exactly once: the walk that missed one confirmed 17 of 18
     /// and reported the last as "not seen", which reads like a failed write

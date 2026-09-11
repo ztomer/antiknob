@@ -53,7 +53,7 @@ struct ServicesPane: View {
                     value: store.daemonConnected ? "Connected" : "Offline",
                     valueStyle: store.daemonConnected ? .primary : .secondary
                 ) {
-                    StatusDot(color: store.daemonConnected ? .green : .orange)
+                    StatusSquare(color: store.daemonConnected ? .green : .orange)
                 }
 
                 GridRow {

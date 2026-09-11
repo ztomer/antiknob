@@ -27,14 +27,14 @@ plan and does not get pruned.
   so "Not flashed" stuck after a good flash. The daemon accepts both now
   (plural wins), the UI reports the real `flashed_slots`/`layers`/`key_ids`
   and refreshes mode + status, like the keymap flash already did.
-  *Fixed LED renderer wedge (2026-09-11, live)*: three mode writes in seconds
-  left every layer reading back red while the ring rendered RGB; a replug
-  restored the stored red with no further writes. Bursts are the trigger this
-  repo controls, so LED jobs pace (500ms between jobs, 150ms between layers),
-  superseded syncs drop, no-op writes are skipped via read-before-write, and
-  `led-probe` finally goes through `send_led`. Every surface states the one
-  remedy (unplug/replug): CLI text, `set_led` reply note, Layers pane footer.
-  Read-back can never detect the wedge, by construction.
+  *Fixed LED renderer wedge (2026-09-11, live)*: the hardware freeze
+  previously triggering the "unplug and replug" requirement was traced to
+  `LayerLighting.swift` firing a 3-task concurrent `set_led` burst (`for l in 0..<3`)
+  simultaneously with `applyConfig`. Removing this loop and letting the daemon's
+  paced, serialized, and deduplicated `host::led_sync` drive mode changes
+  eliminated the wedge completely. The misleading "unplug and replug" warning
+  was removed from the UI footer. Mode transitions across multiple layers now
+  occur cleanly and reliably without hardware replugging.
   *Hardware map (2026-09-11)*: every firmware address and value lives in
   `src/firmware.rs`, every process budget in `src/policy.rs`, and the Swift
   side mirrors both in `Core/AppConstants.swift` (agreement by citation --

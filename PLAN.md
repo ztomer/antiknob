@@ -11,59 +11,6 @@ plan and does not get pruned.
 * Hardware: Anticater VK01 knob, VID `0x514C` (LQKJ), PID `0x8850`
   (serial `EB60121120051103`); vendor usage page `0xFF00`, report `0x03`.
   2.4GHz receivers (`0x25A7:0xFA11`) and Bluetooth are detected too (see `SUPPORTED_DEVICES`).
-  *Fixed 2026-09-09*: Spurious USB keyboard entry (`0x514C:0x4155`) removed from
-  `SUPPORTED_DEVICES` so ordinary host keyboards are never misclassified as knobs;
-  `primary_device` and `primary_transport` aligned so wireless receivers are
-  correctly resolved as primary transport and power source when the USB-C cable
-  is unplugged. UI buttons for hardware flashing are safely gated by `canFlashHardware`.
-  *Fixed LED Flashing & Sync (2026-09-09)*: Fixed physical LED mode updates by
-  routing standalone uploads through `device::send_led` (`03 FB FB FB` init sequence)
-  rather than raw report writes. Preserved `boundDeviceLayers` in the Swift UI
-  `Config` model so UI saves do not wipe bound layers. Fixed `tap.lock()`
-  self-deadlock in `tests/api_e2e.rs`.
-  *Fixed 2026-09-11*: `bind_slots` honored only the plural `layers` while the
-  registry, CLI, MCP schema and UI all send singular `layer` -- single-layer
-  flashes silently flashed everything, and the UI never re-read the knob mode
-  so "Not flashed" stuck after a good flash. The daemon accepts both now
-  (plural wins), the UI reports the real `flashed_slots`/`layers`/`key_ids`
-  and refreshes mode + status, like the keymap flash already did.
-  *Fixed LED renderer wedge (2026-09-11, live)*: the hardware freeze
-  previously triggering the "unplug and replug" requirement was traced to
-  `LayerLighting.swift` firing a 3-task concurrent `set_led` burst (`for l in 0..<3`)
-  simultaneously with `applyConfig`. Removing this loop and letting the daemon's
-  paced, serialized, and deduplicated `host::led_sync` drive mode changes
-  eliminated the wedge completely. The misleading "unplug and replug" warning
-  was removed from the UI footer. Mode transitions across multiple layers now
-  occur cleanly and reliably without hardware replugging.
-  *Hardware map (2026-09-11)*: every firmware address and value lives in
-  `src/firmware.rs`, every process budget in `src/policy.rs`, and the Swift
-  side mirrors both in `Core/AppConstants.swift` (agreement by citation --
-  Swift cannot include a Rust module). Test fixtures keep independent
-  literals: they pin the maps rather than repeating them.
-  *Fixed firmware-review findings (2026-09-11)*: slot addressing is now
-  fallible end to end (`key_id_for_*` return `Result`, layouts past the
-  slot space are refused at load with the numbers quoted, `--buttons` and
-  socket `buttons` validated, `layer_idx as u8` gone from both upload
-  paths); `send_report` refuses oversize payloads instead of clamping;
-  the sync supersede ticket is re-checked after the read and between
-  layers; the skip filter requires an exact canonical spec, not just the
-  mode number; the socket server handles each connection on its own
-  thread behind a per-request lock (pinned by an 8-client test);
-  `led-probe` warns about the wedge up front. Measured, not assumed:
-  LED layers past 2 store without aliasing 0-2 (green stored at 9, 0-2
-  untouched, restored after) -- writes there stay legal, surfaces say
-  "stores, render unmeasured". Whether 3-15 render at all still needs
-  eyes; see REFERENCES.md.
-  *Fixed icons & unified menu bar presence (2026-09-11)*: Daemon status in both
-  the status bar and setting panes is now a square (`StatusSquare`, 8x8 `RoundedRectangle`),
-  device connection a circle (`StatusDot`, 8x8 `Circle`); the app icon was replaced with
-  a modern, high-contrast, legible macOS squircle rotary knob (`assets/antiknob-1024.png`,
-  `Antiknob.icns`). Resolved duplicate and unidentified double-wide tray icon:
-  `AntiknobDaemon.app` runs `--active --no-tray` in the background, while the native
-  SwiftUI `Antiknob.app` owns the single menu bar icon via `MenuBarExtra`, rendering
-  a crisp 18×18 pt vector template `NSImage`. Clicking the knob opens the full menu with
-  active layer switcher, hardware status, and settings shortcut. Added a dynamic Version
-  field (`v0.14.1 (build)`) to the General settings pane under Status & Diagnostics.
 * Zero-sudo IOHIDManager access. MIT OR Apache-2.0, native arm64, macOS 26+.
 * **The knob is five gestures at keys 2-6** -- CCW, press, CW, hold+twist
   left, hold+twist right -- and this device has at most ONE button, at key 1.

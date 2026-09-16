@@ -156,7 +156,7 @@ layers:
         cw: volumeup
     led: "mode1 white"
 "#;
-    let cfg: DeviceConfig = serde_yaml::from_str(yaml).unwrap();
+    let cfg: DeviceConfig = serde_yaml_ng::from_str(yaml).unwrap();
     assert_eq!(cfg.model, "Anticater VK01");
     assert_eq!(cfg.layers.len(), 1);
     assert_eq!(

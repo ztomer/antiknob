@@ -212,7 +212,7 @@ impl DeviceConfig {
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let content = fs::read_to_string(path.as_ref())
             .with_context(|| format!("Failed to read config file at {:?}", path.as_ref()))?;
-        let config: Self = serde_yaml::from_str(&content)
+        let config: Self = serde_yaml_ng::from_str(&content)
             .with_context(|| format!("Failed to parse YAML syntax in {:?}", path.as_ref()))?;
         Ok(config)
     }

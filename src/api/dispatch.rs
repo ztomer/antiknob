@@ -319,7 +319,7 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                 anyhow::bail!("Keymap YAML exceeds 64KB size limit");
             }
             let cfg: DeviceConfig =
-                serde_yaml::from_str(&yaml).context("Invalid keymap YAML configuration")?;
+                serde_yaml_ng::from_str(&yaml).context("Invalid keymap YAML configuration")?;
             cfg.validate()?;
 
             let selected: Vec<usize> = match layer {

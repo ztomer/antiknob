@@ -100,7 +100,7 @@ fn an_explicit_path_wins_and_seeds_nothing() {
 /// use writes a file that immediately fails to load.
 #[test]
 fn the_packaged_starter_layout_is_valid() {
-    let cfg: DeviceConfig = serde_yaml::from_str(STARTER_CONFIG).expect("starter parses");
+    let cfg: DeviceConfig = serde_yaml_ng::from_str(STARTER_CONFIG).expect("starter parses");
     cfg.validate().expect("starter validates");
     // ONE button, because keys 2-6 are all gestures and there is no room
     // for more. Declaring three pushed every gesture two slots along.
@@ -119,7 +119,7 @@ fn the_packaged_starter_layout_is_valid() {
 /// colours asked for, not whatever survived an edit.
 #[test]
 fn the_starter_layout_gives_each_layer_its_own_effect() {
-    let cfg: DeviceConfig = serde_yaml::from_str(STARTER_CONFIG).expect("starter parses");
+    let cfg: DeviceConfig = serde_yaml_ng::from_str(STARTER_CONFIG).expect("starter parses");
     // Layers are told apart by COLOUR. The note this replaces said that
     // was impossible because the knob has one colour -- it does not:
     // mode 1 is red and mode 2 is green, which is why setting mode 1 to
@@ -136,7 +136,7 @@ fn the_starter_layout_gives_each_layer_its_own_effect() {
 /// second one and is no longer refused -- the vendor app sends it.
 #[test]
 fn the_third_layer_uses_the_multicoloured_mode() {
-    let cfg: DeviceConfig = serde_yaml::from_str(STARTER_CONFIG).expect("starter parses");
+    let cfg: DeviceConfig = serde_yaml_ng::from_str(STARTER_CONFIG).expect("starter parses");
     assert_eq!(cfg.layers[2].led.as_deref(), Some("rainbow"));
     let packet = crate::protocol::build_led_packet(2, "rainbow").expect("rainbow packet");
     assert_eq!(&packet[2..5], &[0xB0, 0x02, 0x04]);
@@ -219,7 +219,7 @@ layers:
           steps: ["cmd-a", "cmd-c"]
           delay_ms: 120
 "#;
-    let cfg: DeviceConfig = serde_yaml::from_str(y).expect("parses");
+    let cfg: DeviceConfig = serde_yaml_ng::from_str(y).expect("parses");
     cfg.validate().expect("valid");
     let knob = &cfg.layers[0].knobs[0];
 
@@ -253,7 +253,7 @@ layers:
 /// make `steps: [x]` and `x` behave differently from how they read.
 #[test]
 fn a_single_element_list_is_still_a_sequence() {
-    let b: Binding = serde_yaml::from_str("[\"cmd-c\"]").unwrap();
+    let b: Binding = serde_yaml_ng::from_str("[\"cmd-c\"]").unwrap();
     assert!(b.is_sequence());
     assert_eq!(b.to_packet(4, 0).unwrap()[1], 0xFD);
 }
@@ -263,7 +263,7 @@ fn a_single_element_list_is_still_a_sequence() {
 #[test]
 fn a_binding_the_device_cannot_store_is_refused_when_it_loads() {
     // Media cannot chain: the firmware keeps one action per slot.
-    let media: Binding = serde_yaml::from_str("[\"volumeup\", \"next\"]").unwrap();
+    let media: Binding = serde_yaml_ng::from_str("[\"volumeup\", \"next\"]").unwrap();
     let err = media.validate().expect_err("a media chain must be refused");
     assert!(err.to_string().contains("one media action"), "{err}");
 

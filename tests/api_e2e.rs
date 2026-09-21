@@ -109,6 +109,7 @@ fn test_e2e_mcp_server_protocol_flow() {
     let init_resp = handle_mcp_request(&mut ctx, &init_req.to_string()).unwrap();
     assert_eq!(init_resp["id"], 1);
     assert_eq!(init_resp["result"]["serverInfo"]["name"], "antiknob");
+    assert_eq!(init_resp["result"]["protocolVersion"], "2024-11-05");
 
     // 2. ping
     let ping_req = json!({
@@ -162,6 +163,62 @@ fn test_e2e_mcp_server_protocol_flow() {
     assert_eq!(call2_resp["id"], 5);
     let content2 = call2_resp["result"]["content"][0]["text"].as_str().unwrap();
     assert!(content2.contains("\"apps\":"));
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn test_e2e_mcp_initialize_negotiates_sep2575() {
+    let dir = temp_api_dir("mcp_proto_new");
+    let config_path = dir.join("host.json");
+    let initial_config = HostConfig::default_config();
+    fs::write(&config_path, initial_config.to_json_pretty()).unwrap();
+
+    let mut ctx = ApiContext::new(config_path, None);
+
+    // SEP-2575 client: asks for 2026-07-28 with _meta, gets 2026-07-28 back.
+    let init_req = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2026-07-28",
+            "clientInfo": {"name": "test-client", "version": "1.0"},
+            "_meta": {
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "clientCapabilities": {},
+                "clientInfo": {"name": "test-client", "version": "1.0"}
+            }
+        }
+    });
+    let init_resp = handle_mcp_request(&mut ctx, &init_req.to_string()).unwrap();
+    assert_eq!(init_resp["id"], 1);
+    assert_eq!(init_resp["result"]["protocolVersion"], "2026-07-28");
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn test_e2e_mcp_initialize_unknown_version_falls_back_to_latest() {
+    let dir = temp_api_dir("mcp_proto_fallback");
+    let config_path = dir.join("host.json");
+    let initial_config = HostConfig::default_config();
+    fs::write(&config_path, initial_config.to_json_pretty()).unwrap();
+
+    let mut ctx = ApiContext::new(config_path, None);
+
+    let init_req = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2099-01-01",
+            "clientInfo": {"name": "test-client", "version": "1.0"}
+        }
+    });
+    let init_resp = handle_mcp_request(&mut ctx, &init_req.to_string()).unwrap();
+    assert_eq!(init_resp["id"], 1);
+    assert_eq!(init_resp["result"]["protocolVersion"], "2026-07-28");
 
     let _ = fs::remove_dir_all(dir);
 }

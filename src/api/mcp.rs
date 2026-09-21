@@ -10,6 +10,21 @@ use anyhow::Result;
 use serde_json::{json, Value};
 use std::io::{self, Write};
 
+/// MCP protocol versions this server can speak, oldest to newest.
+/// SEP-2575 (`2026-07-28`) is the fleet reference version
+/// (see zinc `gui/state/engine_client.py` `PROTOCOL_VERSION`).
+pub const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &[
+    "2024-11-05",
+    "2025-03-26",
+    "2025-06-18",
+    "2025-11-25",
+    "2026-07-28",
+];
+
+/// Newest supported version: negotiated when the client asks for
+/// something unknown (or nothing at all).
+pub const LATEST_PROTOCOL_VERSION: &str = "2026-07-28";
+
 /// Run the MCP server on stdio until EOF.
 pub fn run_mcp_server(mut ctx: ApiContext) -> Result<()> {
     let stdin = io::stdin();
@@ -77,8 +92,21 @@ pub fn handle_mcp_request(ctx: &mut ApiContext, input: &str) -> Option<Value> {
 
     let result = match method {
         "initialize" => {
+            // Negotiate: echo a supported version back, else answer latest.
+            // Any `_meta` in params (SEP-2575 clients send protocolVersion /
+            // clientCapabilities / clientInfo there) is tolerated: stdio
+            // needs no enforcement.
+            let requested = params
+                .get("protocolVersion")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let negotiated = if SUPPORTED_PROTOCOL_VERSIONS.contains(&requested) {
+                requested
+            } else {
+                LATEST_PROTOCOL_VERSION
+            };
             json!({
-                "protocolVersion": "2024-11-05",
+                "protocolVersion": negotiated,
                 "capabilities": {
                     "tools": {}
                 },

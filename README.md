@@ -25,7 +25,7 @@ Antiknob is written in 100% pure Rust and native SwiftUI, permissively licensed 
   * Fast JSON-RPC 2.0 communication between UI, CLI, and Daemon.
   * Dynamically hot-reloads the daemon tap engine in memory without restarting.
 * **Model Context Protocol (MCP) Server**:
-  * Built-in standard MCP server (protocol version `2024-11-05`) over stdio via `antiknob mcp` or `antiknob-daemon --mcp`.
+  * Built-in standard MCP server (protocol version `2026-07-28`, negotiates `2024-11-05` through `2026-07-28`) over stdio via `antiknob mcp` or `antiknob-daemon --mcp`.
   * Allows AI agents (Claude Desktop, Antigravity, etc.) to inspect status, read/write host configs, switch layers, reprogram LED lighting, and trigger hardware actions.
 * **Direct `CGEventTap` Keyboard Tap**:
   * The daemon drives a `CGEventTap` itself rather than through an input crate, so the dependency tree carries no unmaintained Objective-C shims. Modifiers arrive as `FlagsChanged` with no up/down bit of their own; the decoder derives it from the device-dependent flag bits, which distinguishes left from right — releasing one Control while the other is held is reported for the key that actually moved.

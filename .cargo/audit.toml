@@ -15,20 +15,8 @@ deny = ["warnings", "unmaintained", "unsound", "yanked"]
 # DELETED, not left to rot -- cargo-audit reports unused ignores, and a stale
 # entry is how an ignore list becomes decorative.
 #
-# All nine below are the GTK3 stack reached through tray-icon / muda
-# (`cargo tree -i gtk --target all`). GTK is a Linux-only dependency of those
-# crates: it is absent from the host-target tree entirely, and Antiknob builds
-# only for aarch64-apple-darwin (macOS 26+). None of this code is compiled,
-# linked, or shipped. They come off this list when tray-icon/muda move to
-# gtk4 upstream, not by our action.
-ignore = [
-    "RUSTSEC-2024-0413", # atk           unmaintained -- GTK3 bindings, Linux-only
-    "RUSTSEC-2024-0416", # atk-sys       unmaintained -- GTK3 bindings, Linux-only
-    "RUSTSEC-2024-0412", # gdk           unmaintained -- GTK3 bindings, Linux-only
-    "RUSTSEC-2024-0418", # gdk-sys       unmaintained -- GTK3 bindings, Linux-only
-    "RUSTSEC-2024-0415", # gtk           unmaintained -- GTK3 bindings, Linux-only
-    "RUSTSEC-2024-0420", # gtk-sys       unmaintained -- GTK3 bindings, Linux-only
-    "RUSTSEC-2024-0419", # gtk3-macros   unmaintained -- GTK3 bindings, Linux-only
-    "RUSTSEC-2024-0370", # proc-macro-error unmaintained -- via glib-macros, Linux-only
-    "RUSTSEC-2024-0429", # glib          unsound VariantStrIter -- Linux-only, unused
-]
+# The GTK3 stack (RUSTSEC-2024-0413/0416/0412/0418/0415/0420/0419/0370/0429,
+# reached through tray-icon / muda) was deleted 2026-09-21: tray-icon 0.25 +
+# muda 0.20 with default-features = false carry no gtk/libappindicator/libxdo
+# edge on any target (`cargo tree -i gtk --target all` matches nothing), so
+# all nine ignores were removed rather than left stale.

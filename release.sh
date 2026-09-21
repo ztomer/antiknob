@@ -104,7 +104,10 @@ sys.stdout.write(s)
 if [ "${NEW_CASK}" = "${CUR_CASK}" ]; then
   die "tap transform produced no change — refusing to push an empty bump"
 fi
-printf '%s' "${NEW_CASK}" | ruby -c >/dev/null || die "transformed cask failed ruby -c"
+# UTF-8 named explicitly: ruby reads stdin as US-ASCII when the caller's
+# locale is unset (a tool shell, launchd) and rejects any non-ASCII byte in
+# the cask as an "invalid multibyte character" -- monitor's release hit it.
+printf '%s' "${NEW_CASK}" | LC_ALL=C.UTF-8 ruby -c >/dev/null || die "transformed cask failed ruby -c"
 gh api -X PUT "repos/${TAP}/contents/${CASK_PATH}" \
   -f message="antiknob ${VER}" \
   -f content="$(printf '%s' "${NEW_CASK}" | base64 | tr -d '\n')" \

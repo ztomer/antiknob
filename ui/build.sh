@@ -69,11 +69,19 @@ echo "[ ==> ] Compiling Swift sources into Antiknob.app (v${VERSION} build ${BUI
 # and `./tools/gate.sh --full` compile exactly the same thing. The package
 # pins the Swift 6 language mode and the macOS 26 platform (see ui/Package.swift);
 # only the flags SwiftPM has no manifest setting for are passed here.
-swift build --package-path "${SCRIPT_DIR}" -c release \
+#
+# The SAME toolchain as the gate, resolved the same way (Xcode's via xcrun,
+# never whatever PATH lists first): a swiftly 6.3.3 on PATH rejected this
+# package in release mode while the gate's Xcode 6.4 built it clean, and the
+# release ritual failed at its install step on a tree the gate had passed.
+. "${GOH_DIR:-${GOH:-$HOME/Projects/gates_of_heck}}/gates/swift_toolchain.sh"
+goh_swift_resolve
+echo "[ ==> ] swift: ${SWIFT} (${SWIFT_ORIGIN})"
+"${SWIFT}" build --package-path "${SCRIPT_DIR}" -c release \
     --product Antiknob \
     -Xswiftc -warnings-as-errors
 
-BIN_PATH="$(swift build --package-path "${SCRIPT_DIR}" -c release \
+BIN_PATH="$("${SWIFT}" build --package-path "${SCRIPT_DIR}" -c release \
     --product Antiknob --show-bin-path)"
 install -m 755 "${BIN_PATH}/Antiknob" "${MACOS_DIR}/Antiknob"
 

@@ -134,7 +134,11 @@ impl TrayUi {
             .with_tooltip(tooltip(&title, tap_ok))
             .with_menu(Box::new(built.menu));
         if let Some(icon) = icon_opt {
-            builder = builder.with_icon(icon).with_icon_as_template(true);
+            // tray-icon 0.26 deprecated `with_icon_as_template`; this one
+            // call both installs the icon and marks it a template, so the
+            // old `.with_icon(icon).with_icon_as_template(true)` chain
+            // collapses into it.
+            builder = builder.with_icon_templated(icon);
         } else {
             builder = builder.with_title(title.clone());
         }

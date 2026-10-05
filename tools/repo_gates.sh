@@ -32,6 +32,24 @@ cd "$ROOT_DIR"
 
 section "repo gates"
 
+info "Swift and the daemon agree on the host.json model"
+# A PYTHON gate, and the first one this repo had. The class is real and
+# measured: the app's `Action`/`LayerConfig` and the daemon's
+# `HostAction`/`HostLayer` are two implementations of one JSON schema in two
+# languages, and they had drifted in four places — two of which made a
+# GUI-written host.json undecodable, so `load_json` silently replaced the
+# user's configuration with the defaults.
+#
+# It lives in `tools/` and runs from here rather than from the shared
+# `structural.sh` because it knows about THIS repo's two model files. Its own
+# calibration is `tests/swift_rust_parity_gate_calibration.rs`, which
+# re-introduces each drift and requires this script to go red and say why.
+if python3 tools/check_swift_rust_model_parity.py; then
+    ok "Swift/Rust model parity"
+else
+    die "the Swift app and the daemon disagree about host.json (the daemon is ground truth)"
+fi
+
 info "test suite (all targets, all features, --locked)"
 if cargo test --all-targets --all-features --locked --quiet; then
     ok "test suite"

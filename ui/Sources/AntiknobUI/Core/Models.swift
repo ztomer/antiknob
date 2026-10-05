@@ -126,8 +126,17 @@ struct SeqStep: Codable, Equatable, Hashable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case key, mods, label
-        case delayMs
+        // `delay_ms`, not `delayMs`. `SeqStep` on the daemon side declares no
+        // `rename_all`, so its field really is snake_case. Writing `delayMs`
+        // here did not fail -- serde ignores the unknown key -- it silently
+        // read the delay back as nil, so every inter-step pause the user set
+        // in this app was dropped on the way to the device.
         case delay_ms
+        // DECODE ONLY, and that is the point: a config written by an older
+        // build of this app carries `delayMs`, and somebody set those pauses
+        // on purpose. Keeping the case means those files still load; nothing
+        // ever encodes it.
+        case delayMs
     }
 
     init(key: UInt16? = nil, mods: [String]? = nil, label: String? = nil, delayMs: Int? = nil) {
@@ -154,7 +163,7 @@ struct SeqStep: Codable, Equatable, Hashable, Sendable {
         try c.encodeIfPresent(key, forKey: .key)
         try c.encodeIfPresent(mods, forKey: .mods)
         try c.encodeIfPresent(label, forKey: .label)
-        try c.encodeIfPresent(delayMs, forKey: .delayMs)
+        try c.encodeIfPresent(delayMs, forKey: .delay_ms)
     }
 }
 
@@ -247,16 +256,24 @@ enum Action: Codable, Equatable, Hashable, Sendable {
             try c.encode(button, forKey: .button)
         case .launchApp(let bundleId):
             try c.encode("launchApp", forKey: .type)
-            try c.encode(bundleId, forKey: .bundleId)
+            // snake_case on the wire. The daemon's `HostAction` declares
+            // `#[serde(tag = "type", rename_all = "camelCase")]`, and that
+            // renames the VARIANTS; renaming a struct variant's FIELDS needs
+            // `rename_all_fields`, which it does not have. So the field stays
+            // `bundle_id` and this app used to write a key the daemon cannot
+            // read at all -- and because `bundle_id` has no `#[serde(default)]`,
+            // one such action made the WHOLE host.json undecodable, so
+            // `load_json` fell back to the defaults and every layer was lost.
+            try c.encode(bundleId, forKey: .bundle_id)
         case .openURL(let url):
-            try c.encode("openURL", forKey: .type)
+            try c.encode("openUrl", forKey: .type)
             try c.encode(url, forKey: .url)
         case .openPath(let path):
             try c.encode("openPath", forKey: .type)
             try c.encode(path, forKey: .path)
         case .quitApp(let bundleId, let force):
             try c.encode("quitApp", forKey: .type)
-            try c.encode(bundleId, forKey: .bundleId)
+            try c.encode(bundleId, forKey: .bundle_id)
             try c.encodeIfPresent(force, forKey: .force)
         case .hotkeySwitch(let first, let second):
             try c.encode("hotkeySwitch", forKey: .type)
@@ -283,6 +300,9 @@ struct LayerConfig: Codable, Equatable, Hashable, Sendable {
     /// host layers, so this only means anything because the daemon writes it
     /// on every switch -- see `host::led_sync` on the Rust side.
     var led: String?
+    /// The daemon's alternative binding sets for this layer. Preserved and
+    /// not edited here -- see `LayerVariant`.
+    var variants: [LayerVariant] = []
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -292,11 +312,12 @@ struct LayerConfig: Codable, Equatable, Hashable, Sendable {
         case holdTwistR, hold_twist_r
         case press
         case led
+        case variants
     }
 
     init(name: String, twistL: Action? = nil, twistR: Action? = nil,
          holdTwistL: Action? = nil, holdTwistR: Action? = nil, press: Action? = nil,
-         led: String? = nil) {
+         led: String? = nil, variants: [LayerVariant] = []) {
         self.name = name
         self.twistL = twistL
         self.twistR = twistR
@@ -304,6 +325,7 @@ struct LayerConfig: Codable, Equatable, Hashable, Sendable {
         self.holdTwistR = holdTwistR
         self.press = press
         self.led = led
+        self.variants = variants
     }
 
     init(from decoder: Decoder) throws {
@@ -319,6 +341,7 @@ struct LayerConfig: Codable, Equatable, Hashable, Sendable {
             ?? (try? c.decodeIfPresent(Action.self, forKey: .hold_twist_r)) ?? nil
         press = try? c.decodeIfPresent(Action.self, forKey: .press)
         led = (try? c.decodeIfPresent(String.self, forKey: .led)) ?? nil
+        variants = (try? c.decodeIfPresent([LayerVariant].self, forKey: .variants)) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -333,6 +356,12 @@ struct LayerConfig: Codable, Equatable, Hashable, Sendable {
         // layer that names no mode round-trips as one rather than gaining a
         // null nobody chose.
         try c.encodeIfPresent(led, forKey: .led)
+        // Only when there are any, matching `skip_serializing_if =
+        // "Vec::is_empty"` on the daemon's `HostLayer::variants`. Writing an
+        // empty array would be noise the daemon then has to tolerate.
+        if !variants.isEmpty {
+            try c.encode(variants, forKey: .variants)
+        }
     }
 
     subscript(g: Gesture) -> Action? {

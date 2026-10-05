@@ -19,7 +19,7 @@ pub mod verify;
 pub use classify::classify_device;
 pub use led_state::{read_led_mode, send_led};
 pub use select::{primary_device, primary_transport};
-pub use slot_read::{read_full_table, read_slot};
+pub use slot_read::{read_full_table, read_slot, slot_table_query};
 pub use thread::{enumeration_refreshes, with_device, with_hid, HidDevice};
 
 fn default_transport() -> TransportType {

@@ -21,13 +21,24 @@ use anyhow::{Context, Result};
 /// and read back the 64-byte slot dump. Read-only; changes no device state.
 /// `group` selects the slot bank (`0x0F` / `0x19` observed), `counter`
 /// walks entries 1..=3 within the bank.
-pub fn read_slot(dev: &HidDevice, group: u8, counter: u8) -> Result<Vec<u8>> {
+/// The bytes of one slot-table query, with nothing sent.
+///
+/// Split out of `read_slot` so the frame can be asserted byte-for-byte against
+/// the vendor app's own capture (`tests/fixtures/vendor_capture.json`) without a
+/// device. The captured `03 fa 19 00 01` / `02` / `03` are how this repo knows
+/// the whole table comes back in three queries at width 25 -- one per LAYER --
+/// rather than one per slot, and that claim was previously checked nowhere.
+pub fn slot_table_query(group: u8, counter: u8) -> [u8; REPORT_LEN] {
     let mut payload = [0u8; REPORT_LEN];
     payload[0] = SLOT_TABLE_QUERY_CMD;
     payload[1] = group;
     payload[2] = 0x00;
     payload[3] = counter;
-    send_report(dev, &payload)?;
+    payload
+}
+
+pub fn read_slot(dev: &HidDevice, group: u8, counter: u8) -> Result<Vec<u8>> {
+    send_report(dev, &slot_table_query(group, counter))?;
 
     let mut buf = [0u8; REPORT_LEN];
     let n = dev
@@ -56,10 +67,7 @@ pub fn read_full_table(dev: &HidDevice) -> Vec<Vec<u8>> {
     let mut out: Vec<Vec<u8>> = Vec::new();
     let mut seen: Vec<(u8, u8)> = Vec::new();
     for counter in 1..=SLOT_BURST_QUERIES {
-        let mut payload = [0u8; REPORT_LEN];
-        payload[0] = SLOT_TABLE_QUERY_CMD;
-        payload[1] = SLOT_BURST_WIDTH;
-        payload[3] = counter;
+        let payload = slot_table_query(SLOT_BURST_WIDTH, counter);
         if send_report(dev, &payload).is_err() {
             continue;
         }

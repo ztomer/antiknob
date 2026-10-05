@@ -602,3 +602,65 @@ tool wrote there when `key_id_for_knob` was hardcoded to 16 -- `cd`, `e9`,
 
 `antiknob read-slots --full` uses it: 75 slots, 33 of them configured on this
 device, the rest labelled as firmware defaults. Stable across repeated runs.
+
+## THE ORACLE IS MACHINE-CHECKED NOW (2026-10-04)
+
+Every frame above is transcribed into `tests/fixtures/vendor_capture.json` with
+the source it came from and the claim it establishes, and `tests/vendor_capture.rs`
+reads it. Three demands are made of it:
+
+* every frame still appears here, byte for byte, as a hex run — so this document
+  and the fixture cannot drift apart unremarked;
+* every frame decodes per the record format documented above, and what it
+  decodes to is what this document claims — the five-gesture key ids, byte 6 as
+  a payload LENGTH, the 16-bit big-endian delay, one media action per slot, the
+  init echo that reads as mode 0; and
+* every reproducible frame is re-derived from this repo's own producers
+  (`fd::build_packet`, `build_led_packet`, `led_init_packet`, `slot_table_query`)
+  and must match byte for byte. That last one is what makes this an oracle rather
+  than a transcript: a golden the code also produces is a snapshot, and a golden
+  the code must MATCH is a specification.
+
+Two facts about editing this document, both learned by being wrong first:
+
+* a frame here is usually written more than once, and not always the same way —
+  `03 fd 02 01 02 00 02 00 00 b7` appears space-separated twice and as
+  `03 fd 02 01 | 02 00 02 | 00 00 b7` once. Editing "the frame" means editing all
+  three.
+* a frame ADDED here but not to the fixture is not caught by any test. The check
+  runs fixture to document only, because this file is prose and parsing it into
+  frames reliably is not possible. Adding a capture means adding it to
+  `tests/fixtures/vendor_capture.json`.
+
+### What no capture supports, and still rests on a comment
+
+* **The 0x1189 CH57x devices.** EXPERIMENT 1 is a VK01. The gesture-to-key-id
+  mapping is applied across every VID/PID in `SUPPORTED_DEVICES`, and this repo
+  holds no capture of a CH57x.
+* **Byte 5 of a chained record.** The factory frame
+  `03 fd 06 01 02 01 04 00 00 b5` shows `01` where this repo writes `00`. The
+  frame is pinned in the fixture so it cannot be lost, but "is byte 5 an index"
+  is still open, exactly as the section above says.
+* **Mode 3's behaviour.** Taken from kriomant/ch57x-keyboard-tool#173, not
+  watched here. Unchanged by this work.
+* **The frame at line 137**, written with `...` and so not a complete frame to
+  decode.
+* **Whether a capture's trailing zero bytes were zero.** The interposer logged
+  non-zero runs, so a captured frame is a PREFIX of a 64-byte report and the
+  decoder pads it. Every frame above is read on that assumption.
+
+### Why no new capture was taken
+
+The knob was not attached when the fixture was assembled — `ioreg` and
+`system_profiler` list only the 2.4G receiver (`25a7:fa11`), and `antiknob raw`
+refuses in that state:
+
+    Error: Device is connected wirelessly. Hardware configuration (flashing slot
+    bindings and LED modes) requires a direct USB-C wired connection.
+
+`tools/hidsnoop/` needs the same absent device, since it wraps the vendor app
+while that app drives the knob. **No frame in the fixture was invented to fill
+that gap**; every one is transcribed from this file. A fresh capture on wired
+hardware would be strictly better and is the obvious next thing to do with the
+device plugged in — `tools/hidsnoop/snoop-vendor-app.sh` plus the method at the
+top of this document, then add the frames to the fixture.

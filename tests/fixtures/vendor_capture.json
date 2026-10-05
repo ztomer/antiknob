@@ -1,0 +1,373 @@
+{
+  "_comment": [
+    "MACHINE-READABLE CAPTURE. Every frame here is a real capture, not a",
+    "synthetic one, and each entry names where it was taken and what it",
+    "establishes. tests/vendor_capture_oracle.rs decodes each frame per the",
+    "wire format documented in VENDOR_UI_MAP.md and asserts the claim.",
+    "",
+    "PROVENANCE, and what could not be done: the knob (514c:8850) was NOT",
+    "attached when this fixture was assembled, so no NEW capture was taken.",
+    "`antiknob raw` refuses outright in that state -- it answers 'Device is",
+    "connected wirelessly. Hardware configuration ... requires a direct USB-C",
+    "wired connection' -- and tools/hidsnoop/ needs the vendor app driving that",
+    "same absent device. No frame below was invented to fill the gap. They are",
+    "transcribed from the capture log already committed in VENDOR_UI_MAP.md,",
+    "which is this repo's own primary record of what ANTICATER.app sent, with",
+    "the method written down in that file. The `doc_line` field is where each",
+    "frame appears there, and the test asserts every frame is present in that",
+    "document, so the prose and this file cannot drift apart unremarked.",
+    "",
+    "`reproduce` says how the repo's own code emits these bytes. `decode-only`",
+    "means the frame is something the DEVICE sent (a read reply) or something",
+    "the code deliberately no longer produces -- both are asserted, not",
+    "skipped: see the test's assertions on 'no_longer_produced'."
+  ],
+  "captures": [
+    {
+      "id": "gesture-ccw-stop",
+      "kind": "frame",
+      "doc_line": 179,
+      "hex": "03fd02010200020000b7",
+      "source": "ANTICATER.app under tools/hidsnoop, EXPERIMENT 1, one distinct MutiMedia action per zone, Save settings pressed",
+      "establishes": "twist CCW is firmware key id 2; one media action is 2 bytes of payload at byte 6",
+      "reproduce": {
+        "kind": "fd",
+        "key_id": 2,
+        "layer": 0,
+        "action": {
+          "media": 4439
+        }
+      }
+    },
+    {
+      "id": "gesture-press-brightness-up",
+      "kind": "frame",
+      "doc_line": 180,
+      "hex": "03fd030102000200006f",
+      "source": "ANTICATER.app under tools/hidsnoop, EXPERIMENT 1, centre zone",
+      "establishes": "press is firmware key id 3; 0x006f is consumer Screen brightness+",
+      "reproduce": {
+        "kind": "fd",
+        "key_id": 3,
+        "layer": 0,
+        "action": {
+          "media": 111
+        }
+      }
+    },
+    {
+      "id": "gesture-cw-playpause",
+      "kind": "frame",
+      "doc_line": 181,
+      "hex": "03fd04010200020000cd",
+      "source": "ANTICATER.app under tools/hidsnoop, EXPERIMENT 1, top-right zone",
+      "establishes": "twist CW is firmware key id 4; 0x00cd is Play/Pause",
+      "reproduce": {
+        "kind": "fd",
+        "key_id": 4,
+        "layer": 0,
+        "action": {
+          "media": 205
+        }
+      }
+    },
+    {
+      "id": "gesture-hold-twist-l-brightness-down",
+      "kind": "frame",
+      "doc_line": 182,
+      "hex": "03fd0501020002000070",
+      "source": "ANTICATER.app under tools/hidsnoop, EXPERIMENT 1, lower-left zone",
+      "establishes": "hold + twist LEFT is firmware key id 5, and 0x0070 is consumer Screen brightness-",
+      "reproduce": {
+        "kind": "fd",
+        "key_id": 5,
+        "layer": 0,
+        "action": {
+          "media": 112
+        }
+      }
+    },
+    {
+      "id": "gesture-hold-twist-r-calculator",
+      "kind": "frame",
+      "doc_line": 183,
+      "hex": "03fd0601020002000092",
+      "source": "ANTICATER.app under tools/hidsnoop, EXPERIMENT 1, lower-right zone",
+      "establishes": "hold + twist RIGHT is firmware key id 6. The usage is 0x0092, chosen by the capture run BECAUSE its high byte is non-zero, which is what later proved a media usage really is 16-bit",
+      "reproduce": {
+        "kind": "fd",
+        "key_id": 6,
+        "layer": 0,
+        "action": {
+          "media": 146
+        }
+      }
+    },
+    {
+      "id": "slot-commit",
+      "kind": "frame",
+      "doc_line": 184,
+      "hex": "03fdfeff",
+      "source": "ANTICATER.app under tools/hidsnoop, EXPERIMENT 1, the single commit sent once after all five records",
+      "establishes": "key writes are committed by a separate 0xFD FE FF tail, sent once after all five records rather than once per record",
+      "reproduce": {
+        "kind": "commit"
+      }
+    },
+    {
+      "id": "slot-table-read-1",
+      "kind": "frame",
+      "doc_line": 269,
+      "hex": "03fa190001",
+      "source": "ANTICATER.app under tools/hidsnoop, 'View settings' pressed -- a device READ-BACK, not a save",
+      "establishes": "the whole slot table is three queries, not one per slot: width 0x19 = 25, counters 1..3, one per LAYER",
+      "reproduce": {
+        "kind": "slot_query",
+        "group": 25,
+        "counter": 1
+      }
+    },
+    {
+      "id": "slot-table-read-2",
+      "kind": "frame",
+      "doc_line": 270,
+      "hex": "03fa190002",
+      "source": "ANTICATER.app under tools/hidsnoop, 'View settings' pressed",
+      "establishes": "counter 2, same width -- the burst walks layers, not slots",
+      "reproduce": {
+        "kind": "slot_query",
+        "group": 25,
+        "counter": 2
+      }
+    },
+    {
+      "id": "slot-table-read-3",
+      "kind": "frame",
+      "doc_line": 271,
+      "hex": "03fa190003",
+      "source": "ANTICATER.app under tools/hidsnoop, 'View settings' pressed",
+      "establishes": "counter 3 completes the table; three is the whole thing",
+      "reproduce": {
+        "kind": "slot_query",
+        "group": 25,
+        "counter": 3
+      }
+    },
+    {
+      "id": "led-mode-3-layer-0",
+      "kind": "frame",
+      "doc_line": 388,
+      "hex": "03feb00003",
+      "source": "ANTICATER.app under tools/hidsnoop, clicking 'LED Mode3' in the RGB LED group",
+      "establishes": "a mode button sets the LAYER's backlight, it does not bind a gesture; the trailing palette bytes were not captured here",
+      "reproduce": {
+        "kind": "led",
+        "layer": 0,
+        "mode": "ripple"
+      },
+      "prefix_only": true
+    },
+    {
+      "id": "led-mode-0-layer-1",
+      "kind": "frame",
+      "doc_line": 389,
+      "hex": "03feb00100",
+      "source": "ANTICATER.app under tools/hidsnoop, same click -- layers 1 and 2 always follow at mode 0",
+      "establishes": "the vendor writes all three layers, not just the one clicked",
+      "reproduce": {
+        "kind": "led",
+        "layer": 1,
+        "mode": "off"
+      },
+      "prefix_only": true
+    },
+    {
+      "id": "led-mode-0-layer-2",
+      "kind": "frame",
+      "doc_line": 390,
+      "hex": "03feb00200",
+      "source": "ANTICATER.app under tools/hidsnoop, same click",
+      "establishes": "and layer 2 at mode 0, completing the set of three: the vendor writes every layer, not only the one whose button was clicked",
+      "reproduce": {
+        "kind": "led",
+        "layer": 2,
+        "mode": "off"
+      },
+      "prefix_only": true
+    },
+    {
+      "id": "led-init",
+      "kind": "frame",
+      "doc_line": 80,
+      "hex": "03fbfbfb",
+      "source": "ANTICATER.app under tools/hidsnoop, first packet of any LED interaction",
+      "establishes": "an LED write is only honoured after this init; without it the firmware stores the mode, reads it back correctly, and changes nothing",
+      "reproduce": {
+        "kind": "led_init"
+      }
+    },
+    {
+      "id": "keyboard-chain-19",
+      "kind": "frame",
+      "doc_line": 406,
+      "hex": "03fd0201010013000004000005000007000008000009",
+      "source": "ANTICATER.app under tools/hidsnoop, nineteen letters clicked in a row, saved as ONE record",
+      "establishes": "keyboard actions DO chain: nineteen letters saved as ONE record, byte 6 = 0x13 = 19, so a gesture can type a sequence. Only five of the nineteen entries were written down, so what is checkable is the length field and the visible head",
+      "capture_prefix": true,
+      "claim": {
+        "kind": "fd_length_and_prefix",
+        "key_id": 2,
+        "layer": 0,
+        "entries_declared": 19,
+        "visible_codes": [
+          4,
+          5,
+          7,
+          8,
+          9
+        ]
+      }
+    },
+    {
+      "id": "keyboard-a-then-500ms-b",
+      "kind": "frame",
+      "doc_line": 560,
+      "hex": "03fd030101000200000401f405",
+      "source": "ANTICATER.app under tools/hidsnoop, 'a', a 500 ms delay box, then 'b'",
+      "establishes": "the per-step delay is 16-bit BIG-ENDIAN across one entry: 0x01F4 = 500, sitting in the delay bytes of the entry that follows it. 0x01F4 does not fit in one byte, which is what proved the field is two bytes wide rather than a guess",
+      "reproduce": {
+        "kind": "fd_steps",
+        "key_id": 3,
+        "layer": 0,
+        "steps": [
+          {
+            "code": 4
+          },
+          {
+            "delay_ms": 500
+          },
+          {
+            "code": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "media-chain-written",
+      "kind": "frame",
+      "doc_line": 417,
+      "hex": "03fd07010200040000e9000000000092000001",
+      "source": "this repo's OWN writer, run against the hardware to bypass the vendor app entirely",
+      "establishes": "what this tool wrote for a two-action media sequence. The second usage is Calculator (0x0192), chosen so its non-zero HIGH byte rules out trailing-zero trimming",
+      "no_longer_produced": "a media record holding more than one action is REFUSED by fd::build_packet, because the firmware truncates it. This frame is the evidence for that refusal and the test asserts the refusal stands",
+      "expect_refused": {
+        "kind": "fd",
+        "key_id": 7,
+        "layer": 0,
+        "actions": [
+          {
+            "media": 233
+          },
+          {
+            "media": 402
+          }
+        ]
+      }
+    },
+    {
+      "id": "media-chain-read-back",
+      "kind": "frame",
+      "doc_line": 418,
+      "hex": "03fa07010200020000e9000000000000",
+      "source": "the device's answer to the frame above, on the same handle",
+      "establishes": "the DEVICE dropped the second action: len came back 02 and the Calculator bytes are gone. A media slot holds exactly one action -- the firmware refuses, not the vendor app",
+      "decode_only": true
+    },
+    {
+      "id": "vendor-two-action-save-len-4",
+      "kind": "frame",
+      "doc_line": 290,
+      "hex": "03fd03010200040000e2",
+      "source": "ANTICATER.app under tools/hidsnoop, EXPERIMENT 2, two media actions set in the UI",
+      "establishes": "byte 6 is a payload LENGTH in bytes (4 = two media actions) while only the LAST action is present in the bytes that follow. Chaining did not round-trip",
+      "decode_only": true
+    },
+    {
+      "id": "vendor-three-action-save-len-6",
+      "kind": "frame",
+      "doc_line": 291,
+      "hex": "03fd02010200060000e2",
+      "source": "ANTICATER.app under tools/hidsnoop, EXPERIMENT 2, three media actions set in the UI",
+      "establishes": "six declared bytes, one action actually written: 2 x action count, confirming the length field is not an entry count",
+      "decode_only": true
+    },
+    {
+      "id": "chained-record-from-the-users-own-knob",
+      "kind": "frame",
+      "doc_line": 305,
+      "hex": "03fd06010201040000b5",
+      "source": "the OWNER's capture of the knob as it arrived from the factory, with Volume+ bound to hold+twist RIGHT",
+      "establishes": "byte 5 is 01 here and 00 in every frame this repo's own writer produces. Chaining demonstrably works on this hardware, so byte 5 is the missing piece -- the most likely reading is the action's index within the sequence. NOT a solved question",
+      "decode_only": true
+    },
+    {
+      "id": "firmware-default-record",
+      "kind": "frame",
+      "doc_line": 437,
+      "hex": "03fa070101010100000a",
+      "source": "an 0xFA read-back of the knob's factory keymap, before this repo wrote anything",
+      "establishes": "the shape a WORKING record has: kind 01, byte 6 declaring 1 entry, and the payload in the three-byte entry array from byte 7",
+      "decode_only": true
+    },
+    {
+      "id": "fe-single-action-that-never-ran",
+      "kind": "frame",
+      "doc_line": 439,
+      "hex": "03fa020101000000000001056b",
+      "source": "an 0xFA read-back of what this repo's 0xFE single-action writer used to flash",
+      "establishes": "len = 0 and the payload at bytes 10-12, where the firmware never looks. The device STORED this and returned it byte-for-byte, so every read-back 'confirmed' the write while it executed zero entries. An FA read proves storage, never effect",
+      "no_longer_produced": "keyboard and media single actions go out as 0xFD; the test asserts this exact frame is not what Action::to_packet writes for the same action",
+      "expect_not_written_by_to_packet": {
+        "key_id": 2,
+        "layer": 0,
+        "code": 91
+      }
+    },
+    {
+      "id": "led-init-echo",
+      "kind": "frame",
+      "doc_line": 83,
+      "hex": "03fb00010b00ff0000ff8030ffff3000",
+      "source": "the device's answer to the LED init packet, on the handle that had just written a mode",
+      "establishes": "byte 2 of this echo is 00. A read-back that took the first report it was offered therefore read mode 0 -- 'off' -- for a write that had worked, every time, which is why get_led looked fine while write-then-verify looked broken",
+      "decode_only": true
+    },
+    {
+      "id": "led-mode-read-reply-green",
+      "kind": "frame",
+      "doc_line": 84,
+      "hex": "03fa02ff0000ff0000ff0000ff0000ff",
+      "source": "the 0xFA B0 mode query's real reply, reached only after the init echo above was skipped",
+      "establishes": "the reply is framed 03 FA <mode> <48 bytes of palette>, so the mode is byte 2. This one reports 02 = green",
+      "decode_only": true
+    },
+    {
+      "id": "delay-boxes-123-50-50",
+      "kind": "entries",
+      "doc_line": 335,
+      "hex": "007b04003200003200",
+      "source": "ANTICATER.app under tools/hidsnoop, values typed into the DelaySetting spin boxes",
+      "establishes": "bytes 7..15 for delays 123, 50, 50: 0x007B = 123 big-endian, then two 0x0032 = 50. The seventeen default 50s are why early captures were full of 00 32 00 groups -- they were never padding, they are unused entries each carrying a 50 ms default",
+      "decode_only": true
+    },
+    {
+      "id": "delay-boxes-123-50200-509",
+      "kind": "entries",
+      "doc_line": 336,
+      "hex": "007b04c4180001fd00",
+      "source": "ANTICATER.app under tools/hidsnoop, a triple-click failed to select the box contents so the typed digits APPENDED",
+      "establishes": "0xC418 = 50200 and 0x01FD = 509. The accident is what proved the field is 16-bit: a one-byte delay could not hold 50200",
+      "decode_only": true
+    }
+  ]
+}

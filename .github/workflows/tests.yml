@@ -42,7 +42,14 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 60
     steps:
+      # persist-credentials: false on BOTH checkouts. By default checkout
+      # leaves the job token in git config (http.<host>.extraheader), and the
+      # structural gate's no-credential-in-git-config check refuses it --
+      # correctly: nothing after the clone needs it. Second red of this
+      # workflow's first day, 2026-10-05.
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       # The house gates live in ONE repo and are consumed through GOH_DIR.
       # Never vendored here: a copy of a checker is a copy that rots, and
@@ -61,6 +68,7 @@ jobs:
           repository: ztomer/gates_of_heck
           path: goh
           token: ${{ secrets.GOH_TOKEN || github.token }}
+          persist-credentials: false
 
       - uses: actions/setup-python@v7
         with:
@@ -76,10 +84,10 @@ jobs:
       #   cargo-llvm-cov  gates/coverage_gate.sh, for GOH_COV_FLOOR_RUST=61
       #   cargo-audit     tools/repo_gates.sh
       #   cargo-machete   rust_gate.sh's "no unused dependencies" step
-      # `rust_gate.sh` names a missing cargo-machete a WARN, and
-      # `swift_gate.sh` a missing swiftlint, so on a bare runner those two
-      # steps would report a pass they never performed. Installing them here
-      # is what stops that.
+      # Since gates_of_heck v0.20.0 `rust_gate.sh` and `swift_gate.sh` FAIL
+      # up front when cargo-machete or swiftlint is missing (they used to
+      # warn and report a pass they never performed), so these installs are
+      # what lets the gate run at all on a bare runner.
       #
       # `--locked` on each install, for the reason tools/lock_guard.sh
       # exists: a tool install that re-resolves is a dependency change

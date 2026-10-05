@@ -317,7 +317,7 @@ mod tests {
     #[test]
     fn nothing_bound_writes_nothing() {
         let c = cfg(Vec::new(), vec![layer("Media", Some("red"))]);
-        assert!(led_writes_for(&c, 0).is_empty());
+        assert_eq!(led_writes_for(&c, 0).len(), 0);
     }
 
     /// A layer that names no mode leaves the light as it is. This is the
@@ -328,8 +328,8 @@ mod tests {
             vec![0],
             vec![layer("Media", None), layer("Blank", Some("   "))],
         );
-        assert!(led_writes_for(&c, 0).is_empty());
-        assert!(led_writes_for(&c, 1).is_empty(), "whitespace is not a mode");
+        assert_eq!(led_writes_for(&c, 0).len(), 0);
+        assert_eq!(led_writes_for(&c, 1).len(), 0, "whitespace is not a mode");
     }
 
     /// An index past the end is producible during a config reload. Falling
@@ -338,7 +338,7 @@ mod tests {
     #[test]
     fn an_out_of_range_layer_writes_nothing() {
         let c = cfg(vec![0], vec![layer("Media", Some("red"))]);
-        assert!(led_writes_for(&c, 7).is_empty());
+        assert_eq!(led_writes_for(&c, 7).len(), 0);
     }
 
     /// Whatever the mode string is, it must be one `build_led_packet`
@@ -401,7 +401,7 @@ mod tests {
     #[test]
     fn already_stored_modes_are_not_rewritten() {
         let writes = vec![(0u8, "red".to_string()), (1u8, "green".to_string())];
-        assert!(pending_writes(writes, &[(0, 1), (1, 2)]).is_empty());
+        assert_eq!(pending_writes(writes, &[(0, 1), (1, 2)]).len(), 0);
     }
 
     #[test]
@@ -441,6 +441,6 @@ mod tests {
         assert_eq!(pending_writes(paletted, &[(0, 1)]).len(), 1);
         // Bare canonical, case-insensitive: skip.
         let canonical = vec![(0u8, "  RED  ".to_string())];
-        assert!(pending_writes(canonical, &[(0, 1)]).is_empty());
+        assert_eq!(pending_writes(canonical, &[(0, 1)]).len(), 0);
     }
 }

@@ -133,6 +133,6 @@ mod classify_tests {
     #[test]
     fn a_nameless_match_still_gets_a_readable_name() {
         let (name, _) = classify_device(RECEIVER_24G.0, RECEIVER_24G.1, false, "").expect("listed");
-        assert!(!name.is_empty());
+        assert_ne!(name.len(), 0);
     }
 }

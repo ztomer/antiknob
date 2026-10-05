@@ -29,7 +29,7 @@ mod tests {
                 "Duplicate tool name: {}",
                 tool.name
             );
-            assert!(!tool.description.is_empty());
+            assert_ne!(tool.description.len(), 0);
             assert_eq!(tool.input_schema["type"], "object");
         }
     }

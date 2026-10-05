@@ -117,6 +117,6 @@ mod tests {
     #[test]
     fn scan_tolerates_missing_dirs() {
         let apps = scan_app_dirs(&[PathBuf::from("/nonexistent-antiknob-dir")]);
-        assert!(apps.is_empty());
+        assert_eq!(apps.len(), 0);
     }
 }

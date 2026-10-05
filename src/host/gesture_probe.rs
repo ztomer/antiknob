@@ -313,11 +313,11 @@ mod tests {
         let mut kbd = vec![0u8; 13];
         kbd[4] = 1;
         kbd[9] = 0xB7;
-        assert!(usages_in_use(&[kbd]).is_empty());
+        assert_eq!(usages_in_use(&[kbd]).len(), 0);
         // An empty media slot is not a usage in use.
         let mut blank = vec![0u8; 13];
         blank[4] = 2;
-        assert!(usages_in_use(&[blank]).is_empty());
+        assert_eq!(usages_in_use(&[blank]).len(), 0);
     }
 
     /// The defect a real run exposed. A button bound to `prev` makes `prev`
@@ -350,7 +350,7 @@ mod tests {
         let all: Vec<u16> = usable_markers(&[]).iter().map(|(_, u)| *u).collect();
         let err = plan_avoiding(&[7], &all).expect_err("must refuse");
         assert!(err.contains("does not already"), "{err}");
-        assert!(usable_markers(&all).is_empty());
+        assert_eq!(usable_markers(&all).len(), 0);
     }
 
     /// Marker assignment must not shift between runs, or two captures of

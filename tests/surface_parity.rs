@@ -20,7 +20,7 @@ fn the_mcp_tool_list_is_exactly_what_the_registry_exposes() {
     let tools: Vec<&str> = all_tools().iter().map(|t| t.name).collect();
     let expected: Vec<&str> = registry::for_surface(true).map(|s| s.name).collect();
     assert_eq!(tools, expected);
-    assert!(!tools.is_empty());
+    assert_ne!(tools.len(), 0);
 }
 
 /// A tool's schema comes from the table, so this checks the GENERATION:

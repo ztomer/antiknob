@@ -224,7 +224,7 @@ mod tests {
         let mut t = tap();
         slot_mods(&mut t);
         let first = t.key(79, true, 0);
-        assert!(!first.is_empty());
+        assert_ne!(first.len(), 0);
         // Held-key repeats: no output.
         assert_eq!(t.key(79, true, 50), vec![]);
         assert_eq!(t.key(79, true, 100), vec![]);
@@ -267,16 +267,16 @@ mod tests {
         let mut t = tap();
         slot_mods(&mut t);
         // Consumed press -> release swallowed.
-        assert!(!t.key(79, true, 0).is_empty());
+        assert_ne!(t.key(79, true, 0).len(), 0);
         assert!(t.release_swallow(79));
         // Second release: nothing to swallow.
         assert!(!t.release_swallow(79));
         // Pass-through press -> release passes through.
-        assert!(t.key(8, true, 10).is_empty());
+        assert_eq!(t.key(8, true, 10).len(), 0);
         assert!(!t.release_swallow(8));
         // Modifier releases never swallow (but do update mod state).
         assert!(!t.release_swallow(59));
-        assert!(t.key(79, true, 20).is_empty());
+        assert_eq!(t.key(79, true, 20).len(), 0);
     }
 
     #[test]

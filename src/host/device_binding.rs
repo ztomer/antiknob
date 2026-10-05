@@ -286,7 +286,7 @@ mod tests {
                     "describe() names a command or shell syntax ({shell:?}): {said}"
                 );
             }
-            assert!(!said.is_empty());
+            assert_ne!(said.len(), 0);
         }
     }
 
@@ -349,7 +349,7 @@ mod tests {
     fn a_null_single_layer_key_migrates_to_an_empty_set() {
         let old = r#"{"layers":[{"name":"L"}],"boundDeviceLayer":null}"#;
         let cfg = super::super::HostConfig::try_load_json(old).expect("loads");
-        assert!(cfg.bound_device_layers.is_empty());
+        assert_eq!(cfg.bound_device_layers.len(), 0);
         assert!(!arrangement(&cfg.bound_device_layers, DEVICE_LAYERS).daemon_can_hear_the_knob());
     }
 

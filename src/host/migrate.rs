@@ -276,7 +276,7 @@ mod tests {
     fn usb_modifiers_collapse_sides() {
         assert_eq!(usb_mods_to_names(0x01 | 0x04), vec!["ctrl", "alt"]);
         assert_eq!(usb_mods_to_names(0x10 | 0x80), vec!["ctrl", "cmd"]);
-        assert!(usb_mods_to_names(0).is_empty());
+        assert_eq!(usb_mods_to_names(0).len(), 0);
     }
 
     #[test]

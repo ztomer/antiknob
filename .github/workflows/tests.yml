@@ -1,0 +1,106 @@
+name: tests
+
+# ONE job, ONE command: `./tools/gate.sh --full`.
+#
+# The local pre-push hook runs that exact script (`.githooks/pre-push` execs
+# `bash tools/gate.sh --full`), so CI and the developer's machine cannot
+# disagree about what "green" means. Enumerating the layers here instead —
+# the way this file could easily be written — is how the two drift: a step
+# added to tools/gate.sh is then in CI only after someone remembers to add
+# it again, and until then nobody knows which one was lying.
+#
+# There is deliberately NO platform matrix. This is a macOS / Apple-silicon
+# product: hidapi for a USB HID knob, CoreGraphics for the CGEventTap, the
+# AppKit tray via tray-icon/muda, and a SwiftUI package whose manifest
+# declares `.macOS("26.0")`. A linux or windows job could not compile any of
+# it, so it would be decoration.
+#
+# ⚠ THIS WORKFLOW HAS NEVER RUN. It was authored offline and cannot be
+# pushed from here, so its correctness is UNVERIFIED. Nothing below has
+# executed even once. The one claim that cannot be checked without a run is
+# the runner label: `macos-26` is required because ui/Package.swift declares
+# `.macOS("26.0")` and Antiknob.app's Info.plist sets
+# LSMinimumSystemVersion 26.0, and whether that label is available to this
+# repository has not been observed. If the job cannot be scheduled, that is
+# the first thing to check.
+
+on:
+  push:
+  pull_request:
+
+# Superseded runs for the same branch report on the commit that replaced
+# them, which is the only one anyone reads. Costs one line.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    # macOS 26, not `macos-latest`: the Swift package's platform floor and
+    # the app's LSMinimumSystemVersion are both 26.0, and `macos-latest`
+    # would silently become a lower macOS the day Apple moves it.
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      # The house gates live in ONE repo and are consumed through GOH_DIR.
+      # Never vendored here: a copy of a checker is a copy that rots, and
+      # tools/gate.sh already reads GOH_DIR (falling back to
+      # ~/Projects/gates_of_heck), so this is the same resolution the local
+      # gate does.
+      #
+      # Both repositories are PUBLIC as of this writing, so the default
+      # GITHUB_TOKEN can read gates_of_heck and no secret is needed. The
+      # `secrets.GOH_TOKEN ||` fallback is kept because that is the shape
+      # that keeps working if either repository is ever made private — a
+      # private second repo comes back "Not Found", not "access denied".
+      - name: Check out gates_of_heck
+        uses: actions/checkout@v7
+        with:
+          repository: ztomer/gates_of_heck
+          path: goh
+          token: ${{ secrets.GOH_TOKEN || github.token }}
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      # The tools the gate NAMES rather than skips. Each is a hard
+      # requirement of a step inside tools/gate.sh, not a convenience:
+      #   cargo-llvm-cov  gates/coverage_gate.sh, for GOH_COV_FLOOR_RUST=61
+      #   cargo-audit     tools/repo_gates.sh
+      #   cargo-machete   rust_gate.sh's "no unused dependencies" step
+      # `rust_gate.sh` names a missing cargo-machete a WARN, and
+      # `swift_gate.sh` a missing swiftlint, so on a bare runner those two
+      # steps would report a pass they never performed. Installing them here
+      # is what stops that.
+      #
+      # `--locked` on each install, for the reason tools/lock_guard.sh
+      # exists: a tool install that re-resolves is a dependency change
+      # nobody reviewed.
+      - name: Install the gate's tools
+        run: |
+          cargo install cargo-audit --locked
+          cargo install cargo-machete --locked
+          cargo install cargo-llvm-cov --locked
+
+      # SwiftLint is read by swift_gate.sh when present (ui/.gatesrc names a
+      # .swiftlint-baseline.json), and the gate WARNs rather than fails when
+      # it is absent — so install it and let the baseline do its job, rather
+      # than shipping a CI run whose Swift half is weaker than the local one.
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
+      - name: The gate
+        # The SAME entry point the pre-push hook runs. GOH_DIR is exported
+        # rather than prefixed per-command because tools/gate.sh, the two
+        # layer scripts and tools/lock_guard.sh each resolve it themselves.
+        env:
+          GOH_DIR: ${{ github.workspace }}/goh
+        run: ./tools/gate.sh --full

@@ -90,12 +90,14 @@ jobs:
           cargo install cargo-machete --locked
           cargo install cargo-llvm-cov --locked
 
-      # SwiftLint is read by swift_gate.sh when present (ui/.gatesrc names a
-      # .swiftlint-baseline.json), and the gate WARNs rather than fails when
-      # it is absent — so install it and let the baseline do its job, rather
-      # than shipping a CI run whose Swift half is weaker than the local one.
-      - name: Install SwiftLint
-        run: brew install swiftlint
+      # Since gates_of_heck v0.20.0 the gate FAILS up front when a tool it
+      # needs is missing (it used to warn and skip): swift_gate.sh reads
+      # SwiftLint (ui/.gatesrc names a .swiftlint-baseline.json) and the
+      # structural layer's shell lint reads ShellCheck. macOS runner images
+      # ship neither. The first CI run of this workflow went red on exactly
+      # that (ShellCheck), 2026-10-05.
+      - name: Install SwiftLint and ShellCheck
+        run: brew install swiftlint shellcheck
 
       - name: The gate
         # The SAME entry point the pre-push hook runs. GOH_DIR is exported

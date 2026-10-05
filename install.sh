@@ -6,8 +6,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 
 DEST_DIR="${1:-/Applications/Antiknob}"
-TARGET_DIR="$(cargo metadata --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')"
-PKG_VERSION="$(cargo metadata --format-version 1 | python3 -c 'import json, sys; print([p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "antiknob"][0])')"
+TARGET_DIR="$(cargo metadata --locked --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')"
+PKG_VERSION="$(cargo metadata --locked --format-version 1 | python3 -c 'import json, sys; print([p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "antiknob"][0])')"
 PKG_BUILD="$(git rev-list --count HEAD)"
 
 # TCC remembers an Accessibility grant against the binary's designated
@@ -29,7 +29,9 @@ fi
 SIGN_ID="${SIGN_ID:--}"
 
 echo "[ ==> ] Building release binaries (arm64)..."
-cargo build --release
+# --locked: an installer that re-resolves would ship whatever the registry
+# served that day, on a machine whose gate pinned a different graph.
+cargo build --release --locked
 
 echo "[ ==> ] Installing to ${DEST_DIR}..."
 mkdir -p "${DEST_DIR}/bin"

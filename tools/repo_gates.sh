@@ -8,6 +8,19 @@
 #      about one run in four. Tests belong in the gate, not in a habit.
 #   2. cargo audit -- house Rust rule. `audit.toml` carries the deny list
 #      that makes it fail on unmaintained/unsound, plus the ignore ratchet.
+#
+# BOTH cargo steps are pinned, differently, because they are different kinds
+# of command. `cargo test` gets `--locked`, so cargo fails with its own
+# message naming `Cargo.lock` rather than re-resolving and rewriting it --
+# which is how a manifest-only dependency edit reaches a green gate.
+#
+# `cargo audit` gets NO such flag, and that is measured rather than assumed:
+# `cargo audit --locked` exits non-zero with "error: unexpected argument
+# '--locked' found", and its only path option is `-f/--file`, whose default
+# is already `Cargo.lock`. It reads a lockfile and never resolves one, so
+# there is nothing for it to launder. `tools/gate.sh` wraps this whole script
+# in `lock_guard.sh`, which hashes the lockfile either way -- so even a step
+# that omitted the flag cannot leave a rewritten `Cargo.lock` behind.
 set -euo pipefail
 
 GOH="${GOH_DIR:-${GOH:-$HOME/Projects/gates_of_heck}}"
@@ -19,8 +32,8 @@ cd "$ROOT_DIR"
 
 section "repo gates"
 
-info "test suite (all targets, all features)"
-if cargo test --all-targets --all-features --quiet; then
+info "test suite (all targets, all features, --locked)"
+if cargo test --all-targets --all-features --locked --quiet; then
     ok "test suite"
 else
     die "test suite failed"

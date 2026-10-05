@@ -8,10 +8,13 @@ plan and does not get pruned.
 
 ## Next (2026-10-05)
 
-* The 2026-10-04 round's six commits plus the tray-glyph fix are committed
-  but NOT yet pushed; the owner approved pushing. Pushing runs the first ever
-  `.github/workflows/tests.yml`; treat a red first run (e.g. the `macos-26`
-  label) as a workflow defect. Then ask the owner about a release.
+* Pushed 2026-10-05. `.github/workflows/tests.yml` ran for the first time and
+  went red twice on CI-only gaps, both fixed: ShellCheck missing on the macOS
+  runner (gates_of_heck v0.20.0 made missing tools fatal), then checkout's
+  persisted token tripping the no-credential-in-git-config check. Green at
+  `b49db1e`. Next: replace the hand-kept tool installs with gates_of_heck's
+  `gates/required_tools.py --install` once that is pushed, and ask the owner
+  whether to cut a release for the round.
 * `tools/lock_guard.sh` is redundant since gates_of_heck v0.20.0 (`rust_gate.sh`
   now runs `--locked` everywhere and fails on a rewritten lock); retire it once
   that is calibrated here.

@@ -16,16 +16,40 @@ use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 /// Embedded knob artwork for the menu bar. Decode failure
 /// degrades to the title-only tray (the layer number stays primary).
 const TRAY_ICON_PNG: &[u8] = include_bytes!("../../../assets/knob-tray.png");
-const TRAY_ICON_PX: u32 = 64;
+
+/// SIZE. tray-icon takes a bitmap's pixel height as its height in points and
+/// shrinks anything taller than its 22pt cap to fit (0.26; 0.24 forced every
+/// icon to 18pt). Handing it the 64 px art therefore drew the knob at 22pt --
+/// the status item's whole height, its tick dots touching the edges, 22%
+/// larger than through v0.15.0. The art is instead drawn into a 36 x 44 px
+/// canvas, 36 px square with 4 px of clear rows above and below: the cap turns
+/// that into exactly 18 x 22pt at 2x, so the knob keeps its 0.24 size and maps
+/// one bitmap pixel to one Retina device pixel. Judged offscreen on light and
+/// dark bars (2026-10-05), not on the live menu bar, which is too full to A/B.
+const TRAY_ART_PX: u32 = 36;
+const TRAY_CANVAS_W: u32 = 36;
+const TRAY_CANVAS_H: u32 = 44;
+
+fn tray_rgba() -> Option<image::RgbaImage> {
+    let img = image::load_from_memory(TRAY_ICON_PNG).ok()?;
+    let art = img
+        .resize(
+            TRAY_ART_PX,
+            TRAY_ART_PX,
+            image::imageops::FilterType::Lanczos3,
+        )
+        .into_rgba8();
+    let mut canvas = image::RgbaImage::new(TRAY_CANVAS_W, TRAY_CANVAS_H);
+    let x = (TRAY_CANVAS_W - art.width()) / 2;
+    let y = (TRAY_CANVAS_H - art.height()) / 2;
+    image::imageops::overlay(&mut canvas, &art, i64::from(x), i64::from(y));
+    Some(canvas)
+}
 
 fn tray_icon() -> Option<Icon> {
-    let img = image::load_from_memory(TRAY_ICON_PNG).ok()?;
-    let small = img.resize(
-        TRAY_ICON_PX,
-        TRAY_ICON_PX,
-        image::imageops::FilterType::Lanczos3,
-    );
-    Icon::from_rgba(small.into_rgba8().into_raw(), TRAY_ICON_PX, TRAY_ICON_PX).ok()
+    let canvas = tray_rgba()?;
+    let (w, h) = canvas.dimensions();
+    Icon::from_rgba(canvas.into_raw(), w, h).ok()
 }
 
 pub enum TrayAction {
@@ -207,6 +231,9 @@ impl TrayUi {
 mod tests {
     use super::*;
 
+    /// tray-icon 0.26's macOS height cap (`MAX_ICON_HEIGHT`, `macos/mod.rs`).
+    const TRAY_MAX_HEIGHT_PT: f64 = 22.0;
+
     #[test]
     fn the_tooltip_says_when_gestures_are_off() {
         assert_eq!(tooltip("2", true), "Antiknob — layer 2");
@@ -218,5 +245,30 @@ mod tests {
         assert!(tray_icon().is_some(), "bundled knob tray PNG must decode");
         let img = image::load_from_memory(TRAY_ICON_PNG).expect("valid PNG");
         assert_eq!((img.width(), img.height()), (64, 64));
+    }
+
+    /// The size decision of 2026-10-05, pinned: under tray-icon's cap the
+    /// canvas must land on 18pt wide and exactly 2 pixels per point.
+    #[test]
+    fn menu_bar_shows_the_knob_at_18pt_and_exactly_2x() {
+        let canvas = tray_rgba().expect("bundled knob tray PNG must decode");
+        let (w, h) = canvas.dimensions();
+        let (w, h) = (f64::from(w), f64::from(h));
+        assert!(h > TRAY_MAX_HEIGHT_PT, "a canvas under the cap is drawn 1x");
+        let width_pt = w * TRAY_MAX_HEIGHT_PT / h;
+        assert!((width_pt - 18.0).abs() < f64::EPSILON, "width {width_pt}pt");
+        assert!((h / TRAY_MAX_HEIGHT_PT - 2.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn the_padding_rows_are_clear_and_the_art_is_not() {
+        let canvas = tray_rgba().expect("bundled knob tray PNG must decode");
+        let pad = (TRAY_CANVAS_H - TRAY_ART_PX) / 2;
+        let row_alpha = |y: u32| (0..TRAY_CANVAS_W).map(|x| canvas.get_pixel(x, y)[3]).max();
+        for y in (0..pad).chain(TRAY_CANVAS_H - pad..TRAY_CANVAS_H) {
+            assert_eq!(row_alpha(y), Some(0), "row {y} should be transparent");
+        }
+        let ink: u32 = canvas.pixels().map(|p| u32::from(p[3] > 0)).sum();
+        assert!(ink > 100, "only {ink} inked pixels: the art did not land");
     }
 }

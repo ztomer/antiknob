@@ -79,33 +79,30 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      # The tools the gate NAMES rather than skips. Each is a hard
-      # requirement of a step inside tools/gate.sh, not a convenience:
-      #   cargo-llvm-cov  gates/coverage_gate.sh, for GOH_COV_FLOOR_RUST=61
-      #   cargo-audit     tools/repo_gates.sh
-      #   cargo-machete   rust_gate.sh's "no unused dependencies" step
-      # Since gates_of_heck v0.20.0 `rust_gate.sh` and `swift_gate.sh` FAIL
-      # up front when cargo-machete or swiftlint is missing (they used to
-      # warn and report a pass they never performed), so these installs are
-      # what lets the gate run at all on a bare runner.
+      # The tools the gate refuses to run without, installed from
+      # gates_of_heck's manifest (gates/required_tools.py, pinned to every
+      # refusal site by its own test) rather than from a list kept here: a
+      # copied list drifts the day a gate gains a requirement, and this
+      # workflow's FIRST run went red on exactly that (ShellCheck, after
+      # v0.20.0 made missing tools fatal). The script runs on its own line so
+      # a failure aborts the step instead of installing nothing and passing,
+      # and an EMPTY install list fails too (grep finds nothing, pipefail):
+      # for this repo that can only mean layer detection broke. Both checked
+      # under bash, 2026-10-05.
       #
-      # `--locked` on each install, for the reason tools/lock_guard.sh
-      # exists: a tool install that re-resolves is a dependency change
-      # nobody reviewed.
-      - name: Install the gate's tools
+      # cargo-audit is this repo's own requirement (tools/repo_gates.sh), not
+      # a gates_of_heck one, so it is the one install named here. `--locked`
+      # on every cargo install, for the reason tools/lock_guard.sh exists: a
+      # tool install that re-resolves is a dependency change nobody reviewed.
+      - name: Install the tools the gate requires
+        env:
+          GOH_DIR: ${{ github.workspace }}/goh
         run: |
+          set -euo pipefail
+          cmds="$(python3 "$GOH_DIR/gates/required_tools.py" --repo . --install)"
+          printf '%s\n' "$cmds"
+          grep -v '^#' <<<"$cmds" | bash -eux
           cargo install cargo-audit --locked
-          cargo install cargo-machete --locked
-          cargo install cargo-llvm-cov --locked
-
-      # Since gates_of_heck v0.20.0 the gate FAILS up front when a tool it
-      # needs is missing (it used to warn and skip): swift_gate.sh reads
-      # SwiftLint (ui/.gatesrc names a .swiftlint-baseline.json) and the
-      # structural layer's shell lint reads ShellCheck. macOS runner images
-      # ship neither. The first CI run of this workflow went red on exactly
-      # that (ShellCheck), 2026-10-05.
-      - name: Install SwiftLint and ShellCheck
-        run: brew install swiftlint shellcheck
 
       - name: The gate
         # The SAME entry point the pre-push hook runs. GOH_DIR is exported

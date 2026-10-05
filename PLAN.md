@@ -12,9 +12,9 @@ plan and does not get pruned.
   went red twice on CI-only gaps, both fixed: ShellCheck missing on the macOS
   runner (gates_of_heck v0.20.0 made missing tools fatal), then checkout's
   persisted token tripping the no-credential-in-git-config check. Green at
-  `b49db1e`. Next: replace the hand-kept tool installs with gates_of_heck's
-  `gates/required_tools.py --install` once that is pushed, and ask the owner
-  whether to cut a release for the round.
+  `b49db1e`. The tool installs now come from gates_of_heck's manifest
+  (`gates/required_tools.py --repo . --install`) instead of a hand-kept list.
+  Open: whether to cut a release for the round (owner).
 * `tools/lock_guard.sh` is redundant since gates_of_heck v0.20.0 (`rust_gate.sh`
   now runs `--locked` everywhere and fails on a rewritten lock); retire it once
   that is calibrated here.

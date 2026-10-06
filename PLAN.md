@@ -15,9 +15,6 @@ plan and does not get pruned.
   `b49db1e`. The tool installs now come from gates_of_heck's manifest
   (`gates/required_tools.py --repo . --install`) instead of a hand-kept list.
   Open: whether to cut a release for the round (owner).
-* `tools/lock_guard.sh` is redundant since gates_of_heck v0.20.0 (`rust_gate.sh`
-  now runs `--locked` everywhere and fails on a rewritten lock); retire it once
-  that is calibrated here.
 * Hardware: the 0x1189 gesture mapping and byte 5 of a chained record (Open §4).
 
 ## Context

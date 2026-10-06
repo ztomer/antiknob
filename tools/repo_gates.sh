@@ -18,9 +18,7 @@
 # `cargo audit --locked` exits non-zero with "error: unexpected argument
 # '--locked' found", and its only path option is `-f/--file`, whose default
 # is already `Cargo.lock`. It reads a lockfile and never resolves one, so
-# there is nothing for it to launder. `tools/gate.sh` wraps this whole script
-# in `lock_guard.sh`, which hashes the lockfile either way -- so even a step
-# that omitted the flag cannot leave a rewritten `Cargo.lock` behind.
+# there is nothing for it to launder.
 set -euo pipefail
 
 GOH="${GOH_DIR:-${GOH:-$HOME/Projects/gates_of_heck}}"

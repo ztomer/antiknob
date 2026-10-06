@@ -92,8 +92,8 @@ jobs:
       #
       # cargo-audit is this repo's own requirement (tools/repo_gates.sh), not
       # a gates_of_heck one, so it is the one install named here. `--locked`
-      # on every cargo install, for the reason tools/lock_guard.sh exists: a
-      # tool install that re-resolves is a dependency change nobody reviewed.
+      # on every cargo install, because a tool install that re-resolves is a
+      # dependency change nobody reviewed.
       - name: Install the tools the gate requires
         env:
           GOH_DIR: ${{ github.workspace }}/goh
@@ -106,8 +106,8 @@ jobs:
 
       - name: The gate
         # The SAME entry point the pre-push hook runs. GOH_DIR is exported
-        # rather than prefixed per-command because tools/gate.sh, the two
-        # layer scripts and tools/lock_guard.sh each resolve it themselves.
+        # rather than prefixed per-command because tools/gate.sh and the
+        # layer scripts each resolve it themselves.
         env:
           GOH_DIR: ${{ github.workspace }}/goh
         run: ./tools/gate.sh --full

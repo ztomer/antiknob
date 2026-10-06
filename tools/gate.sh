@@ -16,24 +16,22 @@ esac
 
 "$GOH/gates/structural.sh" "$@"
 
-# The lockfile guard, resolved before any cargo step runs.
-LOCK_GUARD="$PWD/tools/lock_guard.sh"
-
 case "${1:-}" in
   --full)
     # Add per-language layers for what this repo actually contains:
     #
-    # Every cargo step below runs INSIDE the lock guard, including the two
-    # that live in gates_of_heck and are therefore not this repo's to edit.
-    # `--locked` on our own steps (tools/repo_gates.sh, install.sh) makes
-    # cargo name the lockfile itself; the guard catches the ones we cannot
-    # pass it to, so a re-resolve anywhere in the gate is a red gate rather
-    # than a lockfile diff nobody reads.
-    "$LOCK_GUARD" "$GOH/gates/rust_gate.sh"  .
+    # The lockfile is an INPUT to the gate, never an OUTPUT. rust_gate.sh
+    # (gates_of_heck >= v0.20.0) resolves `cargo metadata --locked` first,
+    # passes --locked to every resolving cargo call and fails if any step
+    # rewrote Cargo.lock; our own steps pass --locked themselves. That made
+    # this repo's tools/lock_guard.sh redundant, and it was retired
+    # 2026-10-06 after the upstream gate was shown refusing a lock-changing
+    # manifest edit with the lockfile left untouched.
+    "$GOH/gates/rust_gate.sh"  .
     #   "$GOH/gates/py_gate.sh"    .
     # The Swift half is its own SPM package under ui/, with its own .gatesrc.
     "$GOH/gates/swift_gate.sh" ./ui
     # Layer 3: genuinely local checks (cargo test + cargo audit).
-    "$LOCK_GUARD" ./tools/repo_gates.sh
+    ./tools/repo_gates.sh
     ;;
 esac

@@ -10,7 +10,7 @@
 #
 # What it does:
 #   1. preconditions (clean tree, on main, main pushed, version match,
-#      gh + hdiutil + rsync present)
+#      gh + diskutil + rsync present)
 #   2. repo gate (tools/gate.sh --full)
 #   3. ./install.sh — rebuilds and refreshes the live /Applications install,
 #      which is also what gets packaged, so release bits == live bits.
@@ -44,7 +44,9 @@ info() { echo "→ $*"; }
 ok() { echo "✓ $*"; }
 
 command -v gh >/dev/null || die "gh CLI required (brew install gh)"
-command -v hdiutil >/dev/null || die "hdiutil required (macOS only)"
+command -v diskutil >/dev/null || die "diskutil required (macOS only)"
+# `diskutil image create from`, not `hdiutil create`: macOS 27 deprecates the latter
+# and the warning is the only notice before it goes away.
 command -v rsync >/dev/null || die "rsync required"
 
 git diff --quiet || die "working tree is dirty — commit or stash first"
@@ -69,12 +71,13 @@ for f in "${APP_SRC}/Antiknob.app" "${APP_SRC}/AntiknobDaemon.app" \
 done
 
 STAGE="$(mktemp -d)"
-trap 'rm -rf "${STAGE}"' EXIT
+OUT="$(mktemp -d)"
+trap 'rm -rf "${STAGE}" "${OUT}"' EXIT
 rsync -a --exclude=.DS_Store "${APP_SRC}/" "${STAGE}/"
 
-DMG="${STAGE}/${DMG_NAME}"
+DMG="${OUT}/${DMG_NAME}"   # outside STAGE: the image must not contain itself
 info "building ${DMG_NAME} ..."
-hdiutil create -volname "Antiknob" -srcfolder "${STAGE}" -ov -format UDZO "${DMG}" >/dev/null
+diskutil image create from --format UDZO --volumeName "Antiknob" "${STAGE}" "${DMG}" >/dev/null
 SHA="$(shasum -a 256 "${DMG}" | cut -d' ' -f1)"
 info "dmg sha256: ${SHA}"
 

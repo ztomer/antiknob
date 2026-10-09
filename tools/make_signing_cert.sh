@@ -26,7 +26,7 @@ DAYS=3650
 
 section "signing identity"
 
-if security find-identity -p codesigning | grep -qF "\"${CERT_NAME}\""; then
+if grep -qF "\"${CERT_NAME}\"" <<<"$(security find-identity -p codesigning)"; then
     ok "${CERT_NAME} already exists"
     security find-identity -p codesigning | grep -F "\"${CERT_NAME}\""
     exit 0
@@ -73,7 +73,7 @@ info "importing into the login keychain"
 security import "${WORK}/bundle.p12" -k "${KEYCHAIN}" -P "${PASS}" \
     -T /usr/bin/codesign -A >/dev/null
 
-if ! security find-identity -p codesigning | grep -qF "\"${CERT_NAME}\""; then
+if ! grep -qF "\"${CERT_NAME}\"" <<<"$(security find-identity -p codesigning)"; then
     die "import reported success but ${CERT_NAME} is not in the keychain"
 fi
 

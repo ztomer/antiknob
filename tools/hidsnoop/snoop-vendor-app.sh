@@ -37,7 +37,7 @@ info "copying $APP"
 COPY="$WORK/app.app"
 # ditto fails on the two libhidapi symlinks; recreate them afterwards.
 ditto "$APP" "$COPY" 2>/dev/null || true
-LIB="$(find "$COPY/Contents/Frameworks" -name 'libhidapi.*.dylib' -type f | head -1)"
+LIB="$(find "$COPY/Contents/Frameworks" -name 'libhidapi.*.dylib' -type f -print -quit)"
 [[ -n "$LIB" ]] || die "no bundled libhidapi found; is hidapi statically linked?"
 ( cd "$(dirname "$LIB")" && ln -sf "$(basename "$LIB")" libhidapi.0.dylib \
                           && ln -sf "$(basename "$LIB")" libhidapi.dylib )

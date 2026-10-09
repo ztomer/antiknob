@@ -6,15 +6,8 @@ file carries only what is still open. `git log --oneline` and
 in [VENDOR_UI_MAP.md](VENDOR_UI_MAP.md), which is measurement rather than
 plan and does not get pruned.
 
-## Next (2026-10-05)
+## Next (2026-10-08, after v0.15.1)
 
-* Pushed 2026-10-05. `.github/workflows/tests.yml` ran for the first time and
-  went red twice on CI-only gaps, both fixed: ShellCheck missing on the macOS
-  runner (gates_of_heck v0.20.0 made missing tools fatal), then checkout's
-  persisted token tripping the no-credential-in-git-config check. Green at
-  `b49db1e`. The tool installs now come from gates_of_heck's manifest
-  (`gates/required_tools.py --repo . --install`) instead of a hand-kept list.
-  Open: whether to cut a release for the round (owner).
 * Hardware: the 0x1189 gesture mapping and byte 5 of a chained record (Open §4).
 
 ## Context

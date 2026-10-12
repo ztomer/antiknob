@@ -73,10 +73,23 @@ Size: S = under one session, M = one session, L = several.
 
 ### Phase 0 -- defects and stale claims (software only) -- size M
 
-Goal: nothing the tree says about itself is false. Exit: K.1 green with its
-calibration recorded, `rg -n '46%|46.58|4%\)' ui/` and the stale VENDOR_UI_MAP
-bullet gone, gate green.
+Goal: the gate green and nothing the tree says about itself false. Exit: a
+push lands (K.0), K.1 green with its calibration recorded,
+`rg -n '46%|46.58|4%\)' ui/` empty, the stale VENDOR_UI_MAP bullet gone.
 
+* **K.0 The pre-push gate is RED: `cargo audit` denies RUSTSEC-2024-0449**
+  (`unsafe-libyaml` 0.2.11 unmaintained, reached only through
+  `serde_yaml_ng` 0.10, used by `src/config.rs`, `src/config_tests.rs` and
+  `src/api/dispatch.rs`). Pre-existing: the advisory database changed, not
+  the tree; every push is refused until this is fixed (2026-10-12, log
+  kept at `~/.cache/goh/push-logs/antiknob-a883863-20261012T103659.log`;
+  every other gate layer was green). Fix the cause: move YAML to a
+  maintained crate with no `unsafe-libyaml` edge (check `cargo audit` on
+  the candidate before adopting it), or drop YAML for the layout file if
+  nothing needs it. An `audit.toml` ignore is the last resort and needs a
+  stated reason. *Acceptance:* `./tools/gate.sh --full` green and
+  `cargo tree -i unsafe-libyaml` empty. Size S. Blocks every push,
+  including the commit that added this item.
 * **K.1 `get_knob_mode` cannot report host-translate on a flashed knob
   (suspected live defect, found 2026-10-12 by reading the code).**
   `device::mode::classify` recognises a chord by `action.mods ==

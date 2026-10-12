@@ -1,190 +1,220 @@
 # Antiknob Plan (forward-looking)
 
 Shipped work lives in git history and in the release notes on each tag; this
-file carries only what is still open. `git log --oneline` and
-`git show <tag>` are the record of what landed when. The protocol itself is
-in [VENDOR_UI_MAP.md](VENDOR_UI_MAP.md), which is measurement rather than
-plan and does not get pruned.
+file carries only what is still open. The previous version of this file,
+with the narrative of how each open item got where it is, is
+`git show 061e1b0:PLAN.md`. The protocol itself is in
+[VENDOR_UI_MAP.md](VENDOR_UI_MAP.md), which is measurement rather than plan
+and does not get pruned.
 
-## Next (2026-10-08, after v0.15.1)
-
-* Hardware: the 0x1189 gesture mapping and byte 5 of a chained record (Open §4).
+Reference docs (not plans, not pruned): `VENDOR_UI_MAP.md` (protocol
+measurements), `REFERENCES.md` (where facts come from), `FIRMWARE_REVIEW.md`
+(2026-09-11 wire audit, all eight findings resolved the same day; its one
+residual question is item H.4), `BATTERY_RESEARCH.md` (research; its open
+questions are item D.4), `FINDINGS.md` (historical feasibility study, marked
+as such at its top).
 
 ## Context
 
 * Hardware: Anticater VK01 knob, VID `0x514C` (LQKJ), PID `0x8850`
   (serial `EB60121120051103`); vendor usage page `0xFF00`, report `0x03`.
-  2.4GHz receivers (`0x25A7:0xFA11`) and Bluetooth are detected too (see `SUPPORTED_DEVICES`).
+  2.4GHz receivers (`0x25A7:0xFA11`) and Bluetooth are detected too (see
+  `SUPPORTED_DEVICES`). Device writes need the USB-C wired link; `antiknob
+  raw` refuses over the receiver.
 * Zero-sudo IOHIDManager access. MIT OR Apache-2.0, native arm64, macOS 26+.
 * **The knob is five gestures at keys 2-6** -- CCW, press, CW, hold+twist
   left, hold+twist right -- and this device has at most ONE button, at key 1.
   Measured with `antiknob probe-gestures --map`; see `key_id_for_knob`.
+* **Slot chords are `ctrl-alt-shift-F16..F20`**, written by `bind-slots` as
+  `0xFD` chains (one entry per modifier, then the keycode). Flashed on all
+  three device layers and working on hardware since 2026-09-08.
 * Architecture: the GUI and CLI stay TCC-free (device flashing, presets, LED,
   YAML). The daemon alone needs Accessibility / Input Monitoring for host-side
   translation. `host.json` is the contract between them, and `set_config`
-  keeps five rotated backups (`host.json.1..5`) because a bad writer used to
-  take the file with it.
-* **The backlight follows the ACTIVE HOST LAYER**, and that is something the
-  daemon does rather than something the firmware offers: the firmware stores
-  one mode per DEVICE layer and has never heard of host layers, so
-  `host::led_sync` writes the active layer's mode to the bound device layer
-  on every switch, off the caller's thread. A layer with no mode leaves the
-  light alone. Verified 2026-09-08 in two independent halves, because the
-  read-back alone proves nothing: switching layers over the socket makes the
-  device report the new layer's mode, AND a written mode was watched changing
-  the physical light (green, off, rainbow, red on demand).
-* **An instrument that cannot fail is worse than none.** FOUR shipped this
-  way and each cost hours: `--verbose` printed nothing in the mode the daemon
-  runs in; `tap_active` was set before the call it claimed to describe;
-  `probe-gestures --map` closed with a hard-coded model contradicting its own
-  measurement; and a device read-back proved storage while being read as
-  proof of effect. The rule the repo now works to: before believing a
-  negative result, make the instrument produce a positive one (type a key,
-  write a mode you can see). Anything a command PRINTS about what it did must
-  be derived from what it did -- nothing compiles against a `println!`, so
-  every literal in one rots silently.
-* All hidapi work re-enumerates the bus before every job. `HidApi::new`
-  snapshots it once, so a daemon that never refreshed answered from that
-  snapshot forever -- one replug and every open failed against a dead device
-  path while `get_status` still reported "connected".
-* The settings app is four tabs: General, Layers, Hardware, Services. Layers
-  live behind one tab because the strip is in the titlebar and has a fixed
-  budget; lighting lives inside a layer because it is per host layer.
-* Every command is declared once in `src/api/registry.rs`; the CLI's clap tree
-  and the MCP tool list are both generated from it. A command absent from a
-  surface states why, in the table.
-* All hidapi calls are marshalled onto one dedicated thread by
-  `device::with_hid` / `device::with_device`; nothing outside `src/device/`
-  may reach the `hidapi` crate. See `tests/hid_thread_affinity.rs` for why.
-* The Swift app is an SPM package (`ui/Package.swift`): `AntiknobUI` holds the
-  views, models and store, with `Core/` the half that has no view
-  declarations and carries its own coverage floor; `Antiknob` holds only
-  `@main`, because `@main` cannot live in a library.
+  keeps five rotated backups (`host.json.1..5`).
+* **The backlight follows the ACTIVE HOST LAYER**, done by the daemon
+  (`host::led_sync`), not offered by the firmware, which stores one mode per
+  DEVICE layer. A layer with no mode leaves the light alone.
+* **An `FA` read-back proves the device STORED bytes, never that it ACTS on
+  them**, and an instrument that cannot fail is worse than none. Before
+  believing a negative result, make the instrument produce a positive one
+  (type a key, write a mode you can see). Anything a command PRINTS about
+  what it did must be derived from what it did.
+* All hidapi work re-enumerates the bus before every job, and all hidapi
+  calls are marshalled onto one thread by `device::with_hid` /
+  `device::with_device`; nothing outside `src/device/` may reach `hidapi`
+  (`tests/hid_thread_affinity.rs`).
+* Every command is declared once in `src/api/registry.rs`; the CLI's clap
+  tree and the MCP tool list are both generated from it.
+* The Swift app is an SPM package (`ui/Package.swift`): `AntiknobUI` holds
+  views, models and store, with `Core/` the half with no view declarations
+  and its own coverage floor; `Antiknob` holds only `@main`. Settings app is
+  four tabs: General, Layers, Hardware, Services.
+* Coverage floors live in `.gatesrc` (`GOH_COV_FLOOR_RUST`), `ui/.gatesrc`
+  (`GOH_SWIFT_COV_MIN`) and `ui/coverage-floors.json` (`AntiknobUI/Core`).
+  They are ratchets set just under the measured figure; this file does not
+  restate the numbers. `ConfigStore(inMemory:)` is the store's test seam --
+  the plain `init()` loads and WRITES the user's real `host.json`, and a test
+  that used it once destroyed a working configuration.
 
-## Open
+## Rulings
 
-### 1. Coverage, where it is worth measuring
+* **The virtual layer rides whichever device layer is bound to slot
+  chords.** Media and Navigate stay hardware layers with their no-daemon
+  property. No device-layer switching: the knob has no spare button and a
+  calibrated 512-query sweep found nothing that reports or sets the active
+  layer.
+* Device writes (flash, LED) on the owner's knob need the owner's go-ahead
+  in the session; approval is per session (granted 2026-09-07 for one).
 
-Two floors, both the measured figure with the decimal shaved so they can only
-be met by keeping tests:
+## Phases
 
-| floor | value | measured | what it covers |
-|-------|-------|----------|----------------|
-| `GOH_COV_FLOOR_RUST` | 61 | 61.45% | the Rust crate |
-| `GOH_SWIFT_COV_MIN` | 7 | 7.53% | the whole Swift package |
-| `coverage-floors.json` | 54 | 54.84% | `Sources/AntiknobUI/Core/` |
+Size: S = under one session, M = one session, L = several.
 
-The package figure is low because ~6,400 of its ~6,900 lines are SwiftUI view
-bodies no unit test executes. `Core/` is the half with no view declarations at
-all, and its floor is the one that means something.
+### Phase 0 -- defects and stale claims (software only) -- size M
 
-`ConfigStore` has a seam now: `ConfigStore(inMemory:)` builds a store that
-loads nothing, polls nothing and writes nothing. That was overdue for a
-reason worse than coverage -- the plain `init()` loads the real `host.json`
-and pushes every `cfg` assignment back to the running daemon, so a test that
-built one and assigned a fixture EDITED THE USER'S CONFIGURATION. One did,
-and destroyed a working two-layer setup plus two restores of it.
+Goal: nothing the tree says about itself is false. Exit: K.1 green with its
+calibration recorded, `rg -n '46%|46.58|4%\)' ui/` and the stale VENDOR_UI_MAP
+bullet gone, gate green.
 
-Still worth doing: **fake the socket.** The seam above covers construction
-and the config, but `ConfigStore`'s one-shot RPCs still reach
-`SocketClient.shared` directly, so nothing exercises their success and
-failure paths. That is the next seam.
+* **K.1 `get_knob_mode` cannot report host-translate on a flashed knob
+  (suspected live defect, found 2026-10-12 by reading the code).**
+  `device::mode::classify` recognises a chord by `action.mods ==
+  SLOT_CHORD_MODS` (`0x01|0x04`, ctrl+alt) read through `parse_record`,
+  which takes mods/code from bytes 11/12 -- the dead `0xFE` layout. But
+  `bind-slots` writes `ctrl-alt-shift` as a `0xFD` chain (`len 4`, entries
+  `f1 f2 f3 6b` from byte 7, per `bind-slots --dry-run`), and VENDOR_UI_MAP
+  records that an `FA` read returns that chain layout unchanged. So bytes
+  9/11/12 read `f1/00/f2`, no record matches, and every flashed knob
+  classifies as `Standalone`. The classifier's tests build their fixtures
+  from `SLOT_CHORD_MODS` itself, so they are tautological.
+  *Class:* readers of `FA` replies that assume the `0xFE` layout.
+  *Acceptance:* a test that feeds `bind::binding_packets` output, re-framed
+  as an `FA` reply, through `classify` and requires `HostTranslate`; proven
+  red on today's code first. Delete `SLOT_CHORD_MODS` (it encodes the
+  pre-shift chord) and derive the match from `SLOT_SPECS`. Grep every
+  `parse_record` caller for the same assumption. Hardware confirmation is
+  H.1. *Risk:* the GUI's "Not flashed" / mode text is driven by this, so
+  users have likely been told the wrong thing since v0.12.0 (803170e,
+  2026-09-08), when the chords gained shift and moved to `0xFD`.
+* **K.2 Stale coverage comments.** `ui/Package.swift` says the Core floor is
+  46% and the package floor 4%; `ui/.gatesrc` says Core measures 46.58%. The
+  configured floors are 54 and 7. Correct the sentences, not append.
+  *Acceptance:* the grep in the exit criterion is empty.
+* **K.3 VENDOR_UI_MAP "Still open" contradicts itself.** Its "Media
+  chaining" bullet says the limit is the app; the same file later measures
+  that the DEVICE truncates media chains. Correct the bullet (measurement
+  wins, both readings visible). Also the stale comments in
+  `src/device/mode.rs` / `src/firmware.rs` calling the chords
+  "ctrl-alt-F19" (fixed with K.1).
+* **K.4 Lockfile hygiene.** `cargo update --dry-run` (2026-10-12): `cc`
+  1.6.0 -> 1.8.0, `serde_json` 1.0.151 -> 1.0.154, `syn` 3.0.6 -> 3.0.8,
+  `unicode-ident` 1.0.26 -> 1.0.27; no majors behind. *Acceptance:* refreshed
+  lock, `cargo tree -d` shows no new duplicates, gate green. Size S.
 
-`ui/.swiftlint-baseline.json` is the companion ratchet: 5 entries, shrink-only
--- a new violation fails and so does a listed one that GROWS, because the
-match key includes the measured count. Re-record only after verifying zero new
-debt, and DELETE entries whose violations stop firing rather than re-listing
-them.
+### Phase 1 -- house-style and test seams (software only) -- size M
 
-### 2. Three layers, the third virtual and daemon-driven
+Goal: the remaining house-rule gaps closed and the store's RPC paths
+testable. Exit: zero hand-rolled status prefixes, a socket fake in use, the
+`Core/` floor raised to the new measured figure.
 
-The firmware's three layers and the host's three are different things that
-share a word. The firmware's are fixed keymaps; the host's are what the daemon
-does with slot chords.
+* **S.1 Kare TUI in the Rust binaries.** 43 `println!("[ ==> ] ...")`
+  prefixes across `src/bin/` (daemon `run.rs`, `main.rs`, CLI). House rule:
+  no hand-rolled bracket status. gates_of_heck ships `tui/lib.sh` and
+  `tui/lib.py` but no Rust equivalent -- that gap is goh's to fill (report
+  it there; do not vendor a copy). *Acceptance:* `rg '\[ ==> \]' src` empty
+  and a gate that goes red on a reintroduced prefix; output honours
+  `NO_COLOR` / non-tty. *Dependency:* a goh Rust TUI helper, or a ruling to
+  use a local one that reads goh's `stylerc`.
+* **S.2 Fake the socket.** `ConfigStore`'s one-shot RPCs still reach
+  `SocketClient.shared` directly (13 references in `ConfigStore.swift`,
+  `ConfigStore+Commands.swift`, `ServicesCapabilities.swift`), so their
+  success and failure paths are unexercised. Inject a narrow protocol with a
+  hand-written fake. *Acceptance:* tests for each RPC's success AND failure
+  path; `ui/coverage-floors.json` raised to the new measured figure.
+* **S.3 Shrink `ui/.swiftlint-baseline.json`** (5 entries, shrink-only
+  ratchet). *Acceptance:* entries fixed and deleted; a listed violation that
+  stops firing is deleted, never re-recorded.
+* **S.4 Verification and `get_knob_mode` onto the burst read.** `upload
+  --verify` and `get_knob_mode` (`read_slot_table`) still walk slot by slot
+  at the declared layout's width, so they cannot see keys past it.
+  `read_full_table` is three queries instead of eighteen and strictly more
+  complete. Deliberate change, its own commit. *Acceptance:* both paths
+  call `read_full_table`; a fixture test with a record above the layout
+  width is seen. *Depends on:* K.1 (same reader).
 
-**Decided: the virtual layer rides whichever device layer is bound to slot
-chords.** Media and Navigate stay hardware layers with their no-daemon
-property intact. No device-layer switching is attempted, because this knob has
-no spare button and a calibrated 512-query sweep found nothing that reports or
-sets the active layer -- only `FA B0 <layer>` (the LED mode) and the slot
-table answer.
+### Phase 2 -- one wired hardware session -- size M, needs the knob on USB-C
 
-Built: `host.json` carries `boundDeviceLayers`, `bind-slots` records every layer
-it flashed, `host::device_binding` turns that into a sentence, and
-`get_knob_mode` / `get_virtual_layer` / the GUI all state it -- including the
-unbound case, where a virtual layer is configured perfectly and fires never.
+Goal: every question that only the device can answer, batched into one
+sitting. Exit: each item below has a recorded measurement in VENDOR_UI_MAP
+(positive control included) or a stated reason it could not be taken.
 
-**Flashed and working on hardware 2026-09-08.** All five gestures drive their
-layer's action, double-tap switches layers, and the chords are
-`ctrl-alt-shift-F16..F20` on keys 2-6 across all three device layers. The
-gesture map was then RE-measured through the fixed encoder -- keys 2, 3, 4,
-5, 6 fired in gesture order, key 1 never driven. The first measurement had
-written its markers through `0xFE`, records the firmware stored and never
-ran, so it needed redoing before it could be trusted; it gave the same
-answer.
+* **H.1 Confirm K.1 on the knob:** after `bind-slots`, `get_knob_mode`
+  (MCP / socket) and the GUI report host-translate.
+* **H.2 Do the chords need shift?** They moved to `ctrl-alt-shift` when
+  `ctrl-alt-F18..F20` seemed to collide with another app; the collision was
+  probably the since-fixed modifier-inheritance bug. One flash of
+  `ctrl-alt-F16..F20` settles it. *Acceptance:* daemon FIRED lines for all
+  five gestures and no other app reacting, then a ruling recorded here.
+  Changing the chord touches `SLOT_SPECS`, `host::gesture::SLOT_MODS` and
+  their pinning tests together.
+* **H.3 Fresh wired capture** with `tools/hidsnoop/snoop-vendor-app.sh`,
+  frames added to `tests/fixtures/vendor_capture.json` (no invented frames).
+  Targets, by value: mouse under `0xFD` (only buttons at byte 12 and wheel at
+  byte 21 measured; `fd::build_packet` refuses mouse until then, so no mouse
+  step in a sequence), byte 5 of a chained record (factory frame shows `01`
+  where we write `00`), why swipes and the `Ctrl+Alt+` combo buttons never
+  assign in the vendor UI.
+* **H.4 LED:** watch mode 3 ("ripple", still taken from
+  kriomant/ch57x-keyboard-tool#173) and whether a mode stored on device
+  layers 3-15 ever renders (FIRMWARE_REVIEW #7; storage measured, render
+  not). If they never render, cap `SET_LED_LAYER_MAX` at the firmware's
+  three layers.
 
-Getting there took three defects that no test could see, all recorded in
-`VENDOR_UI_MAP.md`:
+### Phase 3 -- design and hardware we do not have -- parked
 
-* the `0xFE` encoder wrote slot records with no entry count, which the device
-  stored, echoed back perfectly, and never executed;
-* four diagnostics reported something other than what they measured -- see
-  the instrument bullet in Context;
-* synthesized scroll and click events inherited the chord's held modifiers,
-  so a scroll went out as ctrl+alt+shift+scroll.
+* **D.1 What the virtual layer should DO.** The mechanism and the
+  frontmost-app driver work; nothing has been designed for it to mean.
+  Blocked on an owner design decision; size M once decided.
+* **D.2 Bluetooth transport, unconfirmed in life.** `classify_device` is a
+  pure function pinned by 7 tests; no Anticater has been paired over BT
+  here, so the BT branch and its power text are unverified and no battery
+  query is known. *Unblock:* pair the knob over BT and run `antiknob status
+  --json`.
+* **D.3 The 0x1189 CH57x family.** The gesture-to-key-id mapping is applied
+  to every VID/PID in `SUPPORTED_DEVICES`, but no CH57x capture exists.
+  *Unblock:* a CH57x device on the bench, or narrow `SUPPORTED_DEVICES` to
+  what has been measured -- an owner call.
+* **D.4 Battery questions** (BATTERY_RESEARCH.md section 6): sleep current
+  and delay per mode, whether wired mode powers down RF, whether the vendor
+  `DelaySetting` persists and is worth exposing. Needs a USB power meter;
+  only DelaySetting has a software deliverable.
 
-Still to do:
+## Sources consolidated (2026-10-12)
 
-* **Decide whether the chords need shift at all.** They moved to
-  `ctrl-alt-shift` when `ctrl-alt-F18/F19/F20` looked like it collided with
-  another application. The collision was probably the modifier-inheritance
-  bug instead, which is now fixed, so the extra modifier may be buying
-  nothing -- and fewer modifiers is less to collide with. One flash settles
-  it; it has not been tried.
-* **Decide what the virtual layer should DO.** The mechanism exists and the
-  frontmost-app driver works; nothing has been designed for it to mean.
-
-### 3. Bluetooth transport is inferred, and cannot be confirmed here
-
-`device::classify_device` decides a device is ours, and over which transport,
-from its VID/PID, its bus type and its product string. Only USB and the 2.4GHz
-receiver have ever been exercised against real hardware.
-
-The decision is a pure function pinned by 7 tests, which is the only way the
-Bluetooth branches can be exercised without the hardware. That extraction
-found a real defect: the old inline code raised its `is_bt` flag from the
-PRODUCT STRING as well as the bus, so an Anticater with an unlisted PID
-plugged into USB was classified as Bluetooth -- and since transport drives the
-power readout, the UI would have called a bus-powered device battery-powered.
-Fixed: the bus is ground truth, the name only decides whether the device is
-ours.
-
-What remains needs the hardware: no Anticater has been paired over Bluetooth
-here, so the branch is pinned by construction and unconfirmed in life. The
-power description it drives (`Bluetooth Wireless (Battery Powered)`) is
-likewise unverified, and no vendor battery-level query has been found -- over
-USB the device reports bus power and nothing else. See
-[BATTERY_RESEARCH.md](BATTERY_RESEARCH.md).
-
-### 4. Protocol corners still unmeasured
-
-From [VENDOR_UI_MAP.md](VENDOR_UI_MAP.md), in rough order of value:
-
-* **Mouse under `0xFD`.** Its four bytes do not sit where the `0xFE` layout
-  puts them -- button at byte 12, wheel at byte 21 -- and only the buttons
-  (1/2/4) and wheel (`01`/`ff`) are measured. `fd::build_packet` refuses mouse
-  rather than guessing the rest, so a mouse action cannot be part of a
-  sequence.
-* **Swipes.** `Left/Right/Up/Down Swipe` never assign to a knob gesture in the
-  vendor UI, and neither do the `Ctrl+Alt+` combo buttons, while single
-  modifiers in the same panel do.
-* **Byte 5.** Device-owned: it reads back the same whatever is written there,
-  and was `01` on every slot at session start and `00` afterwards. Nothing
-  depends on it.
-* **LED mode 3 ("ripple").** The one mode whose behaviour is still taken from
-  kriomant/ch57x-keyboard-tool#173 rather than watched on this knob. The
-  other five have been seen.
-* **`upload --verify` still walks slot by slot.** The burst read
-  (`read_full_table`) is three queries instead of eighteen and strictly more
-  complete, but swapping the verification gate onto new code is a deliberate
-  change, not a drive-by one.
+* `PLAN.md` @ 061e1b0 -- rephased into this file; narrative pruned to
+  `git show 061e1b0:PLAN.md`. Open sections 1-4 carried as S.2, S.3, S.4,
+  H.2, H.3, H.4, D.1, D.2; "Next" (0x1189 mapping, byte 5) carried as D.3,
+  H.3.
+* `.opencode/opencode-loop/ses_f86117f01ffeYDpXlEyY2Eelpy` (goal "implement
+  the plan", 2026-09-07, blocked on the owner) -- superseded: every owner
+  step it waited on landed (device writes approved and flashed 2026-09-07,
+  twist-to-action verified on hardware 2026-09-08, installs/releases since
+  through v0.15.1). Nothing carried.
+* `.opencode/opencode-loop/ses_f773ebc95ffef48NGRrbXqMEfm` (goal "implement
+  and verify the fix", 2026-09-10, completed) -- superseded: the Flash Knob
+  fix is in the tree (`resolve_bind_layers` in `src/api/device_cmds.rs`).
+* `.opencode/opencode-loop/ses_f8600a124ffewjUvyduoCc0ynY` -- empty job
+  list; nothing to carry.
+* `FIRMWARE_REVIEW.md` -- reference; findings 1-8 verified resolved in code
+  (`superseded()` in `led_sync.rs`, `send_report` refuses oversize,
+  `absurd_counts_refuse_rather_than_wrap`); #7's render question -> H.4.
+* `BATTERY_RESEARCH.md` section 6 -> D.4. `VENDOR_UI_MAP.md` "Still open"
+  -> H.3, H.4, K.3.
+* Claude CLI memory, Claude desktop sessions, Antigravity (agent and IDE),
+  Gemini CLI, opencode db: no antiknob entries (the only grep hits were an
+  `/Applications` listing that names `ANTICATER.app`, not this project).
+  `ROADMAP-consolidated.md` and `RUSTIFICATION_ROADMAP.md` do not mention
+  antiknob.
+* git: one branch (`main`, level with `origin/main`), one worktree, no
+  stash.

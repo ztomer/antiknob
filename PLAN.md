@@ -71,40 +71,14 @@ as such at its top).
 
 Size: S = under one session, M = one session, L = several.
 
-### Phase 0 -- wire in goh 0.27.0 -- size S
+### Phase 0 -- wire in goh 0.27.0 -- closed 2026-10-14
 
-Goal: `tools/gate.sh --full` green at HEAD and pushed. Measured 2026-10-14
-at `f90ce18` (hooks reinstalled there, goh `51d31a5`): ONE red step, and
-with it neutralised in a scratch worktree every other layer is green
-(structural, rust, swift `./ui`, `tools/repo_gates.sh`; 176 s). CI runs
-the same `tools/gate.sh --full` (`tests.yml`), so it goes red on the next
-push too. Exit: W.1-W.3 closed; `main` level with `origin/main`.
+`tools/gate.sh --full` green at `6cc8c15`, pushed through the pre-push gate.
 
-* **W.1 Red: `rust: no known advisory (cargo audit: warnings, unmaintained,
-  unsound, yanked)`** -- 1 advisory, RUSTSEC-2024-0449 (`unsafe-libyaml`
-  0.2.11 unmaintained, 2024-03-25), tree `unsafe-libyaml <- serde_yaml_ng
-  0.10.0 <- antiknob`; `serde_yaml_ng` is used by `src/config.rs`,
-  `src/config_tests.rs` and `src/api/dispatch.rs`. The advisory database
-  changed, not the tree. Fix the cause: move YAML to a maintained crate
-  with no `unsafe-libyaml` edge (run `cargo audit` on the candidate before
-  adopting it), or drop YAML for the layout file if nothing needs it. An
-  ignore in `.cargo/audit.toml` (the file's own ratchet, with a `# reason`
-  on its line) is the last resort. *Acceptance:* that step green and
-  `cargo tree -i unsafe-libyaml` empty. Size S.
-* **W.2 Set the scanner floors.** The structural gate's last step printed
-  (2026-10-14): `GOH_EMOJI_MIN_FILES=158 GOH_CONFLICT_MARKERS_MIN_FILES=163
-  GOH_FILE_LENGTH_MIN_FILES=127 GOH_SECRETS_MIN_FILES=158
-  GOH_SHELL_LINT_MIN_FILES=7 GOH_EARLY_EXIT_PIPE_MIN_FILES=12
-  GOH_DEAD_AFTER_EXEC_MIN_FILES=12 GOH_BARE_HOOK_INDEX_MIN_FILES=12
-  GOH_BARE_PYTHON_MIN_FILES=6 GOH_CHECKOUT_CREDENTIALS_MIN_FILES=1
-  GOH_MD_LINKS_MIN_LINKS=20 GOH_UNREAPED_SPAWN_MIN_FILES=49`. Paste each
-  into `.gatesrc` at or a little under its count. *Acceptance:* the
-  `[subject] ... declare no floor` line is gone, and raising one floor by
-  one past its count turns `every scanner read its declared subject` red
-  (then restore it). Size S.
-* **W.3 Push.** Unpushed: `a883863`, `207864c`, `cafd84f`, `f90ce18` and
-  this plan's commit -- every push is refused until W.1. *Acceptance:*
-  `git rev-list --count origin/main..main` = 0 and CI green on it.
+* **W.1** RUSTSEC-2024-0449: YAML on saphyr 0.2.1 via `src/yaml.rs`, `cargo tree -i unsafe-libyaml` empty: `948466b`
+* **W.2** Scanner floors (12 keys, calibrated red): `6cc8c15`
+* **W.3** Push (`a883863`..`6cc8c15`): `6cc8c15`
+
 ### Phase 0b -- defects and stale claims (software only) -- size M
 
 Goal: nothing the tree says about itself false. Exit: K.1 green with its
@@ -144,7 +118,8 @@ stale VENDOR_UI_MAP bullet gone.
 * **K.4 Lockfile hygiene.** `cargo update --dry-run` (2026-10-14): `cc`
   1.6.0 -> 1.8.0, `deranged` 0.5.8 -> 0.5.9, `equivalent` 1.0.2 -> 1.0.3,
   `serde_json` 1.0.151 -> 1.0.154, `syn` 3.0.6 -> 3.0.9, `unicode-ident`
-  1.0.26 -> 1.0.27; no majors behind. Do it with W.1 (same lock).
+  1.0.26 -> 1.0.27; no majors behind. Not done with W.1, which kept to
+  the YAML swap.
   *Acceptance:* refreshed lock, `cargo tree -d` shows no new duplicates,
   gate green. Size S.
 
@@ -280,8 +255,7 @@ sitting. Exit: each item below has a recorded measurement in VENDOR_UI_MAP
   `/Applications` listing that names `ANTICATER.app`, not this project).
   `ROADMAP-consolidated.md` and `RUSTIFICATION_ROADMAP.md` do not mention
   antiknob.
-* git: one branch (`main`), one worktree, no stash; ahead of `origin/main`
-  by the commits W.3 lists.
+* git: one branch (`main`), one worktree, no stash.
 * gates_of_heck v0.27.0 Downstream (2026-10-14): hooks reinstalled
   (`f90ce18`); audit -> W.1; floors -> W.2; status-markers and `goh-tui`
   -> S.1; tap_bump -> S.5; Python 3.15 -> S.6.

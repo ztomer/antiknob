@@ -71,25 +71,46 @@ as such at its top).
 
 Size: S = under one session, M = one session, L = several.
 
-### Phase 0 -- defects and stale claims (software only) -- size M
+### Phase 0 -- wire in goh 0.27.0 -- size S
 
-Goal: the gate green and nothing the tree says about itself false. Exit: a
-push lands (K.0), K.1 green with its calibration recorded,
-`rg -n '46%|46.58|4%\)' ui/` empty, the stale VENDOR_UI_MAP bullet gone.
+Goal: `tools/gate.sh --full` green at HEAD and pushed. Measured 2026-10-14
+at `f90ce18` (hooks reinstalled there, goh `51d31a5`): ONE red step, and
+with it neutralised in a scratch worktree every other layer is green
+(structural, rust, swift `./ui`, `tools/repo_gates.sh`; 176 s). CI runs
+the same `tools/gate.sh --full` (`tests.yml`), so it goes red on the next
+push too. Exit: W.1-W.3 closed; `main` level with `origin/main`.
 
-* **K.0 The pre-push gate is RED: `cargo audit` denies RUSTSEC-2024-0449**
-  (`unsafe-libyaml` 0.2.11 unmaintained, reached only through
-  `serde_yaml_ng` 0.10, used by `src/config.rs`, `src/config_tests.rs` and
-  `src/api/dispatch.rs`). Pre-existing: the advisory database changed, not
-  the tree; every push is refused until this is fixed (2026-10-12, log
-  kept at `~/.cache/goh/push-logs/antiknob-a883863-20261012T103659.log`;
-  every other gate layer was green). Fix the cause: move YAML to a
-  maintained crate with no `unsafe-libyaml` edge (check `cargo audit` on
-  the candidate before adopting it), or drop YAML for the layout file if
-  nothing needs it. An `audit.toml` ignore is the last resort and needs a
-  stated reason. *Acceptance:* `./tools/gate.sh --full` green and
-  `cargo tree -i unsafe-libyaml` empty. Size S. Blocks every push,
-  including the commit that added this item.
+* **W.1 Red: `rust: no known advisory (cargo audit: warnings, unmaintained,
+  unsound, yanked)`** -- 1 advisory, RUSTSEC-2024-0449 (`unsafe-libyaml`
+  0.2.11 unmaintained, 2024-03-25), tree `unsafe-libyaml <- serde_yaml_ng
+  0.10.0 <- antiknob`; `serde_yaml_ng` is used by `src/config.rs`,
+  `src/config_tests.rs` and `src/api/dispatch.rs`. The advisory database
+  changed, not the tree. Fix the cause: move YAML to a maintained crate
+  with no `unsafe-libyaml` edge (run `cargo audit` on the candidate before
+  adopting it), or drop YAML for the layout file if nothing needs it. An
+  ignore in `.cargo/audit.toml` (the file's own ratchet, with a `# reason`
+  on its line) is the last resort. *Acceptance:* that step green and
+  `cargo tree -i unsafe-libyaml` empty. Size S.
+* **W.2 Set the scanner floors.** The structural gate's last step printed
+  (2026-10-14): `GOH_EMOJI_MIN_FILES=158 GOH_CONFLICT_MARKERS_MIN_FILES=163
+  GOH_FILE_LENGTH_MIN_FILES=127 GOH_SECRETS_MIN_FILES=158
+  GOH_SHELL_LINT_MIN_FILES=7 GOH_EARLY_EXIT_PIPE_MIN_FILES=12
+  GOH_DEAD_AFTER_EXEC_MIN_FILES=12 GOH_BARE_HOOK_INDEX_MIN_FILES=12
+  GOH_BARE_PYTHON_MIN_FILES=6 GOH_CHECKOUT_CREDENTIALS_MIN_FILES=1
+  GOH_MD_LINKS_MIN_LINKS=20 GOH_UNREAPED_SPAWN_MIN_FILES=49`. Paste each
+  into `.gatesrc` at or a little under its count. *Acceptance:* the
+  `[subject] ... declare no floor` line is gone, and raising one floor by
+  one past its count turns `every scanner read its declared subject` red
+  (then restore it). Size S.
+* **W.3 Push.** Unpushed: `a883863`, `207864c`, `cafd84f`, `f90ce18` and
+  this plan's commit -- every push is refused until W.1. *Acceptance:*
+  `git rev-list --count origin/main..main` = 0 and CI green on it.
+### Phase 0b -- defects and stale claims (software only) -- size M
+
+Goal: nothing the tree says about itself false. Exit: K.1 green with its
+calibration recorded, `rg -n '46%|46.58|4%\)' ui/ ui/.gatesrc` empty, the
+stale VENDOR_UI_MAP bullet gone.
+
 * **K.1 `get_knob_mode` cannot report host-translate on a flashed knob
   (suspected live defect, found 2026-10-12 by reading the code).**
   `device::mode::classify` recognises a chord by `action.mods ==
@@ -110,8 +131,8 @@ push lands (K.0), K.1 green with its calibration recorded,
   H.1. *Risk:* the GUI's "Not flashed" / mode text is driven by this, so
   users have likely been told the wrong thing since v0.12.0 (803170e,
   2026-09-08), when the chords gained shift and moved to `0xFD`.
-* **K.2 Stale coverage comments.** `ui/Package.swift` says the Core floor is
-  46% and the package floor 4%; `ui/.gatesrc` says Core measures 46.58%. The
+* **K.2 Stale coverage comments.** `ui/Package.swift:23-24` says the Core floor is
+  46% and the package floor 4%; `ui/.gatesrc:31` says Core measures 46.58%. The
   configured floors are 54 and 7. Correct the sentences, not append.
   *Acceptance:* the grep in the exit criterion is empty.
 * **K.3 VENDOR_UI_MAP "Still open" contradicts itself.** Its "Media
@@ -120,25 +141,39 @@ push lands (K.0), K.1 green with its calibration recorded,
   wins, both readings visible). Also the stale comments in
   `src/device/mode.rs` / `src/firmware.rs` calling the chords
   "ctrl-alt-F19" (fixed with K.1).
-* **K.4 Lockfile hygiene.** `cargo update --dry-run` (2026-10-12): `cc`
-  1.6.0 -> 1.8.0, `serde_json` 1.0.151 -> 1.0.154, `syn` 3.0.6 -> 3.0.8,
-  `unicode-ident` 1.0.26 -> 1.0.27; no majors behind. *Acceptance:* refreshed
-  lock, `cargo tree -d` shows no new duplicates, gate green. Size S.
+* **K.4 Lockfile hygiene.** `cargo update --dry-run` (2026-10-14): `cc`
+  1.6.0 -> 1.8.0, `deranged` 0.5.8 -> 0.5.9, `equivalent` 1.0.2 -> 1.0.3,
+  `serde_json` 1.0.151 -> 1.0.154, `syn` 3.0.6 -> 3.0.9, `unicode-ident`
+  1.0.26 -> 1.0.27; no majors behind. Do it with W.1 (same lock).
+  *Acceptance:* refreshed lock, `cargo tree -d` shows no new duplicates,
+  gate green. Size S.
 
 ### Phase 1 -- house-style and test seams (software only) -- size M
 
 Goal: the remaining house-rule gaps closed and the store's RPC paths
-testable. Exit: zero hand-rolled status prefixes, a socket fake in use, the
-`Core/` floor raised to the new measured figure.
+testable. Exit: `status-markers` gated with no seed, a socket fake in use,
+the `Core/` floor raised to the new measured figure, S.5-S.7 closed.
 
-* **S.1 Kare TUI in the Rust binaries.** 43 `println!("[ ==> ] ...")`
-  prefixes across `src/bin/` (daemon `run.rs`, `main.rs`, CLI). House rule:
-  no hand-rolled bracket status. gates_of_heck ships `tui/lib.sh` and
-  `tui/lib.py` but no Rust equivalent -- that gap is goh's to fill (report
-  it there; do not vendor a copy). *Acceptance:* `rg '\[ ==> \]' src` empty
-  and a gate that goes red on a reintroduced prefix; output honours
-  `NO_COLOR` / non-tty. *Dependency:* a goh Rust TUI helper, or a ruling to
-  use a local one that reads goh's `stylerc`.
+* **S.1 Adopt `goh status-markers`, then print through `goh-tui`.**
+  `$GOH_DIR/gates/goh.sh status-markers` reads 126 files and finds 113
+  hand-rolled markers in 9 (2026-10-14): `src/bin/antiknob/cmds.rs` 29,
+  `probe.rs` 19, `diag.rs` 18, `binding.rs` 10, `src/bin/antiknob-daemon/run.rs`
+  11, `main.rs` 10, `install.sh` 9, `ui/build.sh` 6,
+  `src/host/config_backup.rs` 1; 43 of them are `[ ==> ]` in `src/bin/`.
+  The gate does not run it yet. Step 1: call it from `tools/repo_gates.sh`,
+  fix the shell ones (`install.sh`, `ui/build.sh` source `$GOH_DIR/tui/lib.sh`)
+  and `--seed` the rest. Step 2: the Rust helper EXISTS --
+  `crates/goh-tui` in gates_of_heck (its BACKLOG 4.14, `a74bbff`; the
+  2026-10-12 version of this item said goh had none, which was wrong). Add
+  `goh-tui = { path = "../gates_of_heck/crates/goh-tui" }` (Cargo reads no
+  env var in a path, so the sibling checkout IS `$GOH_DIR`), print
+  `goh_tui::outln!("{OK} ...")` in place of each `[ Ok  ]`, and re-seed
+  smaller. *Risk:* CI checks goh out at `./goh` inside the workspace
+  (`tests.yml:65-71`), where `../gates_of_heck` does not resolve and
+  `actions/checkout` will not write outside the workspace; CI needs a
+  step that puts it there (a symlink) before the build, proven by CI green. *Acceptance:* the step runs in
+  `tools/gate.sh --full`, the seed reaches 0 and is deleted, and a
+  reintroduced `[ ==> ]` turns it red; output honours `NO_COLOR` / non-tty.
 * **S.2 Fake the socket.** `ConfigStore`'s one-shot RPCs still reach
   `SocketClient.shared` directly (13 references in `ConfigStore.swift`,
   `ConfigStore+Commands.swift`, `ServicesCapabilities.swift`), so their
@@ -155,6 +190,22 @@ testable. Exit: zero hand-rolled status prefixes, a socket fake in use, the
   complete. Deliberate change, its own commit. *Acceptance:* both paths
   call `read_full_table`; a fixture test with a record above the layout
   width is seen. *Depends on:* K.1 (same reader).
+* **S.5 The release pushes its own tap bump.** `release.sh:94-115` writes
+  `Casks/antiknob.rb` in ztomer/homebrew-tap through `gh api -X PUT`, so the
+  tap's gate never judges it (goh 6.8, `bfac28b`). Replace the block with
+  `$GOH_DIR/tools/release-kit/tap_bump.sh --tap ztomer/homebrew-tap --cask
+  antiknob --tag vX.Y.Z --artifact <the DMG>`. *Acceptance:* `rg 'gh api -X
+  PUT' release.sh` empty; the next release's bump lands through the tap's
+  gate. Size S.
+* **S.6 CI pins Python 3.14** (`.github/workflows/tests.yml:75`) for the job
+  that runs the gates; the house moved to 3.15 on 2026-10-10. Green today,
+  so not Phase 0. *Acceptance:* `python-version: "3.15"`, CI green. Size S.
+* **S.7 Only this machine's cfg is linted.** The rust gate warns
+  `only this machine's cfg was linted — set GOH_RUST_LINT_CONFIGS in
+  .gatesrc` (2026-10-14). Declare every target/feature set the crate ships
+  (arm64 macOS only; the CLI and daemon features). *Acceptance:* the
+  warning gone, and a cfg-gated lint error in a non-default config goes
+  red. Size S.
 
 ### Phase 2 -- one wired hardware session -- size M, needs the knob on USB-C
 
@@ -229,5 +280,8 @@ sitting. Exit: each item below has a recorded measurement in VENDOR_UI_MAP
   `/Applications` listing that names `ANTICATER.app`, not this project).
   `ROADMAP-consolidated.md` and `RUSTIFICATION_ROADMAP.md` do not mention
   antiknob.
-* git: one branch (`main`, level with `origin/main`), one worktree, no
-  stash.
+* git: one branch (`main`), one worktree, no stash; ahead of `origin/main`
+  by the commits W.3 lists.
+* gates_of_heck v0.27.0 Downstream (2026-10-14): hooks reinstalled
+  (`f90ce18`); audit -> W.1; floors -> W.2; status-markers and `goh-tui`
+  -> S.1; tap_bump -> S.5; Python 3.15 -> S.6.

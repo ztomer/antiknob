@@ -11,3 +11,4 @@ pub mod policy;
 pub mod presets;
 pub mod protocol;
 pub mod vocabulary;
+pub mod yaml;

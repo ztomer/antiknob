@@ -34,8 +34,10 @@ layers:
         cw: right
     led: "mode2 red"
 "#;
-    let original: DeviceConfig = serde_yaml_ng::from_str(original_yaml).unwrap();
-    fs::write(&test_file, serde_yaml_ng::to_string(&original).unwrap()).unwrap();
+    let original: DeviceConfig = antiknob::yaml::from_str(original_yaml).unwrap();
+    // Nothing in antiknob writes YAML, so the round trip writes JSON, which
+    // is YAML 1.2 -- the loader must read it back unchanged.
+    fs::write(&test_file, serde_json::to_string(&original).unwrap()).unwrap();
 
     let loaded = DeviceConfig::load_from_file(&test_file).unwrap();
     assert_eq!(loaded.model, original.model);
@@ -63,7 +65,7 @@ layers:
         cw: volumeup
     led: "mode3 blue"
 "#;
-    let config: DeviceConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    let config: DeviceConfig = antiknob::yaml::from_str(yaml).unwrap();
     let layer = &config.layers[0];
 
     // Verify knob packets
@@ -146,7 +148,7 @@ fn test_e2e_cli_validate_bundled_config() {
     assert!(config_path.exists(), "config.yaml must exist in root");
 
     let content = fs::read_to_string(config_path).unwrap();
-    let config: DeviceConfig = serde_yaml_ng::from_str(&content).unwrap();
+    let config: DeviceConfig = antiknob::yaml::from_str(&content).unwrap();
     assert_eq!(config.layers.len(), 3);
 
     for (layer_idx, layer) in config.layers.iter().enumerate() {

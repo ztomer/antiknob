@@ -127,7 +127,7 @@ stale VENDOR_UI_MAP bullet gone.
 
 Goal: the remaining house-rule gaps closed and the store's RPC paths
 testable. Exit: `status-markers` gated with no seed, a socket fake in use,
-the `Core/` floor raised to the new measured figure, S.5-S.7 closed.
+the `Core/` floor raised to the new measured figure, S.6-S.7 closed.
 
 * **S.1 Adopt `goh status-markers`, then print through `goh-tui`.**
   `$GOH_DIR/gates/goh.sh status-markers` reads 126 files and finds 113
@@ -165,13 +165,6 @@ the `Core/` floor raised to the new measured figure, S.5-S.7 closed.
   complete. Deliberate change, its own commit. *Acceptance:* both paths
   call `read_full_table`; a fixture test with a record above the layout
   width is seen. *Depends on:* K.1 (same reader).
-* **S.5 The release pushes its own tap bump.** `release.sh:94-115` writes
-  `Casks/antiknob.rb` in ztomer/homebrew-tap through `gh api -X PUT`, so the
-  tap's gate never judges it (goh 6.8, `bfac28b`). Replace the block with
-  `$GOH_DIR/tools/release-kit/tap_bump.sh --tap ztomer/homebrew-tap --cask
-  antiknob --tag vX.Y.Z --artifact <the DMG>`. *Acceptance:* `rg 'gh api -X
-  PUT' release.sh` empty; the next release's bump lands through the tap's
-  gate. Size S.
 * **S.6 CI pins Python 3.14** (`.github/workflows/tests.yml:75`) for the job
   that runs the gates; the house moved to 3.15 on 2026-10-10. Green today,
   so not Phase 0. *Acceptance:* `python-version: "3.15"`, CI green. Size S.
@@ -258,4 +251,4 @@ sitting. Exit: each item below has a recorded measurement in VENDOR_UI_MAP
 * git: one branch (`main`), one worktree, no stash.
 * gates_of_heck v0.27.0 Downstream (2026-10-14): hooks reinstalled
   (`f90ce18`); audit -> W.1; floors -> W.2; status-markers and `goh-tui`
-  -> S.1; tap_bump -> S.5; Python 3.15 -> S.6.
+  -> S.1; tap_bump -> S.5 (closed 2026-10-17, `4e6092b`); Python 3.15 -> S.6.

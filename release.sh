@@ -96,7 +96,7 @@ info "bumping ${TAP}/${CASK_PATH} → ${VER} via tap_bump.sh ..."
 # Through the tap's OWN gate (homebrew-tap T2.1, goh 6.8): tap_bump.sh clones
 # the tap, moves the version, url and sha256 together, commits, runs the tap's
 # tools/gate.sh --full and pushes the commit pinned. A red gate pushes nothing.
-# The direct `gh api -X PUT` this replaces skipped that gate by construction.
+# The direct contents-API write this replaces skipped that gate by construction.
 "${GOH_DIR:-$HOME/Projects/gates_of_heck}/tools/release-kit/tap_bump.sh" \
   --tap "${TAP}" --cask antiknob --tag "${TAG}" --artifact "${DMG}"
 ok "cask updated"

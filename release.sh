@@ -19,7 +19,8 @@
 #      need undoing.)
 #   4. stage /Applications/Antiknob (minus .DS_Store) and build the dmg.
 #   5. tag, push the tag, create the GitHub release, upload the dmg.
-#   6. bump Casks/antiknob.rb in ztomer/homebrew-tap via the gh API.
+#   6. bump Casks/antiknob.rb in ztomer/homebrew-tap through the tap's own
+#      gate (goh tools/release-kit/tap_bump.sh).
 #   7. prove it: brew update the tap and fetch the cask.
 set -euo pipefail
 
@@ -91,30 +92,13 @@ gh release create "${TAG}" "${DMG}" --repo "${REPO}" --title "${TAG}" \
   --notes "Antiknob ${TAG} — native macOS configurator and menu-bar daemon for the Anticater VK01 knob. Install via Homebrew: brew install --cask ztomer/tap/antiknob"
 ok "release published"
 
-info "bumping ${TAP}/${CASK_PATH} → ${VER} ..."
-CUR_SHA="$(gh api "repos/${TAP}/contents/${CASK_PATH}" --jq .sha)"
-CUR_CASK="$(gh api "repos/${TAP}/contents/${CASK_PATH}" --jq .content | base64 --decode)"
-NEW_CASK="$(printf '%s' "${CUR_CASK}" | VER="${VER}" SHA="${SHA}" python3 -c "
-import os, re, sys
-s = sys.stdin.read()
-s = re.sub(r'version \"[^\"]+\"', 'version \"%s\"' % os.environ['VER'], s, count=1)
-s = re.sub(r'sha256 \"[0-9a-f]+\"', 'sha256 \"%s\"' % os.environ['SHA'], s, count=1)
-# Command substitution strips trailing newlines; the cask must end with one.
-if not s.endswith('\n'):
-    s += '\n'
-sys.stdout.write(s)
-")"
-if [ "${NEW_CASK}" = "${CUR_CASK}" ]; then
-  die "tap transform produced no change — refusing to push an empty bump"
-fi
-# UTF-8 named explicitly: ruby reads stdin as US-ASCII when the caller's
-# locale is unset (a tool shell, launchd) and rejects any non-ASCII byte in
-# the cask as an "invalid multibyte character" -- monitor's release hit it.
-printf '%s' "${NEW_CASK}" | LC_ALL=C.UTF-8 ruby -c >/dev/null || die "transformed cask failed ruby -c"
-gh api -X PUT "repos/${TAP}/contents/${CASK_PATH}" \
-  -f message="antiknob ${VER}" \
-  -f content="$(printf '%s' "${NEW_CASK}" | base64 | tr -d '\n')" \
-  -f sha="${CUR_SHA}" >/dev/null
+info "bumping ${TAP}/${CASK_PATH} → ${VER} via tap_bump.sh ..."
+# Through the tap's OWN gate (homebrew-tap T2.1, goh 6.8): tap_bump.sh clones
+# the tap, moves the version, url and sha256 together, commits, runs the tap's
+# tools/gate.sh --full and pushes the commit pinned. A red gate pushes nothing.
+# The direct `gh api -X PUT` this replaces skipped that gate by construction.
+"${GOH_DIR:-$HOME/Projects/gates_of_heck}/tools/release-kit/tap_bump.sh" \
+  --tap "${TAP}" --cask antiknob --tag "${TAG}" --artifact "${DMG}"
 ok "cask updated"
 
 info "proving it: brew update + fetch ..."

@@ -1,6 +1,6 @@
 //! antiknob-daemon: host-side translation daemon (Phase 3, slice 2).
 //!
-//! Listens for the knob's bound slot chords (ctrl+alt+F16..F20) on a global
+//! Listens for the knob's bound slot chords (ctrl+alt+shift+F16..F20) on a global
 //! event tap and dispatches them through the pure `host` engine.
 //!
 //! Modes:

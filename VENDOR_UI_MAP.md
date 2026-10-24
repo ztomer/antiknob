@@ -537,10 +537,15 @@ entry for the keycode. No new vocabulary is needed.
 
 ## Still open
 
-* **Media chaining.** The app writes only the last media action. The device
-  holds at least two (the knob arrived that way), so the limit is the app,
-  not the hardware -- but this repo's own writer should be tested against the
-  device directly before claiming media chains work.
+* **Media chaining -- settled against the earlier reading.** The first
+  reading was that the app writes only the last media action and the device
+  holds at least two (the knob arrived that way), so the limit was the app.
+  The direct test is the later measurement (see "Media actions do NOT chain"
+  above): this repo's own writer, bypassing the app, wrote two media actions
+  and the device read back `len = 02` with the second dropped. The DEVICE
+  stores one media action per slot; measurement wins, and `fd::build_packet`
+  refuses a media chain. What the knob held when it arrived is not explained
+  by that and stays unexplained.
 * **Swipes.** `Left/Right/Up/Down Swipe` never assign to a knob gesture.
 * **`Ctrl+Alt+` combo buttons** in the `Ctrl Shift Alt` category did not
   assign either, while the single modifiers in the same panel do.

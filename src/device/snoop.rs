@@ -292,7 +292,8 @@ mod tests {
 
     #[test]
     fn keyboard_reports_decode_with_and_without_a_report_id() {
-        // ctrl+alt+F16 (usage 0x6B) -- what a bound slot chord looks like.
+        // ctrl+alt+F16 (usage 0x6B): the decoder's input shape. The slot chords
+        // themselves carry shift as well (`host::gesture::SLOT_MODS`).
         let body = [0x05u8, 0, 0x6B, 0, 0, 0, 0, 0];
         let expected = "<-- keyboard mods=[ctrl+alt] keys=[6b]";
         assert_eq!(decode_input(&[(0x0001, 0x0006)], &body), expected);

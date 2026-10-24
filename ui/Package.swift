@@ -20,8 +20,9 @@ import PackageDescription
 // every one of those types, its members and its initialisers would need
 // `public` for no reason but the boundary. The only thing the split was ever
 // wanted for is a coverage floor aimed at code unit tests actually execute,
-// and coverage-floors.json aims one at the directory (46%) while the package
-// floor stays where the package as a whole is (4%). Letting a coverage tool
+// and coverage-floors.json aims one at the directory while the package floor
+// (GOH_SWIFT_COV_MIN in .gatesrc) stays where the package as a whole is. The
+// numbers live in those two files, not here. Letting a coverage tool
 // dictate a package's module structure is the wrong way round.
 let package = Package(
     name: "Antiknob",

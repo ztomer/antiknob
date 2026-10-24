@@ -19,6 +19,7 @@
 use antiknob::device;
 use antiknob::firmware::DEVICE_LAYERS;
 use antiknob::host::gesture_probe::{self, ProbeSlot, Verdict};
+use goh_tui::{OK, START, WARN};
 
 use anyhow::{Context, Result};
 use std::thread::sleep;
@@ -60,7 +61,7 @@ fn snapshot(slots: &[ProbeSlot], layer: u8, slots_per_layer: u8) -> Result<Vec<V
 /// against -- but a run where nothing at all fires is reported as measuring
 /// nothing rather than as five silent keys.
 pub fn run_map(keys: Vec<u8>, layer: u8, capture_secs: u64, devices: Vec<String>) -> Result<()> {
-    println!("[ ==> ] Reading the device's own bindings so the markers cannot collide...");
+    goh_tui::outln!("{START} Reading the device's own bindings so the markers cannot collide...");
     let table = device::with_device(|dev| Ok(device::read_full_table(dev)))?;
     // Only usages OUTSIDE the keys being overwritten matter: the ones on
     // those keys are about to be replaced, so reserving markers against them
@@ -77,7 +78,7 @@ pub fn run_map(keys: Vec<u8>, layer: u8, capture_secs: u64, devices: Vec<String>
     let plan = gesture_probe::plan_avoiding(&keys, &in_use).map_err(|e| anyhow::anyhow!(e))?;
     let width = keys.iter().copied().max().unwrap_or(6);
 
-    println!("[ ==> ] Reading the current contents of the candidate slots first...");
+    goh_tui::outln!("{START} Reading the current contents of the candidate slots first...");
     let before = snapshot(&plan, layer, width)?;
     println!("        {} slot(s) captured for restore.", before.len());
 
@@ -99,19 +100,19 @@ pub fn run_map(keys: Vec<u8>, layer: u8, capture_secs: u64, devices: Vec<String>
         .iter()
         .filter(|(_, v)| *v == device::verify::SlotVerdict::Confirmed)
         .count();
-    println!("[ ==> ] Armed {}/{} marker(s):", confirmed, verdicts.len());
+    goh_tui::outln!("{START} Armed {}/{} marker(s):", confirmed, verdicts.len());
     for s in &plan {
         println!("        key {} -> {}", s.key_id, s.marker_name);
     }
     if confirmed != verdicts.len() {
-        println!("[ Wrn ] Not every marker landed; a silent key below would be a");
+        goh_tui::outln!("{WARN} Not every marker landed; a silent key below would be a");
         println!("        failed write rather than a key no gesture drives. Stopping.");
         restore(&before);
         return Ok(());
     }
 
     println!();
-    println!("[ ==> ] Now perform each gesture ONCE, slowly, in this order:");
+    goh_tui::outln!("{START} Now perform each gesture ONCE, slowly, in this order:");
     println!("        1. twist counter-clockwise");
     println!("        2. press");
     println!("        3. twist clockwise");
@@ -121,7 +122,7 @@ pub fn run_map(keys: Vec<u8>, layer: u8, capture_secs: u64, devices: Vec<String>
     let seen = capture(capture_secs, &devices)?;
 
     println!();
-    println!("[ ==> ] Results, in the order the device emitted them:");
+    goh_tui::outln!("{START} Results, in the order the device emitted them:");
     let mut fired = Vec::new();
     for usage in &seen {
         match gesture_probe::slot_for_usage(&plan, *usage) {
@@ -134,11 +135,11 @@ pub fn run_map(keys: Vec<u8>, layer: u8, capture_secs: u64, devices: Vec<String>
     }
     println!();
     if fired.is_empty() {
-        println!("[ Wrn ] INCONCLUSIVE: nothing fired, so this run measured nothing.");
+        goh_tui::outln!("{WARN} INCONCLUSIVE: nothing fired, so this run measured nothing.");
         println!("        Re-run and make sure a gesture happens inside the window.");
     } else {
-        println!(
-            "[ Ok  ] {} of {} key(s) are driven by a gesture.",
+        goh_tui::outln!(
+            "{OK} {} of {} key(s) are driven by a gesture.",
             fired.len(),
             plan.len()
         );
@@ -192,7 +193,7 @@ pub fn run(
     capture_secs: u64,
     devices: Vec<String>,
 ) -> Result<()> {
-    println!("[ ==> ] Reading the device's own bindings so the markers cannot collide...");
+    goh_tui::outln!("{START} Reading the device's own bindings so the markers cannot collide...");
     let table = device::with_device(move |dev| {
         Ok(device::read_slot_table(dev, slots_per_layer, DEVICE_LAYERS))
     })
@@ -207,7 +208,7 @@ pub fn run(
         .map_err(|e| anyhow::anyhow!(e))?;
     let plan = probe.all();
 
-    println!("[ ==> ] Reading the current contents of the candidate slots first...");
+    goh_tui::outln!("{START} Reading the current contents of the candidate slots first...");
     let before = snapshot(&plan, layer, slots_per_layer)?;
     println!("        {} slot(s) captured for restore.", before.len());
 
@@ -249,7 +250,7 @@ pub fn run(
         println!("        configured binding. Every key id answers this device, so their");
         println!("        existing is not evidence that a gesture drives them.");
     }
-    println!("[ ==> ] Armed {}/{} marker(s):", confirmed, verdicts.len());
+    goh_tui::outln!("{START} Armed {}/{} marker(s):", confirmed, verdicts.len());
     println!(
         "        slot {} -> {}   (CONTROL: a gesture already known to work)",
         probe.control.key_id, probe.control.marker_name
@@ -258,21 +259,21 @@ pub fn run(
         println!("        slot {} -> {}", s.key_id, s.marker_name);
     }
     if confirmed != verdicts.len() {
-        println!("[ Wrn ] Not every marker landed; a silent gesture below may be a");
+        goh_tui::outln!("{WARN} Not every marker landed; a silent gesture below may be a");
         println!("        failed write rather than an unbound slot. Restoring and stopping.");
         restore(&before);
         return Ok(());
     }
 
     println!();
-    println!("[ ==> ] Now perform each gesture in turn, several times each:");
+    goh_tui::outln!("{START} Now perform each gesture in turn, several times each:");
     println!("        FIRST the control: twist the knob counter-clockwise.");
     println!("        Then hold the knob and twist LEFT, then hold and twist RIGHT.");
     println!("        Capturing for {capture_secs}s...");
     let seen = capture(capture_secs, &devices)?;
 
     println!();
-    println!("[ ==> ] Results:");
+    goh_tui::outln!("{START} Results:");
     for usage in &seen {
         match gesture_probe::slot_for_usage(&plan, *usage) {
             Some(key_id) => println!("        usage {usage:#06x} -> slot {key_id} fired"),
@@ -282,7 +283,7 @@ pub fn run(
     match gesture_probe::verdict(&probe, &seen) {
         Verdict::Inconclusive => {
             println!();
-            println!("[ Wrn ] INCONCLUSIVE: the control slot never fired.");
+            goh_tui::outln!("{WARN} INCONCLUSIVE: the control slot never fired.");
             println!("        The control is a gesture that is known to work, so a run");
             println!("        that misses it is measuring nothing -- a silent candidate");
             println!("        here is not evidence that the slot is unbound. Re-run and");
@@ -291,12 +292,12 @@ pub fn run(
         Verdict::Fired(slots) => {
             println!();
             for key_id in &slots {
-                println!("[ Ok  ] Slot {key_id} IS driven by one of the gestures performed.");
+                goh_tui::outln!("{OK} Slot {key_id} IS driven by one of the gestures performed.");
             }
         }
         Verdict::NoneFired => {
             println!();
-            println!("[ Ok  ] The control fired, so the capture was working.");
+            goh_tui::outln!("{OK} The control fired, so the capture was working.");
             println!("        No candidate slot fired: on this firmware none of");
             println!("        {candidates:?} is driven by the gestures performed.");
         }
@@ -336,7 +337,7 @@ fn restore(before: &[Vec<u8>]) {
         }) {
             Ok(()) => match confirm_restored(before, &packets) {
                 Ok(()) => {
-                    println!("[ Ok  ] Candidate slots restored, and read back to confirm.");
+                    goh_tui::outln!("{OK} Candidate slots restored, and read back to confirm.");
                     return;
                 }
                 Err(e) => last = e.to_string(),
@@ -344,8 +345,8 @@ fn restore(before: &[Vec<u8>]) {
             Err(e) => last = e.to_string(),
         }
     }
-    println!(
-        "[ Wrn ] Could not restore the candidate slots after {} attempts: {last}",
+    goh_tui::outln!(
+        "{WARN} Could not restore the candidate slots after {} attempts: {last}",
         antiknob::policy::PROBE_RESTORE_ATTEMPTS
     );
     println!("        Put them back with: antiknob upload");

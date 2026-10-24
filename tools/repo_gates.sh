@@ -48,6 +48,16 @@ else
     die "the Swift app and the daemon disagree about host.json (the daemon is ground truth)"
 fi
 
+info "status lines print through the house TUI"
+# No seed: antiknob's 113 hand-rolled markers were all converted (S.1), so a
+# reintroduced `[ ==> ]` / `[ Ok  ]` or a raw colour escape is a finding, not a
+# ratchet entry. The scan judges its own floor (GOH_STATUS_MARKERS_MIN_FILES).
+if "$GOH/gates/goh.sh" status-markers; then
+    ok "no hand-rolled status markers"
+else
+    die "a status line bypasses the house TUI: print through tui/lib.sh or goh_tui (Rust)"
+fi
+
 info "test suite (all targets, all features, --locked)"
 if cargo test --all-targets --all-features --locked --quiet; then
     ok "test suite"

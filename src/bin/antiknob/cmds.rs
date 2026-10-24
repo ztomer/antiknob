@@ -1,6 +1,7 @@
 //! `antiknob` command handlers (split from main.rs for the file gate).
 
 use antiknob::{api, apps, config, device, firmware, host, protocol};
+use goh_tui::{ERR, OK, START, WARN};
 
 use anyhow::{Context, Result};
 use std::path::PathBuf;
@@ -22,17 +23,17 @@ pub fn run_status(json: bool) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&out)?);
         return Ok(());
     }
-    println!("[ ==> ] Scanning for Anticater / CH57x devices...");
+    goh_tui::outln!("{START} Scanning for Anticater / CH57x devices...");
 
     if devices.is_empty() {
-        println!("[ Wrn ] No supported devices detected (USB / 2.4G / Bluetooth).");
+        goh_tui::outln!("{WARN} No supported devices detected (USB / 2.4G / Bluetooth).");
         println!("        Please check your connection.");
         return Ok(());
     }
 
     for d in &devices {
-        println!(
-            "[ Ok  ] Found: {} [{}] (VID: 0x{:04x}, PID: 0x{:04x}, UsagePage: 0x{:04x}, Usage: 0x{:04x}, Iface: {})",
+        goh_tui::outln!(
+            "{OK} Found: {} [{}] (VID: 0x{:04x}, PID: 0x{:04x}, UsagePage: 0x{:04x}, Usage: 0x{:04x}, Iface: {})",
             d.name, d.transport.display_name(), d.vendor_id, d.product_id, d.usage_page, d.usage, d.interface_number
         );
         println!("        Path: {}", d.path);
@@ -41,19 +42,19 @@ pub fn run_status(json: bool) -> Result<()> {
         }
     }
     if let Some(t) = primary {
-        println!("[ Ok  ] Transport: {}", t.display_name());
+        goh_tui::outln!("{OK} Transport: {}", t.display_name());
     }
-    println!("[ Ok  ] Power: {}", power.description);
+    goh_tui::outln!("{OK} Power: {}", power.description);
 
     // Test unprivileged access to the vendor configuration interface
     match device::with_device(|_| Ok(())) {
         Ok(()) => {
-            println!(
-                "[ Ok  ] Unprivileged access verified: Device can be configured WITHOUT sudo!"
+            goh_tui::outln!(
+                "{OK} Unprivileged access verified: Device can be configured WITHOUT sudo!"
             );
         }
         Err(e) => {
-            println!("[ Wrn ] Could not open device interface: {}", e);
+            goh_tui::outln!("{WARN} Could not open device interface: {}", e);
         }
     }
     Ok(())
@@ -75,11 +76,11 @@ pub fn layout_slots_per_layer(explicit: Option<PathBuf>) -> Result<u8> {
 
 pub fn run_validate(file: Option<PathBuf>) -> Result<()> {
     let file = layout_path(file)?;
-    println!("[ ==> ] Validating configuration file '{:?}'...", file);
+    goh_tui::outln!("{START} Validating configuration file '{:?}'...", file);
     let cfg = config::DeviceConfig::load_from_file(&file)?;
     cfg.validate()?;
-    println!(
-        "[ Ok  ] Configuration is valid ({} layers defined).",
+    goh_tui::outln!(
+        "{OK} Configuration is valid ({} layers defined).",
         cfg.layers.len()
     );
     Ok(())
@@ -91,7 +92,7 @@ pub fn run_upload(
     knob_only: bool,
 ) -> Result<()> {
     let file = layout_path(file)?;
-    println!("[ ==> ] Loading and validating {}...", file.display());
+    goh_tui::outln!("{START} Loading and validating {}...", file.display());
     let cfg = config::DeviceConfig::load_from_file(&file)?;
     cfg.validate()?;
     if cfg.knob_slots_start_at_the_first_button() && !knob_only {
@@ -120,8 +121,8 @@ pub fn run_upload(
         }
         None => (0..cfg.layers.len()).collect(),
     };
-    println!(
-        "[ ==> ] Flashing keymaps across {} layer(s)...",
+    goh_tui::outln!(
+        "{START} Flashing keymaps across {} layer(s)...",
         selected.len()
     );
 
@@ -162,7 +163,7 @@ pub fn run_upload(
         }
     }
 
-    println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
+    goh_tui::outln!("{START} Opening Anticater device via native IOHIDManager (no sudo)...");
     // Clear each slot before writing it. Neither write command clears the
     // bytes it does not set, so a slot that used to hold a keyboard chord
     // keeps that chord's modifier byte under a mouse binding written over
@@ -201,7 +202,7 @@ pub fn run_upload(
     })?;
 
     if skip_verify {
-        println!("[ Ok  ] Packets accepted by the device (read-back skipped).");
+        goh_tui::outln!("{OK} Packets accepted by the device (read-back skipped).");
         return Ok(());
     }
     report_flash_verdict(&written, &observed);
@@ -223,14 +224,14 @@ fn report_flash_verdict(written: &[Vec<u8>], observed: &[Vec<u8>]) {
         .filter(|(_, v)| *v == SlotVerdict::Confirmed)
         .count();
     match summarize(&verdicts) {
-        None => println!(
-            "[ Ok  ] Configuration written and read back: {}/{} slot(s) confirmed.",
+        None => goh_tui::outln!(
+            "{OK} Configuration written and read back: {}/{} slot(s) confirmed.",
             confirmed,
             verdicts.len()
         ),
         Some(problem) => {
-            println!(
-                "[ Wrn ] Wrote {} slot(s); only {} read back as expected.",
+            goh_tui::outln!(
+                "{WARN} Wrote {} slot(s); only {} read back as expected.",
                 verdicts.len(),
                 confirmed
             );
@@ -249,9 +250,10 @@ fn report_flash_verdict(written: &[Vec<u8>], observed: &[Vec<u8>]) {
 }
 pub fn run_led(layer: u8, mode: Vec<String>) -> Result<()> {
     let mode_str = mode.join(" ");
-    println!(
-        "[ ==> ] Setting LED mode for layer {}: '{}'...",
-        layer, mode_str
+    goh_tui::outln!(
+        "{START} Setting LED mode for layer {}: '{}'...",
+        layer,
+        mode_str
     );
     let packet = protocol::build_led_packet(layer, &mode_str)?;
     // Read before writing: re-setting the stored mode is a no-op change,
@@ -268,9 +270,9 @@ pub fn run_led(layer: u8, mode: Vec<String>) -> Result<()> {
         Ok(false)
     })?;
     if skipped {
-        println!("[ Ok  ] Layer {layer} already holds that mode; no write sent.");
+        goh_tui::outln!("{OK} Layer {layer} already holds that mode; no write sent.");
     } else {
-        println!("[ Ok  ] LED configuration sent to device.");
+        goh_tui::outln!("{OK} LED configuration sent to device.");
         println!("        If the ring doesn't follow, unplug/replug the knob -- its renderer can wedge after a mode change.");
         if layer >= firmware::DEVICE_LAYERS {
             println!(
@@ -282,7 +284,7 @@ pub fn run_led(layer: u8, mode: Vec<String>) -> Result<()> {
     Ok(())
 }
 pub fn run_led_read(layer: u8, raw: bool) -> Result<()> {
-    println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
+    goh_tui::outln!("{START} Opening Anticater device via native IOHIDManager (no sudo)...");
     let (mode, dump) = device::with_device(move |dev| {
         let mode = device::read_led_mode(dev, layer);
         let dump = if raw {
@@ -311,9 +313,9 @@ pub fn run_led_read(layer: u8, raw: bool) -> Result<()> {
             // "press" for mode 4 after the shared table was corrected to
             // "rainbow" for this device.
             let label = api::led_mode_name(mode);
-            println!("[ Ok  ] Layer {} LED mode: {} ({})", layer, mode, label);
+            goh_tui::outln!("{OK} Layer {} LED mode: {} ({})", layer, mode, label);
         }
-        Err(e) => println!("[ Wrn ] LED read failed: {}", e),
+        Err(e) => goh_tui::outln!("{WARN} LED read failed: {}", e),
     }
     if let Some(bytes) = dump {
         let hex: Vec<String> = bytes.iter().map(|b| format!("{:02x}", b)).collect();
@@ -353,15 +355,15 @@ pub fn run_show_keys() -> Result<()> {
 /// a guessed count is how knob bindings landed in slots nothing reads.
 pub fn run_import_presets(out: Option<PathBuf>, force: bool) -> Result<()> {
     let (cfg, leds, warnings) = host::migrate::migrate_all_presets();
-    println!(
-        "[ ==> ] Migrated {} preset(s) to host layers.",
+    goh_tui::outln!(
+        "{START} Migrated {} preset(s) to host layers.",
         cfg.layers.len()
     );
     println!("        Note: {}", host::migrate::REINTERPRET_NOTE);
     for w in &warnings {
-        println!("[ Wrn ] {}", w);
+        goh_tui::outln!("{WARN} {}", w);
     }
-    println!("[ ==> ] Companion device LED specs (apply with: antiknob led <layer> ...):");
+    goh_tui::outln!("{START} Companion device LED specs (apply with: antiknob led <layer> ...):");
     for (i, (name, spec)) in leds.iter().enumerate() {
         println!("        layer {} ({}): {}", i, name, spec);
     }
@@ -369,14 +371,14 @@ pub fn run_import_presets(out: Option<PathBuf>, force: bool) -> Result<()> {
     match out {
         Some(path) => {
             if path.exists() && !force {
-                println!(
-                    "[ Err ] {} exists; refusing to overwrite without --force.",
+                goh_tui::outln!(
+                    "{ERR} {} exists; refusing to overwrite without --force.",
                     path.display()
                 );
                 return Ok(());
             }
             std::fs::write(&path, &json)?;
-            println!("[ Ok  ] Wrote host config to {}.", path.display());
+            goh_tui::outln!("{OK} Wrote host config to {}.", path.display());
         }
         None => {
             println!("--- host.json ---");
@@ -387,10 +389,10 @@ pub fn run_import_presets(out: Option<PathBuf>, force: bool) -> Result<()> {
 }
 pub fn run_list_apps() -> Result<()> {
     let dirs = apps::default_app_dirs();
-    println!("[ ==> ] Scanning {:?} ...", dirs);
+    goh_tui::outln!("{START} Scanning {:?} ...", dirs);
     let found = apps::scan_app_dirs(&dirs);
     if found.is_empty() {
-        println!("[ Wrn ] No .app bundles found.");
+        goh_tui::outln!("{WARN} No .app bundles found.");
         return Ok(());
     }
     for app in &found {
@@ -399,8 +401,8 @@ pub fn run_list_apps() -> Result<()> {
             None => println!("        {:<40} (no bundle id)", app.name),
         }
     }
-    println!(
-        "[ Ok  ] {} app(s). Use bundle IDs in launchApp/quitApp actions.",
+    goh_tui::outln!(
+        "{OK} {} app(s). Use bundle IDs in launchApp/quitApp actions.",
         found.len()
     );
     Ok(())

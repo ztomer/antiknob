@@ -9,6 +9,7 @@ use antiknob::host::output::plan;
 use antiknob::host::tap::TapEngine;
 use antiknob::host::HostConfig;
 use antiknob::policy::{LOOP_TICK_MS, TAP_REBUILD_DELAY_SECS};
+use goh_tui::{OK, START, WARN};
 
 use super::synth::synthesize;
 use super::tray::{TrayAction, TrayUi};
@@ -35,7 +36,7 @@ pub(crate) fn load_or_default(path: &Path) -> Result<HostConfig> {
         }
         let cfg = HostConfig::default_config();
         std::fs::write(path, cfg.to_json_pretty())?;
-        println!("[ ==> ] Wrote default host config to {}", path.display());
+        goh_tui::outln!("{START} Wrote default host config to {}", path.display());
         return Ok(cfg);
     }
     let text = std::fs::read_to_string(path)?;
@@ -107,7 +108,7 @@ fn log_tap_warning(last: &mut Option<String>, reason: &str) {
         return;
     }
     *last = Some(reason.to_string());
-    eprintln!("[ Wrn ] {}", reason);
+    goh_tui::eoutln!("{WARN} {}", reason);
     if !crate::permissions::current_grants().accessibility {
         crate::permissions::prompt_for_accessibility_once();
     }
@@ -155,9 +156,9 @@ fn maybe_reload(tap: &mut TapEngine, watch: &mut ConfigWatch) {
         Some(cfg) => {
             let n = cfg.layers.len();
             tap.apply_config(cfg);
-            println!("[ ==> ] Reloaded host config ({} layer(s)).", n);
+            goh_tui::outln!("{START} Reloaded host config ({} layer(s)).", n);
         }
-        None => println!("[ Wrn ] Host config changed but unreadable; keeping last-good."),
+        None => goh_tui::outln!("{WARN} Host config changed but unreadable; keeping last-good."),
     }
 }
 
@@ -171,9 +172,9 @@ fn force_reload(tap: &mut TapEngine, path: &Path) {
         Some(cfg) => {
             let n = cfg.layers.len();
             tap.apply_config(cfg);
-            println!("[ ==> ] Reloaded host config ({} layer(s)).", n);
+            goh_tui::outln!("{START} Reloaded host config ({} layer(s)).", n);
         }
-        None => println!("[ Wrn ] Host config unreadable; keeping last-good."),
+        None => goh_tui::outln!("{WARN} Host config unreadable; keeping last-good."),
     }
 }
 
@@ -210,7 +211,7 @@ fn apply_tray_action(
             false
         }
         TrayAction::Quit => {
-            println!("[ Ok  ] Quit from menu bar.");
+            goh_tui::outln!("{OK} Quit from menu bar.");
             true
         }
     }
@@ -253,7 +254,7 @@ pub(crate) fn run_observe(
         match TrayUi::new(&tap, tap_is_up(&tap_health)) {
             Ok(t) => Some(t),
             Err(e) => {
-                println!("[ Wrn ] Menu bar unavailable ({}); continuing headless.", e);
+                goh_tui::outln!("{WARN} Menu bar unavailable ({}); continuing headless.", e);
                 None
             }
         }
@@ -265,7 +266,7 @@ pub(crate) fn run_observe(
 
     loop {
         if timeout_secs > 0 && start.elapsed().as_secs() >= timeout_secs {
-            println!("[ Ok  ] Observe window closed.");
+            goh_tui::outln!("{OK} Observe window closed.");
             std::process::exit(0);
         }
         let now_ms = start.elapsed().as_millis() as u64;
@@ -330,7 +331,7 @@ pub(crate) fn run_active(
     if timeout_secs > 0 {
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_secs(timeout_secs));
-            println!("[ Ok  ] Active window closed.");
+            goh_tui::outln!("{OK} Active window closed.");
             std::process::exit(0);
         });
     }
@@ -439,7 +440,7 @@ pub(crate) fn run_active(
         match TrayUi::new(&tap, tap_is_up(&tap_health)) {
             Ok(t) => Some(t),
             Err(e) => {
-                println!("[ Wrn ] Menu bar unavailable ({}); continuing headless.", e);
+                goh_tui::outln!("{WARN} Menu bar unavailable ({}); continuing headless.", e);
                 None
             }
         }

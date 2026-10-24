@@ -18,6 +18,7 @@
 use antiknob::policy::{BOOTOUT_POLLS, BOOTOUT_POLL_MS};
 use anyhow::{Context, Result};
 use clap::Parser;
+use goh_tui::{OK, START, WARN};
 use std::path::{Path, PathBuf};
 
 mod keytap;
@@ -126,8 +127,8 @@ fn install_login_item(config_path: &Path) -> Result<()> {
     let home = home_dir()?;
     let exe = login_item::preferred_executable(&std::env::current_exe()?);
     let plist_path = login_item::install(&home, &exe, config_path)?;
-    println!("[ ==> ] Login item will start {}.", exe.display());
-    println!("[ ==> ] Wrote {}.", plist_path.display());
+    goh_tui::outln!("{START} Login item will start {}.", exe.display());
+    goh_tui::outln!("{START} Wrote {}.", plist_path.display());
     let domain = user_domain()?;
     let target = format!("{}/{}", domain, login_item::AGENT_LABEL);
     // Loading an already-loaded agent fails; unload first for idempotence.
@@ -146,8 +147,8 @@ fn install_login_item(config_path: &Path) -> Result<()> {
             plist_path.display()
         );
     }
-    println!(
-        "[ Ok  ] Login item installed and loaded ({}).",
+    goh_tui::outln!(
+        "{OK} Login item installed and loaded ({}).",
         login_item::AGENT_LABEL
     );
     Ok(())
@@ -162,9 +163,9 @@ fn uninstall_login_item() -> Result<()> {
         .args(["bootout", &target])
         .output();
     if login_item::uninstall(&home)? {
-        println!("[ Ok  ] Login item removed.");
+        goh_tui::outln!("{OK} Login item removed.");
     } else {
-        println!("[ Ok  ] No login item was installed.");
+        goh_tui::outln!("{OK} No login item was installed.");
     }
     Ok(())
 }
@@ -192,8 +193,8 @@ fn main() -> Result<()> {
         install_login_item(&config_path)?;
         return Ok(());
     }
-    println!(
-        "[ ==> ] Loaded {} host layer(s) (double-tap switch: {})",
+    goh_tui::outln!(
+        "{START} Loaded {} host layer(s) (double-tap switch: {})",
         cfg.layers.len(),
         cfg.double_tap_switch
     );
@@ -216,15 +217,15 @@ fn main() -> Result<()> {
         );
         match antiknob::api::SocketServer::start(sock_path.clone(), api_ctx) {
             Ok(server) => {
-                println!(
-                    "[ ==> ] Unix domain socket listening at {}",
+                goh_tui::outln!(
+                    "{START} Unix domain socket listening at {}",
                     sock_path.display()
                 );
                 Some(server)
             }
             Err(e) => {
-                println!(
-                    "[ Wrn ] Could not start Unix socket at {}: {}",
+                goh_tui::outln!(
+                    "{WARN} Could not start Unix socket at {}: {}",
                     sock_path.display(),
                     e
                 );
@@ -236,7 +237,7 @@ fn main() -> Result<()> {
     };
 
     if cli.active {
-        println!("[ ==> ] ACTIVE mode: slot chords are swallowed and synthesized.");
+        goh_tui::outln!("{START} ACTIVE mode: slot chords are swallowed and synthesized.");
         run_active(
             tap,
             tap_health,
@@ -246,7 +247,7 @@ fn main() -> Result<()> {
             cli.verbose,
         );
     } else {
-        println!("[ ==> ] OBSERVE mode: chords pass through, actions are only logged.");
+        goh_tui::outln!("{START} OBSERVE mode: chords pass through, actions are only logged.");
         run_observe(
             tap,
             tap_health,

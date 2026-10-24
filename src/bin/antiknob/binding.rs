@@ -8,6 +8,7 @@
 use crate::cmds::layout_path;
 use antiknob::firmware::{DEVICE_LAYERS, GESTURES_PER_KNOB};
 use antiknob::{config, device, fd, host};
+use goh_tui::{OK, START, WARN};
 
 use anyhow::{Context, Result};
 use std::path::PathBuf;
@@ -50,8 +51,8 @@ pub fn run_bind_slots(
     dry_run: bool,
 ) -> Result<()> {
     let buttons = resolve_button_count(config, buttons)?;
-    println!(
-        "[ ==> ] Layout has {} button(s); knob slots follow them.",
+    goh_tui::outln!(
+        "{START} Layout has {} button(s); knob slots follow them.",
         buttons
     );
     let layers: Vec<u8> = match layer {
@@ -59,7 +60,7 @@ pub fn run_bind_slots(
         None => antiknob::firmware::BIND_LAYERS.to_vec(),
     };
     if dry_run {
-        println!("[ ==> ] Slot binding plan (dry run, no hardware touched):");
+        goh_tui::outln!("{START} Slot binding plan (dry run, no hardware touched):");
         for packet in host::bind::binding_packets(buttons, &layers)? {
             // Decoded from the record's OWN length and entry array, not from
             // fixed byte offsets. The offsets version printed bytes 11/12 and
@@ -98,11 +99,11 @@ pub fn run_bind_slots(
         );
         return Ok(());
     }
-    println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
+    goh_tui::outln!("{START} Opening Anticater device via native IOHIDManager (no sudo)...");
     let flashed = layers.clone();
     let sent =
         device::with_device(move |dev| host::bind::flash_slot_bindings(dev, buttons, &flashed))?;
-    println!("[ Ok  ] Flashed {sent} slot binding(s).");
+    goh_tui::outln!("{OK} Flashed {sent} slot binding(s).");
     // Printed FROM the table that was flashed, never restated as a literal.
     // The literal version outlived two changes to the chords: it still said
     // "ctrl-alt-F16" immediately after a run that wrote ctrl-alt-SHIFT-F16,
@@ -121,13 +122,13 @@ pub fn run_bind_slots(
         // did nothing on the most common flash there is.
         Ok(bound) => {
             let arrangement = host::device_binding::arrangement(&bound, DEVICE_LAYERS);
-            println!("[ Ok  ] {}", arrangement.describe());
+            goh_tui::outln!("{OK} {}", arrangement.describe());
             println!("        Re-run with `--layer N` to bind just one.");
         }
         Err(e) => {
             // The flash landed; only the bookkeeping failed. Saying so beats
             // reporting the whole command as failed.
-            println!("[ Wrn ] Slots flashed, but host.json could not record the layer: {e}");
+            goh_tui::outln!("{WARN} Slots flashed, but host.json could not record the layer: {e}");
         }
     }
     println!("        Verify with: antiknob listen --timeout-secs 10");
@@ -167,8 +168,8 @@ pub fn run_bind_seq(
     let packet = fd::build_packet(key, layer, &parsed)?;
 
     let hex: Vec<String> = packet[..13].iter().map(|b| format!("{b:02x}")).collect();
-    println!(
-        "[ ==> ] Slot key={} layer={} <- {} action(s) in {} entr(ies){}: {}",
+    goh_tui::outln!(
+        "{START} Slot key={} layer={} <- {} action(s) in {} entr(ies){}: {}",
         key,
         layer,
         parsed.len(),
@@ -182,14 +183,14 @@ pub fn run_bind_seq(
     );
     println!("        packet: {} ...", hex.join(" "));
     if dry_run {
-        println!("[ Ok  ] Dry run: nothing was written.");
+        goh_tui::outln!("{OK} Dry run: nothing was written.");
         return Ok(());
     }
 
     // The read-back has to be at least as wide as the key, or the counter
     // addresses a slot on another layer entirely.
     let width = width.unwrap_or(key).max(key);
-    println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
+    goh_tui::outln!("{START} Opening Anticater device via native IOHIDManager (no sudo)...");
     let want = device::verify::SlotAddr {
         key_id: key,
         layer: layer + 1,
@@ -237,8 +238,8 @@ pub fn run_bind_seq(
     if !fd::record_matches(&sent, &readback) {
         anyhow::bail!("the device stored something other than what was sent; write UNCONFIRMED");
     }
-    println!(
-        "[ Ok  ] Slot {} on layer {} confirmed by read-back ({} action(s)).",
+    goh_tui::outln!(
+        "{OK} Slot {} on layer {} confirmed by read-back ({} action(s)).",
         key,
         layer,
         parsed.len()

@@ -13,6 +13,7 @@
 
 use crate::policy::BACKUP_KEEP_COUNT as KEEP;
 use anyhow::Result;
+use goh_tui::WARN;
 use std::path::{Path, PathBuf};
 
 /// The rotation slot paths, newest first: `host.json.1` .. `host.json.N`.
@@ -46,7 +47,7 @@ pub fn rotate(config_path: &Path) {
         let _ = std::fs::rename(&slots[i - 1], &slots[i]);
     }
     if let Err(e) = std::fs::copy(config_path, &slots[0]) {
-        eprintln!("[ Wrn ] Could not back up {}: {e}", config_path.display());
+        goh_tui::eoutln!("{WARN} Could not back up {}: {e}", config_path.display());
     }
 }
 

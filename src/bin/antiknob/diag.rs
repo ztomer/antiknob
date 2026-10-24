@@ -7,6 +7,7 @@
 
 use antiknob::device;
 use antiknob::firmware::{DEVICE_LAYERS, SLOT_BURST_QUERIES, SLOT_BURST_WIDTH};
+use goh_tui::{OK, START, WARN};
 
 use anyhow::{Context, Result};
 use std::thread::sleep;
@@ -33,10 +34,12 @@ pub fn run_listen(timeout_secs: u64, devices: Vec<String>) -> Result<()> {
         .map(|d| device::snoop::parse_device_filter(d).map_err(|e| anyhow::anyhow!(e)))
         .collect::<Result<Vec<_>>>()?;
     if filters.is_empty() {
-        println!("[ ==> ] Opening every supported device for snooping (non-exclusive, no sudo)...");
+        goh_tui::outln!(
+            "{START} Opening every supported device for snooping (non-exclusive, no sudo)..."
+        );
     } else {
-        println!(
-            "[ ==> ] Opening {} filtered device(s) for snooping...",
+        goh_tui::outln!(
+            "{START} Opening {} filtered device(s) for snooping...",
             filters.len()
         );
     }
@@ -46,9 +49,9 @@ pub fn run_listen(timeout_secs: u64, devices: Vec<String>) -> Result<()> {
         let ifaces = device::open_all_interfaces_on(api, &filters)?;
         if ifaces.is_empty() {
             if filters.is_empty() {
-                println!("[ Wrn ] No supported devices detected on USB.");
+                goh_tui::outln!("{WARN} No supported devices detected on USB.");
             } else {
-                println!("[ Wrn ] No supported device matched the given VID:PID filter(s).");
+                goh_tui::outln!("{WARN} No supported device matched the given VID:PID filter(s).");
             }
             return Ok(());
         }
@@ -56,8 +59,8 @@ pub fn run_listen(timeout_secs: u64, devices: Vec<String>) -> Result<()> {
             println!("        watching {} ({})", iface.label, iface.detail);
         }
         let deadline = Instant::now() + Duration::from_secs(timeout_secs);
-        println!(
-            "[ ==> ] Snooping for {}s: twist / press / hold the knob (mouse stays usable)...",
+        goh_tui::outln!(
+            "{START} Snooping for {}s: twist / press / hold the knob (mouse stays usable)...",
             timeout_secs
         );
         let mut buf = [0u8; antiknob::firmware::REPORT_LEN];
@@ -80,14 +83,14 @@ pub fn run_listen(timeout_secs: u64, devices: Vec<String>) -> Result<()> {
                         }
                     }
                     Err(e) => {
-                        println!("[ Wrn ] Read error on {}: {}", iface.label, e);
+                        goh_tui::outln!("{WARN} Read error on {}: {}", iface.label, e);
                     }
                 }
             }
         }
         Ok(())
     })?;
-    println!("[ Ok  ] Listen window closed.");
+    goh_tui::outln!("{OK} Listen window closed.");
     Ok(())
 }
 /// Dump the WHOLE slot table using the vendor's burst read.
@@ -97,10 +100,11 @@ pub fn run_listen(timeout_secs: u64, devices: Vec<String>) -> Result<()> {
 /// six-slot layout it stops at key 6 and cannot see the bindings an older
 /// version of this tool wrote to keys 16-18.
 pub fn run_read_full() -> Result<()> {
-    println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
-    println!(
-        "[ ==> ] Reading the whole table ({} burst queries at width {})...",
-        SLOT_BURST_QUERIES, SLOT_BURST_WIDTH
+    goh_tui::outln!("{START} Opening Anticater device via native IOHIDManager (no sudo)...");
+    goh_tui::outln!(
+        "{START} Reading the whole table ({} burst queries at width {})...",
+        SLOT_BURST_QUERIES,
+        SLOT_BURST_WIDTH
     );
     let table = device::with_device(|dev| Ok(device::read_full_table(dev)))?;
     let mut bound = 0usize;
@@ -114,8 +118,8 @@ pub fn run_read_full() -> Result<()> {
         };
         println!("        {}{}", hex.join(" "), note);
     }
-    println!(
-        "[ Ok  ] {} slot(s) read, {} of them configured (device state unchanged).",
+    goh_tui::outln!(
+        "{OK} {} slot(s) read, {} of them configured (device state unchanged).",
         table.len(),
         bound
     );
@@ -123,7 +127,7 @@ pub fn run_read_full() -> Result<()> {
 }
 
 pub fn run_read_slots(slots_per_layer: u8, wide: bool) -> Result<()> {
-    println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
+    goh_tui::outln!("{START} Opening Anticater device via native IOHIDManager (no sudo)...");
     // `wide` keeps the old exploratory sweep for protocol work; the default
     // asks the device for its actual table using the addressing scheme in
     // `device::slot_table_addresses`.
@@ -137,8 +141,8 @@ pub fn run_read_slots(slots_per_layer: u8, wide: bool) -> Result<()> {
     } else {
         slots_per_layer.saturating_mul(DEVICE_LAYERS)
     };
-    println!(
-        "[ ==> ] Reading slot table ({} group(s), counters 1-{})...",
+    goh_tui::outln!(
+        "{START} Reading slot table ({} group(s), counters 1-{})...",
         groups.len(),
         counters
     );
@@ -168,13 +172,13 @@ pub fn run_read_slots(slots_per_layer: u8, wide: bool) -> Result<()> {
         }
         Ok(())
     })?;
-    println!("[ Ok  ] Slot dump complete (device state unchanged).");
+    goh_tui::outln!("{OK} Slot dump complete (device state unchanged).");
     Ok(())
 }
 pub fn run_raw(bytes: Vec<String>, read: bool, reads: usize) -> Result<()> {
     let payload = parse_hex_bytes(&bytes)?;
     let sent = payload.len();
-    println!("[ ==> ] Opening Anticater device via native IOHIDManager (no sudo)...");
+    goh_tui::outln!("{START} Opening Anticater device via native IOHIDManager (no sudo)...");
     let reply = device::with_device(move |dev| {
         device::send_report(dev, &payload)?;
         if !read {
@@ -195,7 +199,7 @@ pub fn run_raw(bytes: Vec<String>, read: bool, reads: usize) -> Result<()> {
         }
         Ok(out)
     })?;
-    println!("[ Ok  ] Raw {sent}-byte payload sent.");
+    goh_tui::outln!("{OK} Raw {sent}-byte payload sent.");
     if read && reply.is_empty() {
         println!("        no reply within 250ms");
     }
@@ -222,9 +226,10 @@ pub fn run_led_probe(layer: u8, dwell_secs: u64, color: &str) -> Result<()> {
 
     let before = device::with_device(move |dev| device::read_led_mode(dev, layer))
         .context("cannot read the layer's current LED mode; refusing to change it")?;
-    println!(
-        "[ ==> ] Layer {} is on mode {} now; it will be restored at the end.",
-        layer, before
+    goh_tui::outln!(
+        "{START} Layer {} is on mode {} now; it will be restored at the end.",
+        layer,
+        before
     );
     println!("        Watch the knob. Report which mode, if any, BREATHES.");
     println!("        If a mode stops rendering mid-walk, the firmware renderer");
@@ -263,9 +268,9 @@ pub fn run_led_probe(layer: u8, dwell_secs: u64, color: &str) -> Result<()> {
     let restored = antiknob::protocol::build_led_packet(layer, &restore)
         .and_then(|p| device::with_device(move |dev| device::send_led(dev, &p)));
     match restored {
-        Ok(()) => println!("[ Ok  ] Restored layer {layer} to mode {before}."),
-        Err(e) => println!(
-            "[ Wrn ] Could not restore layer {layer} to mode {before}: {e}\n\
+        Ok(()) => goh_tui::outln!("{OK} Restored layer {layer} to mode {before}."),
+        Err(e) => goh_tui::outln!(
+            "{WARN} Could not restore layer {layer} to mode {before}: {e}\n\
                      Set it by hand with: antiknob led {layer} mode{before}"
         ),
     }

@@ -70,6 +70,14 @@ jobs:
           token: ${{ secrets.GOH_TOKEN || github.token }}
           persist-credentials: false
 
+      # Cargo.toml reaches the house TUI crate by the path
+      # ../gates_of_heck/crates/goh-tui (Cargo reads no environment variable in
+      # a path), and actions/checkout will not write outside the workspace, so
+      # goh sits at ./goh and the sibling the manifest names is a symlink to it.
+      # Before the toolchain and the gate: both build the crate.
+      - name: Put gates_of_heck where Cargo.toml looks for it
+        run: ln -s "$GITHUB_WORKSPACE/goh" "$(dirname "$GITHUB_WORKSPACE")/gates_of_heck"
+
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"

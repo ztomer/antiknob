@@ -5,6 +5,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 
+# The house TUI: status lines print through it, not through hand-rolled markers.
+GOH="${GOH_DIR:-${GOH:-$HOME/Projects/gates_of_heck}}"
+# shellcheck source=/dev/null
+. "$GOH/tui/lib.sh"
+
 DEST_DIR="${1:-/Applications/Antiknob}"
 TARGET_DIR="$(cargo metadata --locked --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')"
 PKG_VERSION="$(cargo metadata --locked --format-version 1 | python3 -c 'import json, sys; print([p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "antiknob"][0])')"
@@ -28,12 +33,12 @@ if [[ -z "${SIGN_ID}" ]]; then
 fi
 SIGN_ID="${SIGN_ID:--}"
 
-echo "[ ==> ] Building release binaries (arm64)..."
+info "Building release binaries (arm64)..."
 # --locked: an installer that re-resolves would ship whatever the registry
 # served that day, on a machine whose gate pinned a different graph.
 cargo build --release --locked
 
-echo "[ ==> ] Installing to ${DEST_DIR}..."
+info "Installing to ${DEST_DIR}..."
 mkdir -p "${DEST_DIR}/bin"
 # The egui GUI was removed in 0.5.0; sweep it out of an earlier install.
 rm -f "${DEST_DIR}/bin/antiknob-gui"
@@ -51,7 +56,7 @@ if [[ -f "${DEST_DIR}/config.yaml" ]]; then
     if [[ ! -f "${LAYOUT_DIR}/config.yaml" ]]; then
         mkdir -p "${LAYOUT_DIR}"
         mv "${DEST_DIR}/config.yaml" "${LAYOUT_DIR}/config.yaml"
-        echo "[ ==> ] Moved your layout to ${LAYOUT_DIR}/config.yaml"
+        info "Moved your layout to ${LAYOUT_DIR}/config.yaml"
     else
         rm -f "${DEST_DIR}/config.yaml"
         echo "[ --- ] Removed the unused ${DEST_DIR}/config.yaml (yours is in ${LAYOUT_DIR})."
@@ -59,7 +64,7 @@ if [[ -f "${DEST_DIR}/config.yaml" ]]; then
 fi
 
 # Build native macOS SwiftUI Application Bundle
-echo "[ ==> ] Building native SwiftUI Antiknob.app..."
+info "Building native SwiftUI Antiknob.app..."
 ANTIKNOB_SIGN_ID="${SIGN_ID}" "${SCRIPT_DIR}/ui/build.sh"
 APP_BUNDLE="${DEST_DIR}/Antiknob.app"
 rm -rf "${APP_BUNDLE}"
@@ -68,7 +73,7 @@ cp -R "${SCRIPT_DIR}/Antiknob.app" "${APP_BUNDLE}"
 # Assemble menu-bar daemon bundle (LSUIElement: tray icon, no dock icon)
 DAEMON_BUNDLE="${DEST_DIR}/AntiknobDaemon.app"
 DAEMON_EXE="${DAEMON_BUNDLE}/Contents/MacOS/AntiknobDaemon"
-echo "[ ==> ] Creating daemon App Bundle at ${DAEMON_BUNDLE}..."
+info "Creating daemon App Bundle at ${DAEMON_BUNDLE}..."
 rm -rf "${DAEMON_BUNDLE}"
 mkdir -p "${DAEMON_BUNDLE}/Contents/MacOS"
 mkdir -p "${DAEMON_BUNDLE}/Contents/Resources"
@@ -119,7 +124,7 @@ cat << PLIST > "${DAEMON_BUNDLE}/Contents/Info.plist"
 </plist>
 PLIST
 
-echo "[ ==> ] Codesigning Daemon Bundle (identity: ${SIGN_ID})..."
+info "Codesigning Daemon Bundle (identity: ${SIGN_ID})..."
 codesign -s "${SIGN_ID}" --force --deep "${DAEMON_BUNDLE}"
 
 # Convenient symlinks in /Applications for Spotlight / Launchpad.
@@ -135,10 +140,10 @@ fi
 if [[ -d "${HOME}/.local/bin" ]]; then
     ln -sf "${DEST_DIR}/bin/antiknob" "${HOME}/.local/bin/antiknob"
     ln -sf "${DEST_DIR}/bin/antiknob-daemon" "${HOME}/.local/bin/antiknob-daemon"
-    echo "[ Ok  ] Symlinked CLIs to ${HOME}/.local/bin/antiknob{,-daemon}"
+    ok "Symlinked CLIs to ${HOME}/.local/bin/antiknob{,-daemon}"
 fi
 
-echo "[ Ok  ] Antiknob installed successfully to ${DEST_DIR}!"
+ok "Antiknob installed successfully to ${DEST_DIR}!"
 echo "        GUI App: ${APP_BUNDLE}"
 echo "        Daemon App: ${DAEMON_BUNDLE} (background service, no dock icon)"
 echo "        CLI tool: ${DEST_DIR}/bin/antiknob"
@@ -154,7 +159,7 @@ echo "        Start at login with: ${DAEMON_EXE} --install-login-item"
 # now starts the bundle, which the pane lists by name.
 LOGIN_ITEM="com.antiknob.daemon"
 if launchctl print "gui/$(id -u)/${LOGIN_ITEM}" >/dev/null 2>&1; then
-    echo "[ ==> ] Restarting the login-item daemon on the new build..."
+    info "Restarting the login-item daemon on the new build..."
     "${DAEMON_EXE}" --install-login-item >/dev/null
     sleep 2
 fi

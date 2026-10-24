@@ -4,6 +4,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# The house TUI: status lines print through it, not through hand-rolled markers.
+GOH="${GOH_DIR:-${GOH:-$HOME/Projects/gates_of_heck}}"
+# shellcheck source=/dev/null
+. "$GOH/tui/lib.sh"
 APP_DIR="${ROOT_DIR}/Antiknob.app"
 MACOS_DIR="${APP_DIR}/Contents/MacOS"
 RESOURCES_DIR="${APP_DIR}/Contents/Resources"
@@ -13,7 +18,7 @@ mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}"
 # Cargo.toml is the single source of truth for the version. This script used
 # to carry its own copy, which drifted three releases behind the tag.
 VERSION="$(awk -F\" '/^version = /{print $2; exit}' "${ROOT_DIR}/Cargo.toml")"
-[[ -n "${VERSION}" ]] || { echo "[ Err ] Cannot read version from Cargo.toml" >&2; exit 1; }
+[[ -n "${VERSION}" ]] || { err "Cannot read version from Cargo.toml"; exit 1; }
 BUILD="$(git -C "${ROOT_DIR}" rev-list --count HEAD 2>/dev/null || echo 0)"
 
 cat > "${APP_DIR}/Contents/Info.plist" <<EOF
@@ -63,7 +68,7 @@ if [[ -f "${ROOT_DIR}/assets/knob-tray@2x.png" ]]; then
     cp "${ROOT_DIR}/assets/knob-tray@2x.png" "${RESOURCES_DIR}/ak12-tray@2x.png"
 fi
 
-echo "[ ==> ] Compiling Swift sources into Antiknob.app (v${VERSION} build ${BUILD})..."
+info "Compiling Swift sources into Antiknob.app (v${VERSION} build ${BUILD})..."
 
 # Built through SwiftPM rather than a hand-rolled swiftc line, so this script
 # and `./tools/gate.sh --full` compile exactly the same thing. The package
@@ -76,7 +81,7 @@ echo "[ ==> ] Compiling Swift sources into Antiknob.app (v${VERSION} build ${BUI
 # release ritual failed at its install step on a tree the gate had passed.
 . "${GOH_DIR:-${GOH:-$HOME/Projects/gates_of_heck}}/gates/swift_toolchain.sh"
 goh_swift_resolve
-echo "[ ==> ] swift: ${SWIFT} (${SWIFT_ORIGIN})"
+info "swift: ${SWIFT} (${SWIFT_ORIGIN})"
 "${SWIFT}" build --package-path "${SCRIPT_DIR}" -c release \
     --product Antiknob \
     -Xswiftc -warnings-as-errors
@@ -85,7 +90,7 @@ BIN_PATH="$("${SWIFT}" build --package-path "${SCRIPT_DIR}" -c release \
     --product Antiknob --show-bin-path)"
 install -m 755 "${BIN_PATH}/Antiknob" "${MACOS_DIR}/Antiknob"
 
-echo "[ ==> ] Codesigning Antiknob.app..."
+info "Codesigning Antiknob.app..."
 # install.sh passes the identity it resolved, so both bundles carry one
 # signer; standalone runs still fall back to an Apple Development cert.
 IDENTITY="${ANTIKNOB_SIGN_ID:-}"
@@ -93,5 +98,5 @@ if [[ -z "${IDENTITY}" || "${IDENTITY}" == "-" ]]; then
     IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple Development/ && !/CSSMERR/ {print $2; exit}' || true)
 fi
 codesign --force --sign "${IDENTITY:--}" "${APP_DIR}"
-echo "[ Ok  ] Signed as: ${IDENTITY:-ad-hoc}"
-echo "[ Ok  ] Built ${APP_DIR} successfully."
+ok "Signed as: ${IDENTITY:-ad-hoc}"
+ok "Built ${APP_DIR} successfully."

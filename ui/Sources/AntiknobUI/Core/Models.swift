@@ -46,62 +46,6 @@ enum MouseButton: String, Codable, CaseIterable, Hashable, Sendable {
 
 // MARK: - Key Chords & Sequences
 
-/// The link the knob is on.
-///
-/// Raw values are the daemon's `transport` strings. Parsing once, here, is
-/// what lets every mapping below switch EXHAUSTIVELY: adding a transport
-/// becomes a compile error at each site that has to render it, instead of a
-/// silent `default:` fall-through to "Disconnected". The colour mapping lives
-/// on `ConfigStore` (it needs SwiftUI) and is switched over this same enum,
-/// so the two cannot drift apart the way two string switches did.
-enum Transport: String, CaseIterable, Sendable {
-    case usb
-    case wireless24GHz = "wireless_2_4g"
-    case bluetooth
-
-    var displayName: String {
-        switch self {
-        case .usb: return "USB (Wired)"
-        case .wireless24GHz: return "2.4GHz Wireless"
-        case .bluetooth: return "Bluetooth Wireless"
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .usb: return "cable.connector"
-        case .wireless24GHz: return "antenna.radiowaves.left.and.right"
-        case .bluetooth: return "wave.3.right"
-        }
-    }
-}
-
-/// The status bar's read of the device, as a pure value.
-///
-/// Transport and power render as SF Symbol glyphs with the words in the
-/// tooltip, so glyph and tooltip must come from one place or they drift.
-/// `powerIcon` is derived from the daemon's own `powerDescription` for
-/// exactly that reason -- it cannot disagree with the text beside it.
-struct StatusPresentation: Equatable, Sendable {
-    let transport: String
-    let powerDescription: String
-    let connected: Bool
-
-    /// nil when the daemon reports a link this build does not know (including
-    /// its "disconnected" sentinel).
-    var link: Transport? { Transport(rawValue: transport) }
-
-    var transportDisplay: String { link?.displayName ?? "Disconnected" }
-    var transportIcon: String { link?.icon ?? "circle.slash" }
-
-    var powerIcon: String {
-        guard connected else { return "powerplug.slash" }
-        return powerDescription.localizedCaseInsensitiveContains("battery")
-            ? "battery.100"
-            : "powerplug.fill"
-    }
-}
-
 struct KeyChordSpec: Codable, Equatable, Hashable, Sendable {
     var key: UInt16
     var mods: [String]
@@ -187,53 +131,95 @@ enum Action: Codable, Equatable, Hashable, Sendable {
         case url, path, force, first, second
     }
 
+    // Decoding and encoding are each two switches, not one over eleven cases:
+    // one for the actions that act on the knob's own input (scroll, chords,
+    // sequences, media, clicks) and one for those that act on a target (apps,
+    // URLs, paths, the layer-switch hotkey), which is also how the daemon's
+    // `HostAction` reads. The wire spelling is unchanged, and the parity gate
+    // (tools/check_swift_rust_model_parity.py) reads `encode(to:)` together
+    // with its `encode...(into:)` helpers.
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let t = (try? c.decode(String.self, forKey: .type)) ?? "none"
-        switch t {
-        case "scroll":
-            let l = try? c.decodeIfPresent(Int32.self, forKey: .lines)
-            self = .scroll(lines: l ?? nil)
-        case "keyChord":
-            let k = try c.decode(UInt16.self, forKey: .key)
-            let m = (try? c.decode([String].self, forKey: .mods)) ?? []
-            let lbl = try? c.decodeIfPresent(String.self, forKey: .label)
-            self = .keyChord(key: k, mods: m, label: lbl)
-        case "sequence":
-            let s = (try? c.decode([SeqStep].self, forKey: .steps)) ?? []
-            self = .sequence(steps: s)
-        case "aux":
-            let k = try c.decode(AuxKey.self, forKey: .key)
-            self = .aux(key: k.unified)
-        case "mouseClick":
-            let b = try c.decode(MouseButton.self, forKey: .button)
-            self = .mouseClick(button: b)
-        case "launchApp":
-            let b = (try? c.decode(String.self, forKey: .bundleId))
-                ?? (try? c.decode(String.self, forKey: .bundle_id)) ?? ""
-            self = .launchApp(bundleId: b)
-        case "openURL", "openUrl":
-            let u = try c.decode(String.self, forKey: .url)
-            self = .openURL(url: u)
-        case "openPath":
-            let p = try c.decode(String.self, forKey: .path)
-            self = .openPath(path: p)
-        case "quitApp":
-            let b = (try? c.decode(String.self, forKey: .bundleId))
-                ?? (try? c.decode(String.self, forKey: .bundle_id)) ?? ""
-            let f = try? c.decodeIfPresent(Bool.self, forKey: .force)
-            self = .quitApp(bundleId: b, force: f ?? nil)
-        case "hotkeySwitch":
-            let f = try? c.decodeIfPresent(KeyChordSpec.self, forKey: .first)
-            let s = try? c.decodeIfPresent(KeyChordSpec.self, forKey: .second)
-            self = .hotkeySwitch(first: f ?? nil, second: s ?? nil)
-        default:
+        if let action = try Action.decodeInput(t, c) {
+            self = action
+        } else if let action = try Action.decodeTarget(t, c) {
+            self = action
+        } else {
             self = .none
         }
     }
 
+    /// scroll, keyChord, sequence, aux, mouseClick. nil for any other type.
+    private static func decodeInput(
+        _ t: String,
+        _ c: KeyedDecodingContainer<CodingKeys>
+    ) throws -> Action? {
+        switch t {
+        case "scroll":
+            let l = try? c.decodeIfPresent(Int32.self, forKey: .lines)
+            return .scroll(lines: l ?? nil)
+        case "keyChord":
+            let k = try c.decode(UInt16.self, forKey: .key)
+            let m = (try? c.decode([String].self, forKey: .mods)) ?? []
+            let lbl = try? c.decodeIfPresent(String.self, forKey: .label)
+            return .keyChord(key: k, mods: m, label: lbl)
+        case "sequence":
+            let s = (try? c.decode([SeqStep].self, forKey: .steps)) ?? []
+            return .sequence(steps: s)
+        case "aux":
+            let k = try c.decode(AuxKey.self, forKey: .key)
+            return .aux(key: k.unified)
+        case "mouseClick":
+            let b = try c.decode(MouseButton.self, forKey: .button)
+            return .mouseClick(button: b)
+        default:
+            return nil
+        }
+    }
+
+    /// launchApp, openURL, openPath, quitApp, hotkeySwitch. nil for any other type.
+    private static func decodeTarget(
+        _ t: String,
+        _ c: KeyedDecodingContainer<CodingKeys>
+    ) throws -> Action? {
+        switch t {
+        case "launchApp":
+            return .launchApp(bundleId: bundleId(c))
+        case "openURL", "openUrl":
+            return .openURL(url: try c.decode(String.self, forKey: .url))
+        case "openPath":
+            return .openPath(path: try c.decode(String.self, forKey: .path))
+        case "quitApp":
+            let f = try? c.decodeIfPresent(Bool.self, forKey: .force)
+            return .quitApp(bundleId: bundleId(c), force: f ?? nil)
+        case "hotkeySwitch":
+            let f = try? c.decodeIfPresent(KeyChordSpec.self, forKey: .first)
+            let s = try? c.decodeIfPresent(KeyChordSpec.self, forKey: .second)
+            return .hotkeySwitch(first: f ?? nil, second: s ?? nil)
+        default:
+            return nil
+        }
+    }
+
+    /// Either spelling of the bundle id, camelCase first; empty when absent.
+    private static func bundleId(_ c: KeyedDecodingContainer<CodingKeys>) -> String {
+        (try? c.decode(String.self, forKey: .bundleId))
+            ?? (try? c.decode(String.self, forKey: .bundle_id)) ?? ""
+    }
+
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .none, .scroll, .keyChord, .sequence, .aux, .mouseClick:
+            try encodeInput(into: &c)
+        case .launchApp, .openURL, .openPath, .quitApp, .hotkeySwitch:
+            try encodeTarget(into: &c)
+        }
+    }
+
+    private func encodeInput(into c: inout KeyedEncodingContainer<CodingKeys>) throws {
         switch self {
         case .none:
             try c.encode("none", forKey: .type)
@@ -254,6 +240,13 @@ enum Action: Codable, Equatable, Hashable, Sendable {
         case .mouseClick(let button):
             try c.encode("mouseClick", forKey: .type)
             try c.encode(button, forKey: .button)
+        case .launchApp, .openURL, .openPath, .quitApp, .hotkeySwitch:
+            break  // `encode(to:)` sends these to `encodeTarget`
+        }
+    }
+
+    private func encodeTarget(into c: inout KeyedEncodingContainer<CodingKeys>) throws {
+        switch self {
         case .launchApp(let bundleId):
             try c.encode("launchApp", forKey: .type)
             // snake_case on the wire. The daemon's `HostAction` declares
@@ -279,6 +272,8 @@ enum Action: Codable, Equatable, Hashable, Sendable {
             try c.encode("hotkeySwitch", forKey: .type)
             try c.encodeIfPresent(first, forKey: .first)
             try c.encodeIfPresent(second, forKey: .second)
+        case .none, .scroll, .keyChord, .sequence, .aux, .mouseClick:
+            break  // `encode(to:)` sends these to `encodeInput`
         }
     }
 }

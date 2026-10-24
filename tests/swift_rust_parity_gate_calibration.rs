@@ -186,6 +186,25 @@ fn losing_variants_is_caught() {
     );
 }
 
+/// `Action`'s encoder delegates to `encode<Family>(into:)` helpers, and the
+/// gate reads them with `encode(to:)`. Rename one so the extractor can no
+/// longer see it and the tags it wrote go missing: that must be a red run,
+/// never a quiet pass over half the encoder.
+#[test]
+fn an_encoder_helper_the_extractor_cannot_see_is_caught() {
+    let root = scratch_with_edit(
+        "helper",
+        "ui/Sources/AntiknobUI/Core/Models.swift",
+        "private func encodeTarget(into c:",
+        "private func writeTarget(into c:",
+    );
+    assert_red(
+        "the target half of the encoder is unread",
+        &root,
+        "action-tags",
+    );
+}
+
 // ── the ways this gate was itself caught being blind ────────────────────────
 //
 // These four are not hypothetical. Each one left the gate GREEN while a real

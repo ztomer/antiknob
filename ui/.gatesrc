@@ -1,6 +1,7 @@
 # Swift-half gate config. Read by gates/swift_gate.sh, which cd's here.
 GOH_SWIFT_MODE=spm
-GOH_SWIFT_LINT_BASELINE=.swiftlint-baseline.json
+# No lint baseline: the last five entries were fixed (PLAN S.3) and the lint
+# stage is bare --strict. A violation is fixed, not recorded.
 
 # Coverage floor. READ THIS BEFORE TRUSTING THE NUMBER: 6% is the honest
 # measured figure, not a quality bar. Most of the package is SwiftUI view
@@ -23,7 +24,11 @@ GOH_SWIFT_LINT_BASELINE=.swiftlint-baseline.json
 # loaded the real config and started a poll timer -- and the LED mode table,
 # the daemon command table and the safe layer accessor arrived with tests.
 # Measured 7.53%.
-GOH_SWIFT_COV_MIN=7
+#
+# 2026-10-24: 7 -> 16. ConfigStore's daemon calls went behind `DaemonRPC` and
+# gained a fake (PLAN S.2), and the action picker's mapping left the view for
+# Core; the package now measures 16.3% and Core 63.68%.
+GOH_SWIFT_COV_MIN=16
 
 # Per-directory floors, checked BEFORE the package floor. The package number
 # is dominated by the view bodies -- 6,606 of its 7,423 lines, 0.2% covered --

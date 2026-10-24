@@ -4,20 +4,6 @@
 import AppKit
 import SwiftUI
 
-enum ActionPreset: Hashable {
-    case none
-    case scrollUp
-    case scrollDown
-    case aux(AuxKey)
-    case keystroke
-    case openApp
-    case sequence
-    case openURL
-    case openPath
-    case quitApp
-    case hotkeySwitch
-}
-
 struct LayerDetail: View {
     @ObservedObject var store: ConfigStore
     let idx: Int

@@ -265,12 +265,32 @@ def swift_unified_map(src: str, name: str) -> dict[str, str]:
     }
 
 
+def _brace_block(text: str, open_at: int) -> str | None:
+    """`text[open_at]` is a `{`; the block through its matching `}`."""
+    depth = 0
+    for i in range(open_at, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[open_at: i + 1]
+    return None
+
+
 def _swift_encode_body(src: str, type_name: str) -> str | None:
     """The `encode(to:)` belonging to one named type, comments stripped.
 
     Matches `struct` as well as `enum`: `Action` is an enum, `SeqStep`,
     `LayerConfig` and `LayerVariant` are structs, and a helper that only
     understood the first reported every struct's encoder as absent.
+
+    An encoder may delegate to helpers named `encode<Family>(into:)` (Action
+    does, to keep each switch under the cyclomatic cap). Their bodies are part
+    of what the encoder writes, so they are read with it: a gate that stopped
+    at `encode(to:)` would see half the tags and report the other half as
+    drift the day a switch was split, or -- worse -- stay green over a helper
+    it never read.
     """
     body = _swift_type_body(src, rf"(?:struct|enum)\s+{type_name}\b")
     if body is None:
@@ -278,16 +298,17 @@ def _swift_encode_body(src: str, type_name: str) -> str | None:
     m = re.search(r"func encode\(to encoder: Encoder\) throws\s*\{", body)
     if not m:
         return None
-    rest = body[m.end() - 1:]
-    depth = 0
-    for i, ch in enumerate(rest):
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                return _strip_comments(rest[: i + 1])
-    return None
+    main = _brace_block(body, m.end() - 1)
+    if main is None:
+        return None
+    parts = [main]
+    for helper in re.finditer(
+        r"func encode[A-Z]\w*\(into [^)]*\)\s*(?:throws\s*)?\{", body
+    ):
+        block = _brace_block(body, helper.end() - 1)
+        if block is not None:
+            parts.append(block)
+    return _strip_comments("\n".join(parts))
 
 
 def swift_encoded_action_types(src: str) -> set[str] | None:

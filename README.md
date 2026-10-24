@@ -259,20 +259,20 @@ Quality gates cover both halves, each with a measured coverage floor:
 | --- | --- |
 | structural | emoji, conflict markers, file length, shell lint, secrets |
 | rust | `fmt`, `clippy -D warnings`, cargo manifest lints, no-`#[allow]`, coverage floor |
-| swift | `swiftlint --strict` against a shrink-only baseline, a **cold** warnings-as-errors build, `swift test`, coverage floor |
+| swift | `swiftlint --strict`, a **cold** warnings-as-errors build, `swift test`, coverage floor |
 | repo | the Rust test suite, `cargo audit` |
 
 `--staged` is the fast pre-commit scope; `--full` is the pre-push scope and is
 what CI runs.
 
-Two ratchets keep the debt shrink-only. [.cargo/audit.toml](.cargo/audit.toml)
+One ratchet keeps the debt shrink-only: [.cargo/audit.toml](.cargo/audit.toml)
 holds the dependency-advisory ignores -- every entry states why it may stand,
-and one whose advisory stops firing is deleted rather than left to rot.
-[ui/.swiftlint-baseline.json](ui/.swiftlint-baseline.json) holds today's lint
-debt: a new violation fails, and so does a listed one that grows, because the
-match key includes the measured count. Neither is re-recorded to silence a
-failure. Swift gate config lives in [ui/.gatesrc](ui/.gatesrc), which explains
-what its 4% coverage floor does and does not mean.
+and one whose advisory stops firing is deleted rather than left to rot. The
+Swift lint has no baseline any more (its last five entries were fixed), so a
+lint violation is fixed, never recorded.
+
+Swift gate config lives in [ui/.gatesrc](ui/.gatesrc), which explains what its
+coverage floors do and do not mean.
 
 ---
 
@@ -289,7 +289,6 @@ what its 4% coverage floor does and does not mean.
 | [.cargo/audit.toml](.cargo/audit.toml) | `cargo audit` deny list and the advisory-ignore ratchet. |
 | [ui/Package.swift](ui/Package.swift) | The SwiftUI app as an SPM package, so the house Swift gate can reach it. |
 | [ui/.swiftlint.yml](ui/.swiftlint.yml) | Lint rules, with the reason for each deviation from the defaults. |
-| [ui/.swiftlint-baseline.json](ui/.swiftlint-baseline.json) | Shrink-only lint ratchet. Re-recorded only when the debt shrinks, never to silence a failure. |
 
 ---
 

@@ -31,78 +31,95 @@ extension LayerDetail {
 
 extension LayerDetail {
 
-    func currentTitle(_ g: Gesture) -> String {
-        switch self[g] {
-        case nil, .some(.none):
-            return pendingKeystroke.contains(g) ? "Keystroke" : "None"
-        case .some(.scroll(let lines)):
-            return (lines ?? store.cfg.defaultScrollLines) >= 0 ? "Scroll Up" : "Scroll Down"
-        case .some(.keyChord): return "Keystroke"
-        case .some(.sequence): return "Sequence"
-        case .some(.aux(let k)): return auxTitles[k] ?? "Media"
-        case .some(.launchApp): return "Open App"
-        case .some(.openURL): return "Website"
-        case .some(.openPath): return "Open File"
-        case .some(.quitApp): return "Quit App"
-        case .some(.hotkeySwitch): return "Hotkey Switch"
-        case .some(.mouseClick(let b)): return "Click \(b.rawValue)"
+    /// The picker entry for a gesture: its action's preset, or "Keystroke"
+    /// while a keystroke has been chosen and not yet recorded.
+    func preset(_ g: Gesture) -> ActionPreset {
+        let action = self[g] ?? Action.none
+        if case .none = action {
+            return pendingKeystroke.contains(g) ? .keystroke : .none
         }
+        return action.preset(defaultScrollLines: store.cfg.defaultScrollLines)
+    }
+
+    /// The dropdown's title. A mouse click is the one action with a title of
+    /// its own: the picker has no entry for it, so it presents as "None".
+    func currentTitle(_ g: Gesture) -> String {
+        if case .mouseClick(let button)? = self[g] {
+            return "Click \(button.rawValue)"
+        }
+        return preset(g).title
     }
 
     func presetBinding(_ g: Gesture) -> Binding<ActionPreset> {
         Binding(
-            get: {
-                switch self[g] {
-                case nil, .some(.none):
-                    return pendingKeystroke.contains(g) ? .keystroke : .none
-                case .some(.scroll(let lines)):
-                    return (lines ?? store.cfg.defaultScrollLines) >= 0 ? .scrollUp : .scrollDown
-                case .some(.keyChord): return .keystroke
-                case .some(.sequence): return .sequence
-                case .some(.aux(let k)): return .aux(k.unified)
-                case .some(.launchApp): return .openApp
-                case .some(.openURL): return .openURL
-                case .some(.openPath): return .openPath
-                case .some(.quitApp): return .quitApp
-                case .some(.hotkeySwitch): return .hotkeySwitch
-                case .some(.mouseClick): return .none
-                }
-            },
-            set: { p in
-                pendingKeystroke.remove(g)
-                switch p {
-                case .none:
-                    self[g] = nil
-                case .scrollUp:
-                    self[g] = .scroll(lines: abs(currentLines(g)))
-                case .scrollDown:
-                    self[g] = .scroll(lines: -abs(currentLines(g)))
-                case .aux(let k):
-                    self[g] = .aux(key: k)
-                case .keystroke:
-                    if case .keyChord? = self[g] { break }
-                    self[g] = nil
-                    pendingKeystroke.insert(g)
-                case .openApp:
-                    chooseApp(g)
-                case .openURL:
-                    if case .openURL? = self[g] { break }
-                    self[g] = .openURL(url: "https://")
-                case .openPath:
-                    choosePath(g)
-                case .quitApp:
-                    chooseApp(g) { .quitApp(bundleId: $0, force: nil) }
-                case .hotkeySwitch:
-                    if case .hotkeySwitch? = self[g] { break }
-                    self[g] = .hotkeySwitch(first: nil, second: nil)
-                case .sequence:
-                    if case .sequence? = self[g] {} else {
-                        self[g] = .sequence(steps: [])
-                    }
-                    editingSequence = g
-                }
-            }
+            get: { preset(g) },
+            set: { choose($0, for: g) }
         )
+    }
+
+    /// Apply a picker choice. Three families, so each switch stays inside
+    /// the complexity cap: the knob's own input, a target the user must pick
+    /// or type, and the structured editors.
+    func choose(_ p: ActionPreset, for g: Gesture) {
+        pendingKeystroke.remove(g)
+        switch p {
+        case .none, .scrollUp, .scrollDown, .aux, .keystroke:
+            chooseInput(p, for: g)
+        case .openApp, .openPath, .quitApp:
+            chooseTarget(p, for: g)
+        case .openURL, .hotkeySwitch, .sequence:
+            chooseStructured(p, for: g)
+        }
+    }
+
+    private func chooseInput(_ p: ActionPreset, for g: Gesture) {
+        switch p {
+        case .none:
+            self[g] = nil
+        case .scrollUp:
+            self[g] = .scroll(lines: abs(currentLines(g)))
+        case .scrollDown:
+            self[g] = .scroll(lines: -abs(currentLines(g)))
+        case .aux(let k):
+            self[g] = .aux(key: k)
+        case .keystroke:
+            if case .keyChord? = self[g] { break }
+            self[g] = nil
+            pendingKeystroke.insert(g)
+        case .openApp, .openPath, .quitApp, .openURL, .hotkeySwitch, .sequence:
+            break  // `choose` sends these elsewhere
+        }
+    }
+
+    private func chooseTarget(_ p: ActionPreset, for g: Gesture) {
+        switch p {
+        case .openApp:
+            chooseApp(g)
+        case .openPath:
+            choosePath(g)
+        case .quitApp:
+            chooseApp(g) { .quitApp(bundleId: $0, force: nil) }
+        case .none, .scrollUp, .scrollDown, .aux, .keystroke, .openURL, .hotkeySwitch, .sequence:
+            break  // `choose` sends these elsewhere
+        }
+    }
+
+    private func chooseStructured(_ p: ActionPreset, for g: Gesture) {
+        switch p {
+        case .openURL:
+            if case .openURL? = self[g] { break }
+            self[g] = .openURL(url: "https://")
+        case .hotkeySwitch:
+            if case .hotkeySwitch? = self[g] { break }
+            self[g] = .hotkeySwitch(first: nil, second: nil)
+        case .sequence:
+            if case .sequence? = self[g] {} else {
+                self[g] = .sequence(steps: [])
+            }
+            editingSequence = g
+        case .none, .scrollUp, .scrollDown, .aux, .keystroke, .openApp, .openPath, .quitApp:
+            break  // `choose` sends these elsewhere
+        }
     }
 
     func setChord(_ g: Gesture, key: UInt16, label: String) {

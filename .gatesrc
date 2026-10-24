@@ -35,3 +35,12 @@ GOH_CHECKOUT_CREDENTIALS_MIN_FILES=1  # read 1
 GOH_MD_LINKS_MIN_LINKS=18             # read 20
 GOH_UNREAPED_SPAWN_MIN_FILES=45       # read 51
 GOH_STATUS_MARKERS_MIN_FILES=116      # read 129
+
+# Every configuration this crate ships (goh GOH_RUST_LINT_CONFIGS, ':'-separated).
+# antiknob is Apple silicon macOS only and declares no cargo features, so the
+# configurations are the target and the PROFILE: `install.sh` builds --release,
+# which turns debug_assertions off, and a lint error behind cfg(debug_assertions)
+# is invisible to the default dev-profile clippy step. A dev build of the target
+# is the step the gate already runs; naming it with --target keeps the claim
+# explicit rather than inferred from the machine.
+GOH_RUST_LINT_CONFIGS='--target aarch64-apple-darwin:--release'

@@ -79,101 +79,45 @@ Size: S = under one session, M = one session, L = several.
 * **W.2** Scanner floors (12 keys, calibrated red): `6cc8c15`
 * **W.3** Push (`a883863`..`6cc8c15`): `6cc8c15`
 
-### Phase 0b -- defects and stale claims (software only) -- size M
+### Phase 0b and 1 -- defects, stale claims, house-style and test seams -- closed 2026-10-24
 
-Goal: nothing the tree says about itself false. Exit: K.1 green with its
-calibration recorded, `rg -n '46%|46.58|4%\)' ui/ ui/.gatesrc` empty, the
-stale VENDOR_UI_MAP bullet gone.
+Software only. `tools/gate.sh --full` green at the push of this commit.
 
-* **K.1 `get_knob_mode` cannot report host-translate on a flashed knob
-  (suspected live defect, found 2026-10-12 by reading the code).**
-  `device::mode::classify` recognises a chord by `action.mods ==
-  SLOT_CHORD_MODS` (`0x01|0x04`, ctrl+alt) read through `parse_record`,
-  which takes mods/code from bytes 11/12 -- the dead `0xFE` layout. But
-  `bind-slots` writes `ctrl-alt-shift` as a `0xFD` chain (`len 4`, entries
-  `f1 f2 f3 6b` from byte 7, per `bind-slots --dry-run`), and VENDOR_UI_MAP
-  records that an `FA` read returns that chain layout unchanged. So bytes
-  9/11/12 read `f1/00/f2`, no record matches, and every flashed knob
-  classifies as `Standalone`. The classifier's tests build their fixtures
-  from `SLOT_CHORD_MODS` itself, so they are tautological.
-  *Class:* readers of `FA` replies that assume the `0xFE` layout.
-  *Acceptance:* a test that feeds `bind::binding_packets` output, re-framed
-  as an `FA` reply, through `classify` and requires `HostTranslate`; proven
-  red on today's code first. Delete `SLOT_CHORD_MODS` (it encodes the
-  pre-shift chord) and derive the match from `SLOT_SPECS`. Grep every
-  `parse_record` caller for the same assumption. Hardware confirmation is
-  H.1. *Risk:* the GUI's "Not flashed" / mode text is driven by this, so
-  users have likely been told the wrong thing since v0.12.0 (803170e,
-  2026-09-08), when the chords gained shift and moved to `0xFD`.
-* **K.2 Stale coverage comments.** `ui/Package.swift:23-24` says the Core floor is
-  46% and the package floor 4%; `ui/.gatesrc:31` says Core measures 46.58%. The
-  configured floors are 54 and 7. Correct the sentences, not append.
-  *Acceptance:* the grep in the exit criterion is empty.
-* **K.3 VENDOR_UI_MAP "Still open" contradicts itself.** Its "Media
-  chaining" bullet says the limit is the app; the same file later measures
-  that the DEVICE truncates media chains. Correct the bullet (measurement
-  wins, both readings visible). Also the stale comments in
-  `src/device/mode.rs` / `src/firmware.rs` calling the chords
-  "ctrl-alt-F19" (fixed with K.1).
-* **K.4 Lockfile hygiene.** `cargo update --dry-run` (2026-10-14): `cc`
-  1.6.0 -> 1.8.0, `deranged` 0.5.8 -> 0.5.9, `equivalent` 1.0.2 -> 1.0.3,
-  `serde_json` 1.0.151 -> 1.0.154, `syn` 3.0.6 -> 3.0.9, `unicode-ident`
-  1.0.26 -> 1.0.27; no majors behind. Not done with W.1, which kept to
-  the YAML swap.
-  *Acceptance:* refreshed lock, `cargo tree -d` shows no new duplicates,
-  gate green. Size S.
+* **K.1** `get_knob_mode` read the dead `0xFE` layout (mods/code at bytes
+  11/12), so a knob flashed by `bind-slots` (`0xFD` chains) classified as
+  Standalone. `fd::decode_chain` / `chord_of` are the one reader of the
+  stored layout, the classifier matches `host::bind::slot_chords()` (derived
+  from `SLOT_SPECS`), `SLOT_CHORD_MODS` and `SLOT_KEYCODES` are deleted, and
+  the fixtures are the flasher's own packets re-framed as `FA` replies. Red
+  first (`what_bind_slots_writes_reads_as_host_translate` returned
+  Standalone). Sibling of the class: `upload` derived its pre-write wipes
+  through `parse_record`, which skips `0xFD`, so no keyboard or media slot was
+  ever wiped; `fd::wipes_for` fixes it (red first). `3faf599`
+* **S.4** `upload --verify` and `get_knob_mode` read `read_full_table`;
+  `tests/slot_read_burst.rs`. `783541b`
+* **K.2, K.3** stale floor comments, the media-chaining bullet, the pre-shift
+  chord comments. `4ccc1fa`
+* **K.4** lockfile refreshed (12 packages); `cargo tree -d` unchanged;
+  `unsafe-libyaml` stays out of the lock (W.1). `fb7d862`
+* **S.1** 113 hand-rolled markers onto `goh-tui` / `tui/lib.sh`, no seed,
+  `goh status-markers` in `tools/repo_gates.sh` (calibrated red), CI links
+  `../gates_of_heck` to `./goh`. `0956d2e`
+* **S.6** CI on Python 3.15. `d1bfb28`
+* **S.7** `GOH_RUST_LINT_CONFIGS='--target aarch64-apple-darwin:--release'`
+  (calibrated red through a `cfg(not(debug_assertions))` error). `4e02fad`
+* **S.2** `DaemonRPC` seam, `OfflineRPC` default, `FakeDaemonRPC`, tests for
+  every RPC's success and failure. `aafa748`
+* **S.3** the five baseline entries fixed and the baseline deleted; floors
+  raised to the measurement (package 16, Core 63). `6d799c0`
 
-### Phase 1 -- house-style and test seams (software only) -- size M
+### Phase 1b -- sibling readers (software only) -- size S
 
-Goal: the remaining house-rule gaps closed and the store's RPC paths
-testable. Exit: `status-markers` gated with no seed, a socket fake in use,
-the `Core/` floor raised to the new measured figure, S.6-S.7 closed.
-
-* **S.1 Adopt `goh status-markers`, then print through `goh-tui`.**
-  `$GOH_DIR/gates/goh.sh status-markers` reads 126 files and finds 113
-  hand-rolled markers in 9 (2026-10-14): `src/bin/antiknob/cmds.rs` 29,
-  `probe.rs` 19, `diag.rs` 18, `binding.rs` 10, `src/bin/antiknob-daemon/run.rs`
-  11, `main.rs` 10, `install.sh` 9, `ui/build.sh` 6,
-  `src/host/config_backup.rs` 1; 43 of them are `[ ==> ]` in `src/bin/`.
-  The gate does not run it yet. Step 1: call it from `tools/repo_gates.sh`,
-  fix the shell ones (`install.sh`, `ui/build.sh` source `$GOH_DIR/tui/lib.sh`)
-  and `--seed` the rest. Step 2: the Rust helper EXISTS --
-  `crates/goh-tui` in gates_of_heck (its BACKLOG 4.14, `a74bbff`; the
-  2026-10-12 version of this item said goh had none, which was wrong). Add
-  `goh-tui = { path = "../gates_of_heck/crates/goh-tui" }` (Cargo reads no
-  env var in a path, so the sibling checkout IS `$GOH_DIR`), print
-  `goh_tui::outln!("{OK} ...")` in place of each `[ Ok  ]`, and re-seed
-  smaller. *Risk:* CI checks goh out at `./goh` inside the workspace
-  (`tests.yml:65-71`), where `../gates_of_heck` does not resolve and
-  `actions/checkout` will not write outside the workspace; CI needs a
-  step that puts it there (a symlink) before the build, proven by CI green. *Acceptance:* the step runs in
-  `tools/gate.sh --full`, the seed reaches 0 and is deleted, and a
-  reintroduced `[ ==> ]` turns it red; output honours `NO_COLOR` / non-tty.
-* **S.2 Fake the socket.** `ConfigStore`'s one-shot RPCs still reach
-  `SocketClient.shared` directly (13 references in `ConfigStore.swift`,
-  `ConfigStore+Commands.swift`, `ServicesCapabilities.swift`), so their
-  success and failure paths are unexercised. Inject a narrow protocol with a
-  hand-written fake. *Acceptance:* tests for each RPC's success AND failure
-  path; `ui/coverage-floors.json` raised to the new measured figure.
-* **S.3 Shrink `ui/.swiftlint-baseline.json`** (5 entries, shrink-only
-  ratchet). *Acceptance:* entries fixed and deleted; a listed violation that
-  stops firing is deleted, never re-recorded.
-* **S.4 Verification and `get_knob_mode` onto the burst read.** `upload
-  --verify` and `get_knob_mode` (`read_slot_table`) still walk slot by slot
-  at the declared layout's width, so they cannot see keys past it.
-  `read_full_table` is three queries instead of eighteen and strictly more
-  complete. Deliberate change, its own commit. *Acceptance:* both paths
-  call `read_full_table`; a fixture test with a record above the layout
-  width is seen. *Depends on:* K.1 (same reader).
-* **S.6 CI pins Python 3.14** (`.github/workflows/tests.yml:75`) for the job
-  that runs the gates; the house moved to 3.15 on 2026-10-10. Green today,
-  so not Phase 0. *Acceptance:* `python-version: "3.15"`, CI green. Size S.
-* **S.7 Only this machine's cfg is linted.** The rust gate warns
-  `only this machine's cfg was linted — set GOH_RUST_LINT_CONFIGS in
-  .gatesrc` (2026-10-14). Declare every target/feature set the crate ships
-  (arm64 macOS only; the CLI and daemon features). *Acceptance:* the
-  warning gone, and a cfg-gated lint error in a non-default config goes
-  red. Size S.
+* **S.8 Per-slot walks left in the hardware tooling.** `bind-seq`'s
+  read-back (`binding.rs`) and the `probe-gestures` family (`probe.rs`, five
+  call sites) still call `read_slot_table` at a layout width, which cannot see
+  a key past it; `read_full_table` can. They write to the device, so the
+  change is exercised in the H.x session. *Acceptance:* no `read_slot_table`
+  caller outside `read-slots` (the exploratory walk), proven on the knob.
 
 ### Phase 2 -- one wired hardware session -- size M, needs the knob on USB-C
 
@@ -182,7 +126,9 @@ sitting. Exit: each item below has a recorded measurement in VENDOR_UI_MAP
 (positive control included) or a stated reason it could not be taken.
 
 * **H.1 Confirm K.1 on the knob:** after `bind-slots`, `get_knob_mode`
-  (MCP / socket) and the GUI report host-translate.
+  (MCP / socket) and the GUI report host-translate. Also confirm the
+  `upload` wipes (`fd::wipes_for`, new for keyboard and media slots): flash a
+  long sequence, then a short one over it, and read the slot back.
 * **H.2 Do the chords need shift?** They moved to `ctrl-alt-shift` when
   `ctrl-alt-F18..F20` seemed to collide with another app; the collision was
   probably the since-fixed modifier-inheritance bug. One flash of

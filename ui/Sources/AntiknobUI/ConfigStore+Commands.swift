@@ -28,9 +28,10 @@ extension ConfigStore {
         mode: String,
         completion: @escaping @MainActor @Sendable (Result<AppliedLedMode, Error>) -> Void
     ) {
+        let rpc = self.rpc
         Task.detached(priority: .userInitiated) {
             do {
-                let applied = try SocketClient.shared.setLed(layer: layer, mode: mode)
+                let applied = try rpc.setLed(layer: layer, mode: mode)
                 await MainActor.run { [weak self] in
                     self?.statusMessage = "Layer \(layer + 1) backlight: \(applied.name)"
                     completion(.success(applied))
@@ -56,9 +57,10 @@ extension ConfigStore {
         // Moved at once so the menu answers the click, then corrected by the
         // daemon's reply -- or put back if it refuses.
         activeLayerIdx = index
+        let rpc = self.rpc
         Task.detached(priority: .userInitiated) {
             do {
-                try SocketClient.shared.setLayer(index)
+                try rpc.setLayer(index)
                 await MainActor.run { [weak self] in self?.refreshStatus() }
             } catch {
                 await MainActor.run { [weak self] in
@@ -71,9 +73,10 @@ extension ConfigStore {
 
     public func bindSlots(layer: Int? = nil) {
         isBindingSlots = true
+        let rpc = self.rpc
         Task.detached(priority: .userInitiated) {
             do {
-                let status = try SocketClient.shared.bindSlots(layer: layer)
+                let status = try rpc.bindSlots(layer: layer)
                 await MainActor.run { [weak self] in
                     guard let self else { return }
                     self.isBindingSlots = false
@@ -111,9 +114,10 @@ extension ConfigStore {
         layer: Int? = nil,
         completion: @escaping @MainActor @Sendable (Result<String, Error>) -> Void
     ) {
+        let rpc = self.rpc
         Task.detached(priority: .userInitiated) {
             do {
-                let msg = try SocketClient.shared.uploadKeymap(yaml: yaml, layer: layer)
+                let msg = try rpc.uploadKeymap(yaml: yaml, layer: layer)
                 await MainActor.run { [weak self] in
                     self?.statusMessage = msg
                     completion(.success(msg))
@@ -132,9 +136,10 @@ extension ConfigStore {
         counters: [UInt8]? = nil,
         completion: @escaping @MainActor @Sendable (Result<[[String: Any]], Error>) -> Void
     ) {
+        let rpc = self.rpc
         Task.detached(priority: .userInitiated) {
             do {
-                let res = try SocketClient.shared.readSlots(group: group, counters: counters)
+                let res = try rpc.readSlots(group: group, counters: counters)
                 let slots = res["slots"] as? [[String: Any]] ?? []
                 let box = SlotDumpBox(slots: slots)
                 await MainActor.run {
@@ -151,9 +156,10 @@ extension ConfigStore {
     func sendRawPacket(hexString: String, completion: @escaping @MainActor @Sendable (Result<String, Error>) -> Void) {
         let parts = hexString.components(separatedBy: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
             .filter { !$0.isEmpty }
+        let rpc = self.rpc
         Task.detached(priority: .userInitiated) {
             do {
-                let res = try SocketClient.shared.sendRaw(bytes: parts)
+                let res = try rpc.sendRaw(bytes: parts)
                 let count = res["bytes_sent"] as? Int ?? parts.count
                 await MainActor.run {
                     completion(.success("Sent \(count) bytes"))
@@ -167,12 +173,21 @@ extension ConfigStore {
     }
 
     func getHardwareLedMode(layer: Int, completion: @escaping @MainActor @Sendable (Int?) -> Void) {
+        let rpc = self.rpc
         Task.detached(priority: .userInitiated) {
-            let res = try? SocketClient.shared.getLed(layer: layer)
+            let res = try? rpc.getLed(layer: layer)
             let mode = res?["mode"] as? Int
             await MainActor.run {
                 completion(mode)
             }
         }
+    }
+
+    /// The daemon's own command table, read off the main actor.
+    func fetchCommands() async throws -> [DaemonCommand] {
+        let rpc = self.rpc
+        return try await Task.detached(priority: .userInitiated) {
+            try rpc.listCommands()
+        }.value
     }
 }

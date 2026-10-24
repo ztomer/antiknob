@@ -74,7 +74,9 @@ public final class ConfigStore: ObservableObject {
     /// `StatusPresentation` rather than here so it can be tested without
     /// standing up a store -- `init()` loads config and starts a poll timer.
     private var syncing = false
-    private let client = SocketClient.shared
+    /// The daemon, behind a seam. `SocketClient.shared` for the real store,
+    /// `OfflineRPC` or a test's fake for `init(inMemory:rpc:)`.
+    let rpc: any DaemonRPC
     private nonisolated(unsafe) var pollTimer: Timer?
 
     /// Whether this store is wired to the daemon and the config file.
@@ -90,6 +92,7 @@ public final class ConfigStore: ObservableObject {
 
     init() {
         persists = true
+        rpc = SocketClient.shared
         loadInitial()
         startPolling()
     }
@@ -98,8 +101,13 @@ public final class ConfigStore: ObservableObject {
     ///
     /// The only way to exercise this type without a daemon and a real
     /// `host.json` behind it.
-    init(inMemory config: Config) {
+    ///
+    /// `rpc` defaults to a daemon that is not there, never to the real
+    /// socket: a test that forgets to supply a fake must fail, not drive the
+    /// daemon on the machine it runs on.
+    init(inMemory config: Config, rpc: any DaemonRPC = OfflineRPC()) {
         persists = false
+        self.rpc = rpc
         syncing = true
         cfg = config
         syncing = false
@@ -116,10 +124,10 @@ public final class ConfigStore: ObservableObject {
         defer { syncing = false }
 
         // Attempt daemon load first
-        if let config = try? client.getConfig() {
+        if let config = try? rpc.getConfig() {
             self.cfg = config
             self.daemonConnected = true
-        } else if let diskConfig = client.loadConfigFromDisk() {
+        } else if let diskConfig = rpc.loadConfigFromDisk() {
             self.cfg = diskConfig
             self.daemonConnected = false
         } else {
@@ -136,8 +144,9 @@ public final class ConfigStore: ObservableObject {
     /// leaves the mode nil, which presents as "unknown" -- never as one of
     /// the two real modes, because not knowing is not the same as knowing.
     func refreshKnobMode() {
+        let rpc = self.rpc
         Task.detached(priority: .utility) {
-            let reply = try? SocketClient.shared.getKnobMode()
+            let reply = try? rpc.getKnobMode()
             let mode = reply?["mode"] as? String
             let binding = reply?["device_binding_summary"] as? String
             let buttons = reply?["buttons"] as? Int
@@ -188,15 +197,15 @@ public final class ConfigStore: ObservableObject {
     /// race a keystroke's own save and yank the text field out from under
     /// the person typing.
     func adoptDaemonConfigIfChanged() {
-        guard let fromDaemon = try? client.getConfig(), fromDaemon != cfg else { return }
+        guard let fromDaemon = try? rpc.getConfig(), fromDaemon != cfg else { return }
         syncing = true
         defer { syncing = false }
         cfg = fromDaemon
     }
 
     func refreshStatus() {
+        let client = self.rpc
         Task.detached(priority: .utility) {
-            let client = SocketClient.shared
             let connected = client.isConnected()
             // One parser for both sources; see `StatusParse`. The daemon is
             // asked first and the CLI is the fallback for when it is down.
@@ -227,7 +236,7 @@ public final class ConfigStore: ObservableObject {
                 self.devices = snapshot.devices
                 self.tapActive = snapshot.tapActive
                 self.tapError = snapshot.tapError
-                self.socketPath = SocketClient.shared.connectedPath
+                self.socketPath = client.connectedPath
                 // The daemon's answer, not the app's memory of what was
                 // clicked. The menu bar's checkmark used to track a local
                 // variable nothing else read or wrote.
@@ -311,8 +320,8 @@ public final class ConfigStore: ObservableObject {
         guard persists else { return }
         persistAttempts += 1
         let connected = self.daemonConnected
+        let client = self.rpc
         Task.detached(priority: .userInitiated) {
-            let client = SocketClient.shared
             do {
                 if connected {
                     try client.setConfig(newConfig)
@@ -329,10 +338,10 @@ public final class ConfigStore: ObservableObject {
     public func reloadFromSource() {
         syncing = true
         defer { syncing = false }
-        if let config = try? client.getConfig() {
+        if let config = try? rpc.getConfig() {
             self.cfg = config
             self.daemonConnected = true
-        } else if let diskConfig = client.loadConfigFromDisk() {
+        } else if let diskConfig = rpc.loadConfigFromDisk() {
             self.cfg = diskConfig
         }
         refreshStatus()

@@ -151,9 +151,7 @@ extension ServicesPane {
         commandsError = nil
         Task { @MainActor in
             do {
-                commands = try await Task.detached(priority: .userInitiated) {
-                    try SocketClient.shared.listCommands()
-                }.value
+                commands = try await store.fetchCommands()
             } catch {
                 commands = nil
                 commandsError = "Could not read the daemon's command table: "

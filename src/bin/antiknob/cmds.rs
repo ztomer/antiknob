@@ -170,14 +170,7 @@ pub fn run_upload(
     // device really does hold bytes the new binding never wrote. Found
     // when a corrected layout flashed two mouse gestures over old chords
     // and came back with `01 08` still sitting at bytes 10-11.
-    let wipes: Vec<Vec<u8>> = packets
-        .iter()
-        .filter_map(|p| {
-            device::verify::parse_record(p).map(|(addr, _)| {
-                antiknob::fd::wipe_packet(addr.key_id, addr.layer.saturating_sub(1))
-            })
-        })
-        .collect();
+    let wipes = antiknob::fd::wipes_for(&packets);
     // Keep a copy to check against: `hid_write` succeeding says the packet
     // was well-formed, not that the firmware reads the slot it addressed.
     let written = packets.clone();

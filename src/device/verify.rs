@@ -115,7 +115,7 @@ pub enum SlotVerdict {
 /// `parse_record` deliberately rejects `0xFD`, because the bytes it reads
 /// mean something else there. Addressing is the one thing all three commands
 /// agree on, so it gets its own reader.
-fn record_addr(record: &[u8]) -> Option<SlotAddr> {
+pub fn record_addr(record: &[u8]) -> Option<SlotAddr> {
     if record.len() < 7 || record[0] != REPORT_ID {
         return None;
     }

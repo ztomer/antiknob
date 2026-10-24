@@ -235,6 +235,22 @@ pub fn wipe_packet(key_id: u8, layer: u8) -> Vec<u8> {
     packet
 }
 
+/// The wipe that must precede each write in `packets`: one per distinct
+/// slot, for whichever command wrote it.
+///
+/// `upload` used to derive these through `parse_record`, which reads only
+/// the `0xFE` layout and so skipped every keyboard and media write -- now
+/// `0xFD` -- leaving a short binding written over a long one with the old
+/// tail stranded in the slot. Addressing is the one thing all commands
+/// agree on, so it goes through `record_addr`.
+pub fn wipes_for(packets: &[Vec<u8>]) -> Vec<Vec<u8>> {
+    packets
+        .iter()
+        .filter_map(|p| crate::device::verify::record_addr(p))
+        .map(|addr| wipe_packet(addr.key_id, addr.layer.saturating_sub(1)))
+        .collect()
+}
+
 /// How many bytes of a record carry the binding.
 fn significant_len(record: &[u8]) -> Option<usize> {
     let entries = *record.get(6)? as usize;
@@ -262,6 +278,54 @@ pub fn record_matches(sent: &[u8], readback: &[u8]) -> bool {
     sent.first() == readback.first()
         && sent[2..5] == readback[2..5]
         && sent[6..end] == readback[6..end]
+}
+
+/// One slot record read the way the firmware stores it: a kind and the
+/// value bytes of its entries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Chain {
+    pub key_id: u8,
+    pub layer: u8,
+    pub kind: u8,
+    pub values: Vec<u8>,
+}
+
+/// Read the entry chain out of a record: the `0xFD` write or the `0xFA`
+/// reply that echoes it.
+///
+/// The one reader of the stored layout. The `0xFE` layout put a modifier
+/// bitmask at byte 11 and a keycode at byte 12; under `0xFD` those bytes
+/// are delays and values, so any reader that took them from there saw a
+/// chord as noise. `len` (byte 6) counts the entries, and a record whose
+/// count runs past the report is not a record.
+pub fn decode_chain(record: &[u8]) -> Option<Chain> {
+    let addr = crate::device::verify::record_addr(record)?;
+    let end = significant_len(record)?;
+    let values = record[FD_HEADER_LEN..end]
+        .as_chunks::<FD_ENTRY_LEN>()
+        .0
+        .iter()
+        .map(|entry| entry[FD_ENTRY_LEN - 1])
+        .collect();
+    Some(Chain {
+        key_id: addr.key_id,
+        layer: addr.layer,
+        kind: record[4],
+        values,
+    })
+}
+
+/// A chord as `(modifier bitmask, keycode)`, read out of a keyboard
+/// chain's values: modifier markers `F1..F8` then the key, the inverse of
+/// the chord encoding in `value_bytes`. `None` for anything else.
+pub fn chord_of(values: &[u8]) -> Option<(u8, u8)> {
+    let (code, markers) = values.split_last()?;
+    let mut mods = 0u8;
+    for marker in markers {
+        let bit = marker.checked_sub(FD_MOD_ENTRY_BASE).filter(|b| *b < 8)?;
+        mods |= 1 << bit;
+    }
+    Some((mods, *code))
 }
 
 /// Parse a list of action names into steps, all with no delay.

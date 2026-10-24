@@ -62,6 +62,19 @@ pub fn chord_summary_lines() -> Vec<String> {
         .collect()
 }
 
+/// The `(modifier bitmask, keycode)` of every chord the plan flashes,
+/// derived from `SLOT_SPECS` so the classifier that must recognise what
+/// `bind-slots` wrote reads the same table the flasher writes from.
+pub fn slot_chords() -> Vec<(u8, u8)> {
+    SLOT_SPECS
+        .iter()
+        .filter_map(|(_, chord)| match Action::parse(chord) {
+            Ok(Action::Key { modifiers, code }) => Some((modifiers, code)),
+            _ => None,
+        })
+        .collect()
+}
+
 fn gesture_label(event: KnobEvent) -> &'static str {
     match event {
         KnobEvent::RotateCCW => "CCW",

@@ -232,3 +232,19 @@ fn parse_sequence_reads_a_list_of_action_names() {
     assert_eq!(steps[0].delay_ms, 0);
     assert!(parse_sequence(&["notakey".to_string()]).is_err());
 }
+
+/// Every write gets its wipe, whatever command wrote it. Proven red against
+/// the `parse_record` derivation, which returned none for `0xFD` packets.
+#[test]
+fn every_written_slot_gets_a_wipe() {
+    let fd_packet = build_packet(5, 1, &[kb("a"), kb("b")]).unwrap();
+    let media = Action::parse("mute").unwrap().to_packet(6, 0);
+    let mouse = Action::parse("click").unwrap().to_packet(1, 2);
+    assert_eq!(mouse[1], crate::firmware::FE_CHORD_CMD, "mouse stays 0xFE");
+    let wipes = wipes_for(&[fd_packet, media, mouse]);
+    let slots: Vec<(u8, u8)> = wipes.iter().map(|w| (w[2], w[3])).collect();
+    assert_eq!(slots, vec![(5, 2), (6, 1), (1, 3)]);
+    assert!(wipes
+        .iter()
+        .all(|w| w[1] == FD_CMD && w[7..].iter().all(|b| *b == 0)));
+}

@@ -190,16 +190,6 @@ pub const DEVICE_LAYERS: u8 = 3;
 /// Device layers a default `bind-slots` flash targets: all of them.
 pub const BIND_LAYERS: [u8; 3] = [0, 1, 2];
 
-/// HID keycodes for F16..F20, the five slot chords `bind-slots` writes.
-pub const SLOT_KEYCODES: [u8; GESTURES_PER_KNOB] = [0x6B, 0x6C, 0x6D, 0x6E, 0x6F];
-
-/// Control + Alt, the modifier pair those chords carry.
-///
-/// Named for the chords, not the slots: `host::gesture` has its own
-/// `SLOT_MODS` (the ctrl/alt/shift WORDS a binding wants), and the two
-/// must never be mistaken for each other.
-pub const SLOT_CHORD_MODS: u8 = 0x01 | 0x04;
-
 // ---------------------------------------------------------------------------
 // Slot records (`0xFD` writes, `0xFA` reads).
 // ---------------------------------------------------------------------------

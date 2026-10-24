@@ -12,8 +12,52 @@
 //! assumes. Pure: a table in, a mode out.
 
 use super::verify::parse_record;
-use crate::firmware::{FD_KIND_KEYBOARD as KIND_KEYBOARD, SLOT_CHORD_MODS, SLOT_KEYCODES};
+use crate::firmware::FD_KIND_KEYBOARD as KIND_KEYBOARD;
 use crate::protocol::{key_id_for_knob, KnobEvent};
+
+/// What one knob slot holds, as far as the mode is concerned.
+enum Slot {
+    /// Nothing runs from it -- no entries, or all zero.
+    Empty,
+    /// One of the chords `bind-slots` flashes.
+    Chord,
+    /// Some other action the OS handles directly.
+    Other,
+}
+
+/// Read a slot out of a record the way the firmware stores it.
+///
+/// Keyboard and media records are `0xFD` chains, and that is also what
+/// `bind-slots` writes and an `FA` read returns, so they are read as
+/// chains. The previous reader took mods and keycode from bytes 11/12 of
+/// the dead `0xFE` layout, found no chord in a chain, and reported every
+/// flashed knob as Standalone. A `0xFE` record the firmware stored with no
+/// entries (`len = 0`) is Empty: it holds bytes and runs nothing. Other
+/// kinds (mouse) keep their own `0xFE` layout and are read as before.
+fn read_slot(record: &[u8]) -> Option<(u8, Slot)> {
+    if let Some(chain) = crate::fd::decode_chain(record) {
+        if chain.kind == KIND_KEYBOARD || chain.kind == crate::fd::Kind::Media as u8 {
+            let slot = if chain.values.iter().all(|v| *v == 0) {
+                Slot::Empty
+            } else if chain.kind == KIND_KEYBOARD
+                && crate::fd::chord_of(&chain.values)
+                    .is_some_and(|c| crate::host::bind::slot_chords().contains(&c))
+            {
+                Slot::Chord
+            } else {
+                Slot::Other
+            };
+            return Some((chain.key_id, slot));
+        }
+    }
+    let (addr, action) = parse_record(record)?;
+    let slot = if action.media == 0 && action.code == 0 {
+        Slot::Empty
+    } else {
+        Slot::Other
+    };
+    Some((addr.key_id, slot))
+}
 
 /// What the firmware will do when the knob is turned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,16 +84,6 @@ impl KnobMode {
     }
 }
 
-/// HID keycodes for F16..F20, the five slot chords `bind-slots` writes.
-///
-/// Three when `bind-slots` wrote three. A knob whose hold+twist slots
-/// carried F19/F20 and whose other three had been reflashed standalone
-/// would then read as Standalone -- a mode the daemon can in fact hear.
-///
-/// Values live in the firmware map; the classifier that must agree with
-/// the flasher lives here. `SLOT_CHORD_MODS` is the modifier pair those
-/// chords carry (Control + Alt); compared records are keyboard actions
-/// (`KIND_KEYBOARD`).
 /// Read the mode off a slot-table dump.
 ///
 /// `button_count` places the knob's slots -- the same layout question that
@@ -67,21 +101,18 @@ pub fn classify(records: &[Vec<u8>], button_count: usize) -> KnobMode {
 
     let mut saw_knob_slot = false;
     let mut saw_chord = false;
-    for (addr, action) in records.iter().filter_map(|r| parse_record(r)) {
-        if !knob_ids.contains(&addr.key_id) {
+    for (key_id, slot) in records.iter().filter_map(|r| read_slot(r)) {
+        if !knob_ids.contains(&key_id) {
             continue;
         }
-        // An empty slot is not evidence of a mode either way.
-        let empty = action.media == 0 && action.code == 0;
-        if empty {
-            continue;
-        }
-        saw_knob_slot = true;
-        if action.kind == KIND_KEYBOARD
-            && action.mods == SLOT_CHORD_MODS
-            && SLOT_KEYCODES.contains(&action.code)
-        {
-            saw_chord = true;
+        match slot {
+            // An empty slot is not evidence of a mode either way.
+            Slot::Empty => {}
+            Slot::Chord => {
+                saw_knob_slot = true;
+                saw_chord = true;
+            }
+            Slot::Other => saw_knob_slot = true,
         }
     }
 
@@ -95,41 +126,53 @@ pub fn classify(records: &[Vec<u8>], button_count: usize) -> KnobMode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::firmware::GESTURES_PER_KNOB;
+    use crate::firmware::{GESTURES_PER_KNOB, SLOT_TABLE_QUERY_CMD};
+    use crate::protocol::Action;
 
-    /// `03 FA <key> <layer> <kind> .. .. .. .. <media> .. <mods> <code>`
-    fn rec(key_id: u8, kind: u8, media: u8, mods: u8, code: u8) -> Vec<u8> {
-        let mut r = vec![0u8; 64];
-        r[0] = 0x03;
-        r[1] = 0xFA;
-        r[2] = key_id;
-        r[3] = 1;
-        r[4] = kind;
-        r[9] = media;
-        r[11] = mods;
-        r[12] = code;
+    /// A write re-framed as the reply the device gives for it: `0xFA` out,
+    /// the same bytes (VENDOR_UI_MAP: a record reads back as it was stored).
+    /// Every fixture below is built from the flasher's own packets, never
+    /// from constants the classifier also reads -- the old fixtures took
+    /// mods/code from `SLOT_CHORD_MODS`, so they could only agree with the
+    /// reader, and the reader was wrong about the layout.
+    fn as_reply(packet: Vec<u8>) -> Vec<u8> {
+        let mut r = packet;
+        r[1] = SLOT_TABLE_QUERY_CMD;
         r
+    }
+
+    /// The record `Action::to_packet` writes for `name` at `key_id`, as the
+    /// device reports it.
+    fn rec(key_id: u8, name: &str) -> Vec<u8> {
+        as_reply(Action::parse(name).unwrap().to_packet(key_id, 0))
+    }
+
+    /// An unbound slot as the wipe leaves it: all entries zero.
+    fn empty(key_id: u8) -> Vec<u8> {
+        as_reply(crate::fd::wipe_packet(key_id, 0))
     }
 
     /// The table read off this VK01 after a standalone flash: knob slots
     /// 4/5/6 carrying media usages.
     fn standalone_table() -> Vec<Vec<u8>> {
         vec![
-            rec(1, 1, 0, 0x08, 0x06), // button: cmd-c
-            rec(4, 2, 0xEA, 0, 0),    // knob CCW: volume down
-            rec(5, 2, 0xE2, 0, 0),    // knob press: mute
-            rec(6, 2, 0xE9, 0, 0),    // knob CW: volume up
+            rec(1, "cmd-c"),      // button
+            rec(4, "volumedown"), // knob CCW
+            rec(5, "mute"),       // knob press
+            rec(6, "volumeup"),   // knob CW
         ]
     }
 
-    /// What `bind-slots` leaves behind: ctrl+alt+F16/F17/F18.
+    /// What `bind-slots` leaves behind for a three-button layout.
     fn host_translate_table() -> Vec<Vec<u8>> {
-        vec![
-            rec(1, 1, 0, 0x08, 0x06),
-            rec(4, 1, 0, SLOT_CHORD_MODS, 0x6B),
-            rec(5, 1, 0, SLOT_CHORD_MODS, 0x6C),
-            rec(6, 1, 0, SLOT_CHORD_MODS, 0x6D),
-        ]
+        let mut t = vec![rec(1, "cmd-c")];
+        t.extend(
+            crate::host::bind::binding_packets(3, &[0])
+                .unwrap()
+                .into_iter()
+                .map(as_reply),
+        );
+        t
     }
 
     #[test]
@@ -145,16 +188,30 @@ mod tests {
         );
     }
 
+    /// The table `bind-slots` really leaves behind, on every device layer.
+    /// Proven red against the `0xFE`-layout reader first: it read bytes
+    /// 9/11/12 of a `0xFD` chain, found no chord and called every flashed
+    /// knob Standalone.
+    #[test]
+    fn what_bind_slots_writes_reads_as_host_translate() {
+        let table: Vec<Vec<u8>> = crate::host::bind::binding_packets(1, &[0, 1, 2])
+            .unwrap()
+            .into_iter()
+            .map(as_reply)
+            .collect();
+        assert_eq!(table.len(), 3 * GESTURES_PER_KNOB);
+        assert_eq!(classify(&table, 1), KnobMode::HostTranslate);
+    }
+
     /// The check that stops the app claiming a mode it cannot see: no knob
     /// records, or only empty ones, is Unknown -- never Standalone.
     #[test]
     fn an_absent_or_empty_table_is_unknown_rather_than_a_mode() {
         assert_eq!(classify(&[], 3), KnobMode::Unknown);
         // Buttons present, knob slots absent.
-        assert_eq!(classify(&[rec(1, 1, 0, 0x08, 0x06)], 3), KnobMode::Unknown);
+        assert_eq!(classify(&[rec(1, "cmd-c")], 3), KnobMode::Unknown);
         // Knob slots present but empty.
-        let empty = vec![rec(4, 2, 0, 0, 0), rec(5, 2, 0, 0, 0)];
-        assert_eq!(classify(&empty, 3), KnobMode::Unknown);
+        assert_eq!(classify(&[empty(4), empty(5)], 3), KnobMode::Unknown);
     }
 
     /// A wrong button count looks at the wrong slots and must not
@@ -173,41 +230,54 @@ mod tests {
     #[test]
     fn the_hold_twist_slots_are_read_too() {
         // One button, so gestures sit at keys 2..6 and hold+twist at 5/6.
+        let chords = crate::host::bind::binding_packets(1, &[0]).unwrap();
         let only_hold_twist = vec![
-            rec(2, 2, 0xEA, 0, 0),               // CCW: volume down, standalone
-            rec(3, 2, 0xE2, 0, 0),               // press: mute, standalone
-            rec(4, 2, 0xE9, 0, 0),               // CW: volume up, standalone
-            rec(5, 1, 0, SLOT_CHORD_MODS, 0x6E), // hold+twist L: ctrl-alt-F19
-            rec(6, 1, 0, SLOT_CHORD_MODS, 0x6F), // hold+twist R: ctrl-alt-F20
+            rec(2, "volumedown"),
+            rec(3, "mute"),
+            rec(4, "volumeup"),
+            as_reply(chords[3].clone()), // hold+twist L
+            as_reply(chords[4].clone()), // hold+twist R
         ];
         assert_eq!(classify(&only_hold_twist, 1), KnobMode::HostTranslate);
-    }
-
-    /// The five slots a fully bound one-button VK01 carries.
-    #[test]
-    fn a_fully_bound_one_button_knob_reads_as_host_translate() {
-        let bound: Vec<Vec<u8>> = (0..GESTURES_PER_KNOB)
-            .map(|i| rec(2 + i as u8, 1, 0, SLOT_CHORD_MODS, SLOT_KEYCODES[i]))
-            .collect();
-        assert_eq!(classify(&bound, 1), KnobMode::HostTranslate);
     }
 
     /// One chord among ordinary actions still means the daemon can act --
     /// a half-bound device is host-translate, not standalone.
     #[test]
     fn a_partially_bound_knob_is_host_translate() {
+        let chords = crate::host::bind::binding_packets(3, &[0]).unwrap();
         let mixed = vec![
-            rec(4, 1, 0, SLOT_CHORD_MODS, 0x6B),
-            rec(5, 2, 0xE2, 0, 0),
-            rec(6, 2, 0xE9, 0, 0),
+            as_reply(chords[0].clone()),
+            rec(5, "mute"),
+            rec(6, "volumeup"),
         ];
         assert_eq!(classify(&mixed, 3), KnobMode::HostTranslate);
     }
 
-    /// F16 without ctrl+alt is not a slot chord; the daemon ignores it.
+    /// F16 without the slot modifiers is not a slot chord; the daemon
+    /// ignores it. Nor is the pre-shift `ctrl-alt-F16` the classifier used
+    /// to be pinned to: it is ordinary typing the OS handles.
     #[test]
-    fn an_unmodified_function_key_is_not_a_slot_chord() {
-        let bare = vec![rec(4, 1, 0, 0, 0x6B)];
-        assert_eq!(classify(&bare, 3), KnobMode::Standalone);
+    fn only_the_current_slot_chords_count() {
+        assert_eq!(classify(&[rec(4, "f16")], 3), KnobMode::Standalone);
+        assert_eq!(classify(&[rec(4, "ctrl-alt-f16")], 3), KnobMode::Standalone);
+        // Right keycode, one modifier short.
+        assert_eq!(
+            classify(&[rec(4, "ctrl-shift-f16")], 3),
+            KnobMode::Standalone
+        );
+    }
+
+    /// The dead `0xFE` form -- payload at bytes 10-12, `len = 0` -- is what
+    /// older versions stored for a chord. The firmware keeps the bytes and
+    /// runs nothing, so it is evidence of no mode at all.
+    #[test]
+    fn a_stored_but_never_executed_fe_record_is_not_a_mode() {
+        let mut dead = vec![0u8; 64];
+        dead[..5].copy_from_slice(&[0x03, SLOT_TABLE_QUERY_CMD, 4, 1, 1]);
+        dead[10] = 0x01;
+        dead[11] = 0x07; // ctrl+alt+shift
+        dead[12] = 0x6B;
+        assert_eq!(classify(&[dead], 3), KnobMode::Unknown);
     }
 }

@@ -102,6 +102,13 @@ Software only. `tools/gate.sh --full` green at the push of this commit.
 * **S.1** 113 hand-rolled markers onto `goh-tui` / `tui/lib.sh`, no seed,
   `goh status-markers` in `tools/repo_gates.sh` (calibrated red), CI links
   `../gates_of_heck` to `./goh`. `0956d2e`
+* **S.1 follow-up, workaround removed** -- owner's words (umbrella section 0b):
+  "the export's missing `gates_of_heck` sibling for consumers with a `goh-tui`
+  path dependency (antiknob's workaround)". goh `fb3d0a7` makes the pre-push
+  export link the sibling, so the `ln -s` block in `tools/gate.sh` (`801ef17`) is
+  deleted; the push gate runs green without it and no longer names a write
+  outside its tree. CI is not that export, so its own link step is back in
+  `tests.yml`.
 * **S.6** CI on Python 3.15. `d1bfb28`
 * **S.7** `GOH_RUST_LINT_CONFIGS='--target aarch64-apple-darwin:--release'`
   (calibrated red through a `cfg(not(debug_assertions))` error). `4e02fad`

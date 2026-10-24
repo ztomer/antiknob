@@ -14,18 +14,6 @@ case "${1:-}" in
   --doctor)  exec bash "$GOH/gates/doctor.sh" "${2:-$PWD}" ;;
 esac
 
-# Cargo.toml's `goh-tui` path dependency names ../gates_of_heck, and Cargo reads
-# no environment variable in a path. A checkout that has no such sibling -- the
-# pre-push export (<export root>/antiknob-<hash>/antiknob) and CI (the workspace
-# is the checkout, goh sits inside it) -- gets one here, as a link to $GOH, so
-# the local gate, the push gate and CI resolve the crate the same way. Absent
-# only; a real sibling is never touched.
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SIBLING="$(dirname "$ROOT")/gates_of_heck"
-if [ ! -e "$SIBLING" ] && [ ! -L "$SIBLING" ]; then
-  ln -s "$(cd "$GOH" && pwd)" "$SIBLING"
-fi
-
 "$GOH/gates/structural.sh" "$@"
 
 case "${1:-}" in

@@ -15,9 +15,9 @@ hidapi = "2.6"
 # The house TUI for Rust (gates_of_heck BACKLOG 4.14): the Kare glyphs and
 # colours every status line prints through, NO_COLOR and non-tty aware. A path
 # into the gates_of_heck checkout, which Cargo reads no environment variable
-# in, so the sibling checkout IS $GOH_DIR. tools/gate.sh links it where a
-# checkout has no such sibling (the push export, CI, which checks goh out at
-# ./goh); building from source needs that checkout.
+# in, so the sibling checkout IS $GOH_DIR. The push gate's export links it
+# (goh fb3d0a7) and CI links its ./goh checkout here (tests.yml); building
+# from source needs that checkout.
 goh-tui = { path = "../gates_of_heck/crates/goh-tui" }
 
 [target.'cfg(target_os = "macos")'.dependencies]

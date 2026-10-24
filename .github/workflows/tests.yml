@@ -78,9 +78,10 @@ jobs:
       - name: Put gates_of_heck where Cargo.toml looks for it
         run: ln -s "$GITHUB_WORKSPACE/goh" "$(dirname "$GITHUB_WORKSPACE")/gates_of_heck"
 
+      # 3.15: the house moved to it on 2026-10-10; the gates run on it.
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.14"
+          python-version: "3.15"
 
       - name: Toolchain (stable)
         uses: dtolnay/rust-toolchain@stable

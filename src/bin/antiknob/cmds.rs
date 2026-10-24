@@ -174,8 +174,6 @@ pub fn run_upload(
     // Keep a copy to check against: `hid_write` succeeding says the packet
     // was well-formed, not that the firmware reads the slot it addressed.
     let written = packets.clone();
-    let slots_per_layer = u8::try_from(cfg.slots_per_layer())
-        .context("layout declares more slots per layer than the protocol can address")?;
     let observed = device::with_device(move |dev| {
         for wipe in &wipes {
             device::send_report(dev, wipe)?;
@@ -199,11 +197,7 @@ pub fn run_upload(
             return Ok(Vec::new());
         }
         sleep(Duration::from_millis(firmware::SLOT_VERIFY_SETTLE_MS));
-        Ok(device::read_slot_table(
-            dev,
-            slots_per_layer,
-            firmware::DEVICE_LAYERS,
-        ))
+        Ok(device::read_full_table(dev))
     })?;
 
     if skip_verify {

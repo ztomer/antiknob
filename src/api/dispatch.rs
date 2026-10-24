@@ -6,7 +6,7 @@ use super::types::{led_mode_name, Command, PowerStatus};
 use crate::apps;
 use crate::config::DeviceConfig;
 use crate::device;
-use crate::firmware::{DEVICE_LAYERS, GESTURES_PER_KNOB};
+use crate::firmware::DEVICE_LAYERS;
 use crate::host::HostConfig;
 use crate::protocol::{self, Action};
 use anyhow::{Context, Result};
@@ -264,21 +264,19 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                 Some(n) => n,
                 None => installed_button_count()?,
             };
-            // Five slots per knob, not three. Reading `buttons + 3` stopped
-            // the walk two slots short of the hold+twist pair, so the two
-            // gestures the classifier now examines were never in the table
-            // it examined them in. Absurd counts refuse instead of
-            // saturating into a 255-wide walk at the firmware.
-            let slots = u8::try_from(
-                buttons
-                    .checked_add(GESTURES_PER_KNOB)
-                    .context("button count out of range")?,
-            )
-            .context("button count out of range")?;
-            let table = device::with_device(move |dev| {
-                Ok(device::read_slot_table(dev, slots, DEVICE_LAYERS))
-            })
-            .context("Cannot read the slot table from the Anticater USB device")?;
+            // Place the knob's slots BEFORE touching the device: an absurd
+            // count refuses with the numbers quoted back instead of reading
+            // a table it cannot interpret.
+            let knob_key_ids = crate::protocol::KnobEvent::ALL
+                .iter()
+                .map(|e| crate::protocol::key_id_for_knob(buttons, 0, *e))
+                .collect::<Result<Vec<u8>, _>>()
+                .context("knob slots out of range")?;
+            // The burst read, not the per-slot walk: the walk stopped at the
+            // declared layout's width, so it could not see a key past it
+            // (three queries here instead of eighteen, and complete).
+            let table = device::with_device(|dev| Ok(device::read_full_table(dev)))
+                .context("Cannot read the slot table from the Anticater USB device")?;
             let mode = device::mode::classify(&table, buttons);
             // WHICH device layer carries the host chords, alongside whether
             // any does. The mode above is read from the hardware; this is
@@ -299,8 +297,7 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
                 // declared button count places them, and a layout that
                 // declares the wrong number moves every gesture along
                 // without any surface saying so -- so the surfaces say so.
-                "knob_key_ids": crate::protocol::KnobEvent::ALL
-                    .iter().map(|e| crate::protocol::key_id_for_knob(buttons, 0, *e)).collect::<Result<Vec<u8>, _>>().context("knob slots out of range")?,
+                "knob_key_ids": knob_key_ids,
                 "slots_read": table.len(),
                 "host_layers_can_fire": mode == device::mode::KnobMode::HostTranslate,
                 "device_binding": arrangement,

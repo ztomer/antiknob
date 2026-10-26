@@ -69,6 +69,12 @@ jobs:
           path: goh
           token: ${{ secrets.GOH_TOKEN || github.token }}
           persist-credentials: false
+      # goh's tool floors (python3, shellcheck), met the ONE way goh provides: its
+      # goh-floors action reads them from goh's own floor table (gates/required_tools.tsv),
+      # so a floor raised there is met here with no edit. GitHub's runners ship python
+      # 3.12 and shellcheck 0.9, below goh's floors (goh G7, 2026-10-26).
+      - name: Meet goh's tool floors
+        uses: ./goh/.github/actions/goh-floors
 
       # Cargo.toml reaches the house TUI crate by the path
       # ../gates_of_heck/crates/goh-tui (Cargo reads no environment variable in

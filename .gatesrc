@@ -44,3 +44,8 @@ GOH_STATUS_MARKERS_MIN_FILES=116      # read 129
 # is the step the gate already runs; naming it with --target keeps the claim
 # explicit rather than inferred from the machine.
 GOH_RUST_LINT_CONFIGS='--target aarch64-apple-darwin:--release'
+
+# The MCP server, judged on the wire by goh's check_mcp_wire.py at structural --full: newest
+# protocol, every tool's effect stated, destructive tools only behind --allow-destructive. The
+# config lives in the gate's scratch dir, so no owner bindings are read; no tool is ever called.
+GOH_MCP_SERVERS='cargo run --quiet --locked --bin antiknob -- mcp --config "$GOH_MCP_SCRATCH/c.toml"'

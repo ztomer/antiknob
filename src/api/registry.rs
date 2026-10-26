@@ -12,137 +12,7 @@
 //! command. That is the difference between a considered omission and one
 //! nobody has noticed yet.
 
-/// What a parameter carries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Kind {
-    /// Presence-only; `--flag`.
-    Flag,
-    Str,
-    Int,
-    /// Repeated or comma-separated values.
-    IntList,
-    /// Free-form trailing words, e.g. an action sequence.
-    StrList,
-}
-
-/// Which surfaces a parameter appears on.
-///
-/// Not every parameter can be shared: `upload` takes a FILE on the command
-/// line and a YAML STRING over MCP, because an agent has no filesystem the
-/// daemon can see.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum On {
-    Both,
-    CliOnly,
-    McpOnly,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Param {
-    pub name: &'static str,
-    pub kind: Kind,
-    pub about: &'static str,
-    pub required: bool,
-    /// A positional argument on the CLI rather than `--name`.
-    pub positional: bool,
-    pub default: Option<&'static str>,
-    pub on: On,
-}
-
-impl Param {
-    pub const fn flag(name: &'static str, about: &'static str) -> Self {
-        Self {
-            name,
-            kind: Kind::Flag,
-            about,
-            required: false,
-            positional: false,
-            default: None,
-            on: On::Both,
-        }
-    }
-
-    pub const fn opt(name: &'static str, kind: Kind, about: &'static str) -> Self {
-        Self {
-            name,
-            kind,
-            about,
-            required: false,
-            positional: false,
-            default: None,
-            on: On::Both,
-        }
-    }
-
-    pub const fn req(name: &'static str, kind: Kind, about: &'static str) -> Self {
-        Self {
-            required: true,
-            ..Self::opt(name, kind, about)
-        }
-    }
-
-    pub const fn positional(mut self) -> Self {
-        self.positional = true;
-        self
-    }
-
-    pub const fn default(mut self, value: &'static str) -> Self {
-        self.default = Some(value);
-        self
-    }
-
-    pub const fn only(mut self, on: On) -> Self {
-        self.on = on;
-        self
-    }
-
-    pub fn on_surface(&self, mcp: bool) -> bool {
-        match self.on {
-            On::Both => true,
-            On::CliOnly => !mcp,
-            On::McpOnly => mcp,
-        }
-    }
-}
-
-/// Whether a command reaches a surface, and if not, why not.
-#[derive(Debug, Clone, Copy)]
-pub enum Reach {
-    Yes,
-    /// Absent on purpose. The string is the reason a reader can check.
-    No(&'static str),
-}
-
-impl Reach {
-    pub fn is_yes(&self) -> bool {
-        matches!(self, Self::Yes)
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct CommandSpec {
-    /// Canonical snake_case name. The CLI renders it kebab-case, MCP uses
-    /// it as the tool name, so the two cannot be spelled differently.
-    pub name: &'static str,
-    pub about: &'static str,
-    pub params: &'static [Param],
-    /// The CLI spelling when it differs from the canonical name -- `status`
-    /// rather than `get-status`. The names people type are older than this
-    /// table and renaming them to satisfy it would be the tail wagging the
-    /// dog.
-    pub cli_as: Option<&'static str>,
-    pub cli: Reach,
-    pub mcp: Reach,
-}
-
-impl CommandSpec {
-    /// The CLI spelling: the override if there is one, else the canonical
-    /// name in kebab-case.
-    pub fn cli_name(&self) -> String {
-        self.cli_as
-            .map_or_else(|| self.name.replace('_', "-"), str::to_string)
-    }
-}
+pub use super::registry_model::{CommandSpec, Effect, Kind, On, Param, Reach, Ret};
 
 pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
@@ -152,6 +22,17 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: Some("status"),
         cli: Reach::Yes,
         mcp: Reach::Yes,
+        effect: Effect::Read,
+        returns: &[
+            ("connected", "boolean"),
+            ("transport", "string"),
+            ("device_count", "integer"),
+            ("devices", "array"),
+            ("power", "object"),
+            ("active_layer", "integer"),
+            ("layers_count", "integer"),
+            ("tap_active", "boolean"),
+        ],
     },
     CommandSpec {
         name: "validate",
@@ -165,6 +46,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: None,
         cli: Reach::Yes,
         mcp: Reach::No("checks a local file; over MCP, upload_keymap reports the same errors"),
+        effect: Effect::Read,
+        returns: &[],
     },
     CommandSpec {
         name: "upload_keymap",
@@ -183,6 +66,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: Some("upload"),
         cli: Reach::Yes,
         mcp: Reach::Yes,
+        effect: Effect::Destructive,
+        returns: &[("ok", "boolean"), ("message", "string")],
     },
     CommandSpec {
         name: "set_led",
@@ -194,6 +79,14 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: Some("led"),
         cli: Reach::Yes,
         mcp: Reach::Yes,
+        effect: Effect::Write,
+        returns: &[
+            ("ok", "boolean"),
+            ("layer", "integer"),
+            ("mode", "integer"),
+            ("mode_name", "string"),
+            ("note", "string"),
+        ],
     },
     CommandSpec {
         name: "get_led",
@@ -205,6 +98,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: Some("led-read"),
         cli: Reach::Yes,
         mcp: Reach::Yes,
+        effect: Effect::Read,
+        returns: &[
+            ("layer", "integer"),
+            ("mode", "integer"),
+            ("mode_name", "string"),
+        ],
     },
     CommandSpec {
         name: "show_keys",
@@ -215,6 +114,13 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: None,
         cli: Reach::Yes,
         mcp: Reach::Yes,
+        effect: Effect::Read,
+        returns: &[
+            ("keys", "array"),
+            ("media", "array"),
+            ("modifiers", "array"),
+            ("note", "string"),
+        ],
     },
     CommandSpec {
         name: "bind_slots",
@@ -230,6 +136,14 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: None,
         cli: Reach::Yes,
         mcp: Reach::Yes,
+        effect: Effect::Destructive,
+        returns: &[
+            ("ok", "boolean"),
+            ("flashed_slots", "integer"),
+            ("layers", "array"),
+            ("buttons", "integer"),
+            ("key_ids", "array"),
+        ],
     },
     CommandSpec {
         name: "bind_sequence",
@@ -264,6 +178,15 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: Some("bind-seq"),
         cli: Reach::Yes,
         mcp: Reach::Yes,
+        effect: Effect::Destructive,
+        returns: &[
+            ("key", "integer"),
+            ("layer", "integer"),
+            ("actions", "array"),
+            ("entries", "integer"),
+            ("delay_ms", "integer"),
+            ("confirmed", "boolean"),
+        ],
     },
     CommandSpec {
         name: "read_slots",
@@ -281,6 +204,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: None,
         cli: Reach::Yes,
         mcp: Reach::Yes,
+        effect: Effect::Read,
+        returns: &[],
     },
     CommandSpec {
         name: "list_apps",
@@ -289,6 +214,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: None,
         cli: Reach::Yes,
         mcp: Reach::Yes,
+        effect: Effect::Read,
+        returns: &[("count", "integer"), ("apps", "array")],
     },
     CommandSpec {
         name: "send_raw",
@@ -307,6 +234,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: Some("raw"),
         cli: Reach::Yes,
         mcp: Reach::Yes,
+        effect: Effect::Destructive,
+        returns: &[("ok", "boolean"), ("bytes_sent", "integer")],
     },
     CommandSpec {
         name: "import_presets",
@@ -318,6 +247,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: None,
         cli: Reach::Yes,
         mcp: Reach::No("a one-off migration of files on this machine, not a device operation"),
+        effect: Effect::Destructive,
+        returns: &[],
     },
     CommandSpec {
         name: "listen",
@@ -333,6 +264,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: None,
         cli: Reach::Yes,
         mcp: Reach::No("streams for seconds and means nothing unless a human turns the knob"),
+        effect: Effect::Read,
+        returns: &[],
     },
     CommandSpec {
         name: "probe_gestures",
@@ -350,6 +283,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: None,
         cli: Reach::Yes,
         mcp: Reach::No("needs a human performing gestures inside the capture window"),
+        effect: Effect::Destructive,
+        returns: &[],
     },
     CommandSpec {
         name: "led_probe",
@@ -364,14 +299,24 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: None,
         cli: Reach::Yes,
         mcp: Reach::No("needs a human watching the LED to say which mode is which"),
+        effect: Effect::Write,
+        returns: &[],
     },
     CommandSpec {
         name: "mcp",
         about: "Run as an MCP server over stdio.",
-        params: &[Param::opt("config", Kind::Str, "Host config JSON path")],
+        params: &[
+            Param::opt("config", Kind::Str, "Host config JSON path"),
+            Param::flag(
+                "allow_destructive",
+                "Also offer the tools that overwrite stored bindings, config or raw firmware state",
+            ),
+        ],
         cli_as: None,
         cli: Reach::Yes,
         mcp: Reach::No("starts the MCP server; exposing it over MCP is circular"),
+        effect: Effect::Read,
+        returns: &[],
     },
     // Daemon-state commands. They have no CLI form because they act on a
     // RUNNING daemon's in-memory engine, which a one-shot process does not
@@ -383,22 +328,40 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: None,
         cli: Reach::No("reads a running daemon's state; a one-shot CLI process has none"),
         mcp: Reach::Yes,
+        effect: Effect::Read,
+        returns: &[("layers", "array")],
     },
     CommandSpec {
         name: "set_config",
         about: "Replace the daemon's host-layer configuration.",
-        params: &[Param::req("config", Kind::Str, "Full host config JSON")],
+        params: &[Param::req(
+            "config",
+            Kind::Object,
+            "Full host config, as the JSON object get_config returns",
+        )],
         cli_as: None,
         cli: Reach::No("writes a running daemon's state; a one-shot CLI process has none"),
         mcp: Reach::Yes,
+        effect: Effect::Destructive,
+        returns: &[
+            ("ok", "boolean"),
+            ("layers_count", "integer"),
+            ("message", "string"),
+        ],
     },
     CommandSpec {
         name: "set_layer",
         about: "Switch the daemon's active host layer.",
-        params: &[Param::req("index", Kind::Int, "Layer index")],
+        params: &[Param::req("layer", Kind::Int, "Host layer index")],
         cli_as: None,
         cli: Reach::No("acts on a running daemon's engine"),
         mcp: Reach::Yes,
+        effect: Effect::Write,
+        returns: &[
+            ("ok", "boolean"),
+            ("active_layer", "integer"),
+            ("layer_name", "string"),
+        ],
     },
     CommandSpec {
         name: "get_virtual_layer",
@@ -408,6 +371,14 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: None,
         cli: Reach::No("acts on a running daemon's engine"),
         mcp: Reach::Yes,
+        effect: Effect::Read,
+        returns: &[
+            ("layer", "string"),
+            ("layer_index", "integer"),
+            ("is_virtual", "boolean"),
+            ("variants", "array"),
+            ("can_fire", "boolean"),
+        ],
     },
     CommandSpec {
         name: "set_virtual_variant",
@@ -420,6 +391,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: None,
         cli: Reach::No("acts on a running daemon's engine"),
         mcp: Reach::Yes,
+        effect: Effect::Write,
+        returns: &[("ok", "boolean")],
     },
     CommandSpec {
         name: "get_knob_mode",
@@ -433,6 +406,14 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: None,
         cli: Reach::No("the CLI reports the same thing through get_status"),
         mcp: Reach::Yes,
+        effect: Effect::Read,
+        returns: &[
+            ("mode", "string"),
+            ("buttons", "integer"),
+            ("knob_key_ids", "array"),
+            ("slots_read", "integer"),
+            ("host_layers_can_fire", "boolean"),
+        ],
     },
     CommandSpec {
         name: "list_commands",
@@ -443,6 +424,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: None,
         cli: Reach::No("the CLI's own --help renders this table already"),
         mcp: Reach::Yes,
+        effect: Effect::Read,
+        returns: &[("commands", "array")],
     },
     CommandSpec {
         name: "ping",
@@ -451,6 +434,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         cli_as: None,
         cli: Reach::No("a daemon liveness probe; a CLI process that runs has already answered"),
         mcp: Reach::Yes,
+        effect: Effect::Read,
+        returns: &[],
     },
 ];
 

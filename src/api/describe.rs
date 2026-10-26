@@ -24,6 +24,7 @@ pub fn describe_commands() -> Vec<Value> {
             Kind::Flag => "flag",
             Kind::Str => "string",
             Kind::Int => "integer",
+            Kind::Object => "object",
             Kind::IntList => "integer[]",
             Kind::StrList => "string[]",
         }

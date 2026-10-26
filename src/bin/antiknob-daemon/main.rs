@@ -60,6 +60,11 @@ struct Cli {
     #[arg(long)]
     mcp: bool,
 
+    /// With --mcp: also offer the tools that overwrite the keymap, the
+    /// config file or raw firmware state (off by default)
+    #[arg(long, requires = "mcp")]
+    allow_destructive: bool,
+
     /// Custom path for the Unix domain socket
     #[arg(long)]
     socket_path: Option<PathBuf>,
@@ -181,7 +186,12 @@ fn main() -> Result<()> {
         let tap_health =
             std::sync::Arc::new(std::sync::Mutex::new(antiknob::api::TapHealth::default()));
         let ctx = antiknob::api::ApiContext::with_health(config_path, None, tap_health);
-        return antiknob::api::run_mcp_server(ctx);
+        return antiknob::api::run_mcp_server(
+            ctx,
+            antiknob::api::McpOptions {
+                allow_destructive: cli.allow_destructive,
+            },
+        );
     }
 
     if cli.uninstall_login_item {

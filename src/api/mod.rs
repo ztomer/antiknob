@@ -3,13 +3,14 @@
 pub mod dispatch;
 pub mod mcp;
 pub mod registry;
+mod registry_model;
 pub mod socket;
 pub mod types;
 #[cfg(test)]
 mod virtual_layer_tests;
 
 pub use dispatch::{execute_command, ApiContext, TapHealth};
-pub use mcp::{handle_mcp_request, run_mcp_server};
+pub use mcp::{run_mcp_server, AntiknobMcp, McpOptions};
 pub use socket::{call_daemon_socket, default_socket_path, SocketServer, TMP_SOCKET_PATH};
 pub use types::{all_tools, led_mode_name, Command, ToolDef};
 
@@ -17,7 +18,6 @@ pub use types::{all_tools, led_mode_name, Command, ToolDef};
 mod tests {
     use super::*;
     use crate::host::HostConfig;
-    use serde_json::json;
 
     #[test]
     fn all_tools_have_unique_names_and_valid_schemas() {
@@ -46,50 +46,6 @@ mod tests {
         assert_eq!(val["params"]["layer"], 1);
         assert_eq!(val["params"]["mode"], "backlight");
         assert_eq!(val["params"]["color"], "cyan");
-    }
-
-    #[test]
-    fn mcp_initialize_and_tools_list() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("antiknob_test_mcp_{}", std::process::id()));
-        let mut ctx = ApiContext::new(temp_dir.join("host.json"), None);
-
-        // Initialize
-        let init_req = json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {}
-        });
-        let init_resp = handle_mcp_request(&mut ctx, &init_req.to_string()).unwrap();
-        assert_eq!(init_resp["id"], 1);
-        assert!(init_resp["result"]["capabilities"]["tools"].is_object());
-
-        // Tools list
-        let list_req = json!({
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "tools/list",
-            "params": {}
-        });
-        let list_resp = handle_mcp_request(&mut ctx, &list_req.to_string()).unwrap();
-        assert_eq!(list_resp["id"], 2);
-        let tools = list_resp["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), all_tools().len());
-
-        // Call tool: get_status
-        let call_req = json!({
-            "jsonrpc": "2.0",
-            "id": 3,
-            "method": "tools/call",
-            "params": {
-                "name": "get_status",
-                "arguments": {}
-            }
-        });
-        let call_resp = handle_mcp_request(&mut ctx, &call_req.to_string()).unwrap();
-        assert_eq!(call_resp["id"], 3);
-        assert_eq!(call_resp["result"]["content"][0]["type"], "text");
     }
 
     #[test]

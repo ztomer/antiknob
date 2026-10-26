@@ -57,7 +57,7 @@ fn build_arg(param: &registry::Param) -> Arg {
 
     arg = match param.kind {
         Kind::Flag => arg.action(ArgAction::SetTrue),
-        Kind::Str | Kind::Int => arg.action(ArgAction::Set),
+        Kind::Str | Kind::Int | Kind::Object => arg.action(ArgAction::Set),
         // Comma-separated so `--candidates 7,8,9` works, and repeatable.
         Kind::IntList => arg.action(ArgAction::Append).value_delimiter(','),
         // Everything left on the line: an action sequence, a raw payload, an
@@ -225,7 +225,12 @@ fn main() -> Result<()> {
                 None => antiknob::host::default_config_path()?,
             };
             let ctx = antiknob::api::ApiContext::new(config_path, None);
-            antiknob::api::run_mcp_server(ctx)?;
+            antiknob::api::run_mcp_server(
+                ctx,
+                antiknob::api::McpOptions {
+                    allow_destructive: flag(m, "allow_destructive"),
+                },
+            )?;
         }
         other => anyhow::bail!(
             "the registry offers '{other}' but nothing here handles it; add an arm in main.rs"

@@ -52,6 +52,15 @@ tray-icon = { version = "0.26", default-features = false }
 muda = { version = "0.21", default-features = false }
 clap = { version = "4.5", features = ["derive"] }
 anyhow = "1.0"
+# The MCP server (src/api/mcp.rs) is rmcp, the official Rust SDK, since
+# 2026-10-26 (owner ruling OW.60): protocol versions, framing and schemas are
+# upstream's to keep. `server` + `transport-io` only -- the tool table is
+# GENERATED from the registry at run time, so there is nothing for the
+# `macros` feature's compile-time `#[tool]` router to attach to.
+rmcp = { version = "3.7", default-features = false, features = ["server", "transport-io"] }
+# rmcp is async; the rest of antiknob is not. The runtime is built in
+# `run_mcp_server` and lives only as long as the MCP session.
+tokio = { version = "1", default-features = false, features = ["rt", "io-std", "io-util"] }
 # Tray icon decoding for antiknob-daemon (src/bin/antiknob-daemon/tray.rs).
 image = { version = "0.25", default-features = false, features = ["png"] }
 

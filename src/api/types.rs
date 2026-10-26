@@ -14,6 +14,10 @@ pub struct ToolDef {
     pub name: &'static str,
     pub description: &'static str,
     pub input_schema: Value,
+    /// JSON Schema of a successful reply: always an object, with the fields
+    /// the registry says every reply carries.
+    pub output_schema: Value,
+    pub effect: registry::Effect,
 }
 
 /// All available API tools / RPC commands generated from single source of truth.
@@ -36,6 +40,7 @@ fn tool_def(spec: &'static registry::CommandSpec) -> ToolDef {
             registry::Kind::Flag => json!({ "type": "boolean" }),
             registry::Kind::Str => json!({ "type": "string" }),
             registry::Kind::Int => json!({ "type": "integer" }),
+            registry::Kind::Object => json!({ "type": "object" }),
             registry::Kind::IntList => json!({
                 "type": "array", "items": { "type": "integer" }
             }),
@@ -61,7 +66,23 @@ fn tool_def(spec: &'static registry::CommandSpec) -> ToolDef {
         name: spec.name,
         description: spec.about,
         input_schema,
+        output_schema: output_schema(spec.returns),
+        effect: spec.effect,
     }
+}
+
+/// The `outputSchema` for a reply that carries `returns` in every success.
+/// A reply may carry more than it lists, so additional properties stay open.
+fn output_schema(returns: &[registry::Ret]) -> Value {
+    let properties: serde_json::Map<String, Value> = returns
+        .iter()
+        .map(|(name, ty)| ((*name).to_string(), json!({ "type": ty })))
+        .collect();
+    let mut schema = json!({ "type": "object", "properties": properties });
+    if !returns.is_empty() {
+        schema["required"] = json!(returns.iter().map(|(n, _)| *n).collect::<Vec<_>>());
+    }
+    schema
 }
 
 /// Device power and battery status telemetry.

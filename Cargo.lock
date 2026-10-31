@@ -498,6 +498,7 @@ dependencies = [
 [[package]]
 name = "goh-tui"
 version = "0.1.0"
+source = "git+https://github.com/ztomer/gates_of_heck.git?rev=18be8660386b775e6be4ca739544a141cd17a855#18be8660386b775e6be4ca739544a141cd17a855"
 
 [[package]]
 name = "hashbrown"

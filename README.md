@@ -71,11 +71,13 @@ CLIs, with Gatekeeper quarantine already stripped.
 
 ### From source (build + install to macOS `/Applications`)
 
-Building needs the house TUI crate from a sibling checkout of
-[gates_of_heck](https://github.com/ztomer/gates_of_heck) (`../gates_of_heck`,
-or point `GOH_DIR` at it for the scripts): the status lines the CLI and
-installer print come from it. Then run the included installer to build and
-install `Antiknob.app`, the daemon, and CLI tools:
+The house TUI crate comes from a pinned commit on
+[gates_of_heck](https://github.com/ztomer/gates_of_heck) as a git dependency
+(`Cargo.toml`), so Cargo fetches it and no checkout is needed to build. The
+installer and the gate scripts still read the house TUI shell library from a
+gates_of_heck clone (`../gates_of_heck`, or point `GOH_DIR` at it). Then run
+the included installer to build and install `Antiknob.app`, the daemon, and
+CLI tools:
 
 ```bash
 ./install.sh

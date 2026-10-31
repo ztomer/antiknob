@@ -13,12 +13,14 @@ rust-version = "1.90"
 [dependencies]
 hidapi = "2.6"
 # The house TUI for Rust (gates_of_heck BACKLOG 4.14): the Kare glyphs and
-# colours every status line prints through, NO_COLOR and non-tty aware. A path
-# into the gates_of_heck checkout, which Cargo reads no environment variable
-# in, so the sibling checkout IS $GOH_DIR. The push gate's export links it
-# (goh fb3d0a7) and CI links its ./goh checkout here (tests.yml); building
-# from source needs that checkout.
-goh-tui = { path = "../gates_of_heck/crates/goh-tui" }
+# colours every status line prints through, NO_COLOR and non-tty aware.
+# A PINNED git dependency (owner ruling OW.40, 2026-10-31), not a path into a
+# sibling checkout: a fresh clone, CI and the push gate's export build without
+# a gates_of_heck checkout. `rev` is a full commit sha, never a branch or tag,
+# so a goh push cannot move what this repo builds; bump it deliberately, with
+# the lock, when the crate's API or the stylerc it reads moves. The pin is
+# held by tests/dependency_pins.rs, which refuses a path coming back.
+goh-tui = { git = "https://github.com/ztomer/gates_of_heck.git", rev = "18be8660386b775e6be4ca739544a141cd17a855" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # 0.25, not 0.19: it carries the safe CGEventTap wrapper the daemon's

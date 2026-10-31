@@ -49,3 +49,7 @@ GOH_RUST_LINT_CONFIGS='--target aarch64-apple-darwin:--release'
 # protocol, every tool's effect stated, destructive tools only behind --allow-destructive. The
 # config lives in the gate's scratch dir, so no owner bindings are read; no tool is ever called.
 GOH_MCP_SERVERS='cargo run --quiet --locked --bin antiknob -- mcp --config "$GOH_MCP_SCRATCH/c.toml"'
+
+# A commit that ADDS a test names, in a `Red-run:` trailer, the mutation that
+# turned that test red (goh red-run, BACKLOG 4.11; owner OW.8, 2026-10-31).
+GOH_RED_RUN=1

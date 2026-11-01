@@ -162,8 +162,9 @@ sitting. Exit: each item below has a recorded measurement in VENDOR_UI_MAP
   three layers. Needs eyes on the LED.
   *Webcam, 2026-11-01 (wired VK01, layer 0, calibrated off/red/green):*
   off = dark base, 1 red ring, 2 green ring, 4 rainbow and 5 rgb both cycle
-  colour between frames, 3 "ripple" stays dark at idle over ~12 s (fits a
-  press-triggered effect; one press under the camera settles it). Layers
+  colour between frames, 3 "ripple" stays dark at idle over ~12 s and
+  flashes a blue-violet ring on a press (owner pressing under the camera;
+  one frame of six lit): mode 3 is press-reactive, name confirmed. Layers
   3-15 cannot be made active (Rulings: no device-layer switching, 3 firmware
   layers), so a mode stored there has no way to render: the cap is due.
   Frames: scratchpad `knob/m0_off.jpg` .. `m5_rgb_b.jpg` (not committed).

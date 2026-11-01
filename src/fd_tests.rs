@@ -238,6 +238,29 @@ fn a_readback_differing_in_any_binding_byte_is_rejected() {
     assert!(!record_matches(&sent, &[]));
 }
 
+/// The tail past `len` is part of the record. Measured 2026-11-01: a media
+/// write updates only the first `len` entries, so `mute` written over an
+/// 11-entry chain with no wipe read back `03 fa 02 01 02 00 02 00 00 e2 00
+/// 00 00 00 00 f3 00 00 6b ...` -- the old chain's entries still in the
+/// slot. A comparison that stopped at `len` called that slot confirmed.
+#[test]
+fn a_leftover_tail_past_len_is_not_a_confirmed_write() {
+    let sent = Action::parse("mute").unwrap().to_packet(2, 0);
+    let mut back = sent.clone();
+    back[1] = 0xFA;
+    assert!(record_matches(&sent, &back), "a clean tail matches");
+    for (at, stale) in [(15usize, 0xF3u8), (18, 0x6B), (63, 0x01)] {
+        let mut tailed = back.clone();
+        tailed[at] = stale;
+        assert!(
+            !record_matches(&sent, &tailed),
+            "a stale byte {at} past len was read as confirmed"
+        );
+    }
+    // A read-back cut short is not the record either.
+    assert!(!record_matches(&sent, &back[..13]));
+}
+
 #[test]
 fn parse_sequence_reads_a_list_of_action_names() {
     let specs = vec!["cmd-c".to_string(), "cmd-v".to_string()];

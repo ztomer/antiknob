@@ -130,33 +130,20 @@ pub fn record_addr(record: &[u8]) -> Option<SlotAddr> {
 }
 
 pub fn verify(written: &[Vec<u8>], observed: &[Vec<u8>]) -> Vec<(SlotAddr, SlotVerdict)> {
-    let seen: Vec<(SlotAddr, SlotAction)> =
-        observed.iter().filter_map(|r| parse_record(r)).collect();
+    // Every record is compared WHOLE, whatever command wrote it. The `0xFE`
+    // path used to compare only the fields `parse_record` decodes (kind,
+    // media, chord), and the `0xFD` path only up to `len`, so a slot holding
+    // bytes the write never set -- a stale tail, an old modifier byte --
+    // confirmed. Addressing goes through `record_addr`, the one reader all
+    // three commands agree on.
     let mut out = Vec::new();
     for record in written {
-        // A sequence is written with 0xFD, whose payload `parse_record`
-        // cannot read -- its bytes 9/11/12 are delays and values, not a
-        // media usage and a chord. Left to the path below, every sequence
-        // would be dropped from the comparison and a flash that wrote
-        // nothing would report as clean. Compare those whole instead.
-        if record.get(1) == Some(&FD_CMD) {
-            let Some(addr) = record_addr(record) else {
-                continue;
-            };
-            let verdict = match observed.iter().find(|o| record_addr(o) == Some(addr)) {
-                None => SlotVerdict::NotSeen,
-                Some(got) if crate::fd::record_matches(record, got) => SlotVerdict::Confirmed,
-                Some(_) => SlotVerdict::Mismatched,
-            };
-            out.push((addr, verdict));
-            continue;
-        }
-        let Some((addr, want)) = parse_record(record) else {
+        let Some(addr) = record_addr(record) else {
             continue;
         };
-        let verdict = match seen.iter().find(|(a, _)| *a == addr) {
+        let verdict = match observed.iter().find(|o| record_addr(o) == Some(addr)) {
             None => SlotVerdict::NotSeen,
-            Some((_, got)) if *got == want => SlotVerdict::Confirmed,
+            Some(got) if crate::fd::record_matches(record, got) => SlotVerdict::Confirmed,
             Some(_) => SlotVerdict::Mismatched,
         };
         out.push((addr, verdict));

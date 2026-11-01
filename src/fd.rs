@@ -267,18 +267,25 @@ fn significant_len(record: &[u8]) -> Option<usize> {
 /// which is the same false confidence as the `hid_write` return value that
 /// let knob bindings flash into dead slots for months.
 ///
-/// Byte 1 is skipped because it is `0xFD` out and `0xFA` back. Byte 5 is
-/// compared: it was once skipped as "device-owned", and measured 2026-11-01
-/// it is stored exactly as written (VENDOR_UI_MAP, "Byte 5 is stored as
-/// written"), so skipping it let a slot holding a different record confirm.
+/// The WHOLE record is compared, every byte but byte 1 (the command: `0xFD`
+/// or `0xFE` out, `0xFA` back). Byte 5 was once skipped as "device-owned"
+/// and is stored as written (VENDOR_UI_MAP, "Byte 5 is stored as written").
+/// The tail past `len` was skipped as inert, and it is where a media write
+/// leaves the previous record's entries (VENDOR_UI_MAP, "A write does NOT
+/// clear entries past `len`"): a slot that kept a stale tail is a slot
+/// holding something other than what was sent, and a comparison that stops
+/// at `len` calls it confirmed. Any command's record goes through here, so
+/// one rule decides what "read back as written" means.
 pub fn record_matches(sent: &[u8], readback: &[u8]) -> bool {
-    let Some(end) = significant_len(sent) else {
-        return false;
-    };
-    if significant_len(readback) != Some(end) {
+    if sent.len() != REPORT_LEN || readback.len() != REPORT_LEN {
         return false;
     }
-    sent.first() == readback.first() && sent[2..end] == readback[2..end]
+    // A `0xFD` record must declare a count that fits; one that does not was
+    // never a record, and two copies of the same garbage are not a match.
+    if sent[1] == FD_CMD && significant_len(sent).is_none() {
+        return false;
+    }
+    sent[0] == readback[0] && sent[2..] == readback[2..]
 }
 
 /// One slot record read the way the firmware stores it: a kind and the

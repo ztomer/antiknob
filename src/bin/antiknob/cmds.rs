@@ -193,18 +193,28 @@ pub fn run_upload(file: Option<PathBuf>, layer: Option<u8>, knob_only: bool) -> 
     // It then reads the whole table back: `hid_write` succeeding says the
     // packet was well-formed, not that the firmware reads the slot it
     // addressed. There is no way to skip that read; `--no-verify` was one.
-    let written = device::with_device(move |dev| {
+    let (written, leds) = device::with_device(move |dev| {
         let written = device::write_slots(dev, &packets)?;
+        let mut leds = Vec::with_capacity(led_packets.len());
         for packet in &led_packets {
-            device::send_led(dev, packet)?;
+            leds.push(device::write_led(dev, packet)?);
             sleep(Duration::from_millis(firmware::LED_INTER_LAYER_SETTLE_MS));
         }
-        Ok(written)
+        Ok((written, leds))
     })?;
     report_flash_verdict(&written.verdicts);
+    for led in &leds {
+        let icon = if matches!(led, device::LedVerdict::Confirmed { .. }) {
+            OK
+        } else {
+            WARN
+        };
+        goh_tui::outln!("{icon} {}", led.describe());
+    }
     // An unconfirmed flash is a failed command, not a warning followed by
     // exit 0: a script that flashes and moves on must be able to tell.
-    written.ensure_confirmed()
+    written.ensure_confirmed()?;
+    device::ensure_leds_confirmed(&leds)
 }
 
 /// Say what the device now holds, not what was sent to it.
@@ -257,19 +267,25 @@ pub fn run_led(layer: u8, mode: Vec<String>) -> Result<()> {
     // and mode changes are what wedge this firmware's renderer until a
     // replug. A skipped write is reported as what it is, not as a failure.
     let want = protocol::led_mode_number(&mode_str);
-    let skipped = device::with_device(move |dev| {
+    let written = device::with_device(move |dev| {
         if let (Some(w), Ok(current)) = (want, device::read_led_mode(dev, layer)) {
             if current == w {
-                return Ok(true);
+                return Ok(None);
             }
         }
-        device::send_led(dev, &packet)?;
-        Ok(false)
+        device::write_led(dev, &packet).map(Some)
     })?;
-    if skipped {
+    if let Some(verdict) = &written {
+        let confirmed = matches!(verdict, device::LedVerdict::Confirmed { .. });
+        goh_tui::outln!(
+            "{} {}",
+            if confirmed { OK } else { WARN },
+            verdict.describe()
+        );
+    }
+    if written.is_none() {
         goh_tui::outln!("{OK} Layer {layer} already holds that mode; no write sent.");
     } else {
-        goh_tui::outln!("{OK} LED configuration sent to device.");
         println!("        If the ring doesn't follow, unplug/replug the knob -- its renderer can wedge after a mode change.");
         if layer >= firmware::DEVICE_LAYERS {
             println!(
@@ -280,6 +296,19 @@ pub fn run_led(layer: u8, mode: Vec<String>) -> Result<()> {
     }
     Ok(())
 }
+/// Report the knob mode per device layer, read from the device's table --
+/// the same reply MCP's `get_knob_mode` returns, through the same dispatch.
+pub fn run_knob_mode(buttons: Option<usize>) -> Result<()> {
+    let mut ctx = api::ApiContext::new(host::default_config_path()?, None);
+    let v = api::execute_command(&mut ctx, api::Command::GetKnobMode { buttons })?;
+    let mode = v["mode"].as_str().unwrap_or("unknown");
+    goh_tui::outln!("{OK} Knob mode: {mode}");
+    if let Some(summary) = v["device_binding_summary"].as_str() {
+        println!("        {summary}");
+    }
+    Ok(())
+}
+
 pub fn run_led_read(layer: u8, raw: bool) -> Result<()> {
     goh_tui::outln!("{START} Opening Anticater device via native IOHIDManager (no sudo)...");
     let (mode, dump) = device::with_device(move |dev| {

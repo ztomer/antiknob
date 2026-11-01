@@ -18,7 +18,7 @@ pub mod snoop;
 mod thread;
 pub mod verify;
 pub use classify::classify_device;
-pub use led_state::{read_led_mode, send_led};
+pub use led_state::{ensure_leds_confirmed, led_verdict, read_led_mode, write_led, LedVerdict};
 pub use select::{primary_device, primary_transport};
 pub use slot_read::{read_full_table, read_slot, slot_table_query};
 pub use slot_write::{write_slots, SlotWrite};

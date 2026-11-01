@@ -176,14 +176,17 @@ sitting. Exit: each item below has a recorded measurement in VENDOR_UI_MAP
   stores and does not run (`cfa0b3f`, VENDOR_UI_MAP "part 2"); the `/tmp`
   socket symlink is retired and `install.sh` asks the daemon through
   `antiknob status --json`, in the Kare TUI (`4296094`).
-* **S.11 LED writes are not read back.** `upload` and the daemon's keymap
-  flash send `send_led` packets after the confirmed slot write and report
-  nothing about them; `set_led` reads back. *Acceptance:* every LED write
-  path reports the mode read back, or names why it cannot (the echo in
-  VENDOR_UI_MAP "Reading the LED mode back").
-* **S.12** `get_knob_mode`'s registry entry says the CLI "reports the same
-  thing through get_status"; `antiknob status` reports no knob mode.
-  *Acceptance:* the CLI shows the per-layer mode, or the reason is true.
+* **S.11 done**: every LED write goes through `device::write_led` (init,
+  write, read the layer's mode back, compare); `send_led` is private and a
+  call anywhere else is red (`tests/led_write_confirmed.rs`). `upload` and the
+  daemon's keymap flash fail on an LED write that does not read back; the
+  LED sync names one in the daemon log. Proven with the pure verdict
+  (`led_verdict`); not yet run live over USB-C (only the 2.4G receiver was
+  attached).
+* **S.12 done**: `antiknob knob-mode` reports the per-layer mode through the
+  same dispatch as MCP `get_knob_mode`; the false registry note is gone.
+  `Arrangement::describe` names every layer of a bound subset of 2+
+  (`SomeBound`).
 
 **Person-only checklist (knob on USB-C, daemon running):**
 

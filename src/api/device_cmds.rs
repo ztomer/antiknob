@@ -263,19 +263,21 @@ pub fn flash_keymap_hardware(slot_packets: Vec<Vec<u8>>, led_packets: Vec<Vec<u8
     if !led_packets.is_empty() {
         crate::host::led_sync::pace_led();
     }
-    let written = device::with_device(move |dev| {
+    let (written, leds) = device::with_device(move |dev| {
         let written = device::write_slots(dev, &slot_packets)?;
+        let mut leds = Vec::with_capacity(led_packets.len());
         for (i, packet) in led_packets.iter().enumerate() {
             if i > 0 {
                 std::thread::sleep(Duration::from_millis(
                     crate::firmware::LED_INTER_LAYER_SETTLE_MS,
                 ));
             }
-            device::send_led(dev, packet)?;
+            leds.push(device::write_led(dev, packet)?);
         }
-        Ok(written)
+        Ok((written, leds))
     })?;
-    written.ensure_confirmed()
+    written.ensure_confirmed()?;
+    device::ensure_leds_confirmed(&leds)
 }
 
 /// Set one layer's backlight mode, paced and read-before-write like
@@ -319,8 +321,10 @@ pub fn set_led(layer: u8, mode: String, color: Option<String>) -> Result<serde_j
                 return Ok(current);
             }
         }
-        device::send_led(dev, &packet)?;
-        device::read_led_mode(dev, layer)
+        let verdict = device::write_led(dev, &packet)?;
+        verdict
+            .stored()
+            .ok_or_else(|| anyhow::anyhow!("{}", verdict.describe()))
     })
     .context("Cannot drive the Anticater USB device")?;
     // Layers past the firmware's own are storage without a measured

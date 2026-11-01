@@ -82,11 +82,145 @@ pub fn read_led_mode(dev: &HidDevice, layer: u8) -> Result<u8> {
 ///
 /// No commit follows. The vendor app sends none after LED writes, and the
 /// keymap commit (`FD FE FF`) is a different instruction.
-pub fn send_led(dev: &HidDevice, packet: &[u8]) -> Result<()> {
+fn send_led(dev: &HidDevice, packet: &[u8]) -> Result<()> {
     send_report(dev, &crate::led::led_init_packet())?;
     std::thread::sleep(std::time::Duration::from_millis(LED_INIT_SETTLE_MS));
     send_report(dev, packet)?;
     Ok(())
+}
+
+/// What an LED write's read-back found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LedVerdict {
+    /// The layer reads back the mode that was sent.
+    Confirmed { layer: u8, mode: u8 },
+    /// The layer holds a different mode from the one sent.
+    Mismatched { layer: u8, sent: u8, stored: u8 },
+    /// The read-back itself failed, so nothing is known about the write.
+    Unread { layer: u8, sent: u8, reason: String },
+}
+
+impl LedVerdict {
+    /// One line for a person: what the device holds, never "OK".
+    pub fn describe(&self) -> String {
+        match self {
+            Self::Confirmed { layer, mode } => {
+                format!("layer {layer} LED reads back mode {mode}, as sent")
+            }
+            Self::Mismatched {
+                layer,
+                sent,
+                stored,
+            } => format!("layer {layer} LED was sent mode {sent} but reads back mode {stored}"),
+            Self::Unread {
+                layer,
+                sent,
+                reason,
+            } => format!("layer {layer} LED was sent mode {sent}; the read-back failed: {reason}"),
+        }
+    }
+
+    /// The mode the layer holds, when the read-back answered.
+    pub fn stored(&self) -> Option<u8> {
+        match self {
+            Self::Confirmed { mode, .. } => Some(*mode),
+            Self::Mismatched { stored, .. } => Some(*stored),
+            Self::Unread { .. } => None,
+        }
+    }
+}
+
+/// Byte offsets of an LED write packet (`led::build_led_packet`).
+const LED_PACKET_LAYER: usize = 3;
+const LED_PACKET_MODE: usize = 4;
+
+/// Compare what was sent with what the layer read back. Pure.
+pub fn led_verdict(packet: &[u8], read: &Result<u8>) -> LedVerdict {
+    let layer = packet.get(LED_PACKET_LAYER).copied().unwrap_or(0);
+    let sent = packet.get(LED_PACKET_MODE).copied().unwrap_or(0);
+    match read {
+        Ok(stored) if *stored == sent => LedVerdict::Confirmed { layer, mode: sent },
+        Ok(stored) => LedVerdict::Mismatched {
+            layer,
+            sent,
+            stored: *stored,
+        },
+        Err(e) => LedVerdict::Unread {
+            layer,
+            sent,
+            reason: format!("{e:#}"),
+        },
+    }
+}
+
+/// THE LED writer: init, write, then read the layer's mode back on the same
+/// handle and compare. `send_led` is private so no path can write an LED
+/// mode and report nothing about it (`tests/led_write_confirmed.rs`).
+pub fn write_led(dev: &HidDevice, packet: &[u8]) -> Result<LedVerdict> {
+    if packet.len() <= LED_PACKET_MODE {
+        anyhow::bail!("LED packet too short ({} bytes)", packet.len());
+    }
+    send_led(dev, packet)?;
+    let read = read_led_mode(dev, packet[LED_PACKET_LAYER]);
+    Ok(led_verdict(packet, &read))
+}
+
+/// Fail on any LED write that did not read back as sent, naming each one.
+/// Shared by `upload` and the daemon's keymap flash, so the two cannot
+/// disagree about what an unconfirmed LED write is.
+pub fn ensure_leds_confirmed(leds: &[LedVerdict]) -> Result<()> {
+    let bad: Vec<String> = leds
+        .iter()
+        .filter(|v| !matches!(v, LedVerdict::Confirmed { .. }))
+        .map(LedVerdict::describe)
+        .collect();
+    if bad.is_empty() {
+        Ok(())
+    } else {
+        anyhow::bail!("LED write not confirmed: {}", bad.join("; "))
+    }
+}
+
+#[cfg(test)]
+mod led_verdict_tests {
+    use super::*;
+
+    fn packet(layer: u8, mode: u8) -> Vec<u8> {
+        let mut p = vec![0u8; REPORT_LEN];
+        p[LED_PACKET_LAYER] = layer;
+        p[LED_PACKET_MODE] = mode;
+        p
+    }
+
+    /// The fake device's three answers: the sent mode, another mode, none.
+    #[test]
+    fn a_read_back_confirms_names_a_mismatch_or_says_it_could_not_read() {
+        assert_eq!(
+            led_verdict(&packet(1, 4), &Ok(4)),
+            LedVerdict::Confirmed { layer: 1, mode: 4 }
+        );
+        let wrong = led_verdict(&packet(2, 1), &Ok(0));
+        assert_eq!(
+            wrong,
+            LedVerdict::Mismatched {
+                layer: 2,
+                sent: 1,
+                stored: 0
+            }
+        );
+        assert!(
+            wrong.describe().contains("reads back mode 0"),
+            "{}",
+            wrong.describe()
+        );
+        let unread = led_verdict(&packet(0, 2), &Err(anyhow::anyhow!("timed out")));
+        assert_eq!(unread.stored(), None);
+        assert!(
+            unread.describe().contains("timed out"),
+            "{}",
+            unread.describe()
+        );
+    }
 }
 
 #[cfg(test)]

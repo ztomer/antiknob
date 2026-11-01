@@ -253,12 +253,10 @@ pub fn run_led_probe(layer: u8, dwell_secs: u64, color: &str) -> Result<()> {
             // report stores the mode without rendering it, which would
             // make every probed mode read back correctly while the knob
             // shows none of them -- a probe that cannot fail is no probe.
-            device::send_led(dev, &packet)?;
-            sleep(Duration::from_millis(150));
-            device::read_led_mode(dev, layer)
+            device::write_led(dev, &packet)
         });
         match readback {
-            Ok(got) => println!("        mode {idx} ({name}) -> device reads back {got}"),
+            Ok(got) => println!("        mode {idx} ({name}) -> {}", got.describe()),
             Err(e) => println!("        mode {idx} ({name}) -> FAILED: {e}"),
         }
         sleep(Duration::from_secs(dwell_secs));
@@ -266,9 +264,16 @@ pub fn run_led_probe(layer: u8, dwell_secs: u64, color: &str) -> Result<()> {
 
     let restore = format!("mode{before}");
     let restored = antiknob::protocol::build_led_packet(layer, &restore)
-        .and_then(|p| device::with_device(move |dev| device::send_led(dev, &p)));
+        .and_then(|p| device::with_device(move |dev| device::write_led(dev, &p)));
     match restored {
-        Ok(()) => goh_tui::outln!("{OK} Restored layer {layer} to mode {before}."),
+        Ok(device::LedVerdict::Confirmed { .. }) => {
+            goh_tui::outln!("{OK} Restored layer {layer} to mode {before}.")
+        }
+        Ok(v) => goh_tui::outln!(
+            "{WARN} Restore of layer {layer} not confirmed: {}\n\
+                     Set it by hand with: antiknob led {layer} mode{before}",
+            v.describe()
+        ),
         Err(e) => goh_tui::outln!(
             "{WARN} Could not restore layer {layer} to mode {before}: {e}\n\
                      Set it by hand with: antiknob led {layer} mode{before}"

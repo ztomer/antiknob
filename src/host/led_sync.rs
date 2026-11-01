@@ -245,7 +245,14 @@ pub fn sync_led(cfg: &HostConfig, layer_idx: usize) {
             let Ok(packet) = crate::protocol::build_led_packet(device_layer, &mode) else {
                 continue;
             };
-            let _ = crate::device::with_device(move |dev| crate::device::send_led(dev, &packet));
+            // Read back like every LED write; a background job has no
+            // caller to return to, so a write that did not take is said
+            // on stderr (the daemon log) rather than dropped.
+            match crate::device::with_device(move |dev| crate::device::write_led(dev, &packet)) {
+                Ok(crate::device::LedVerdict::Confirmed { .. }) => {}
+                Ok(v) => eprintln!("led sync: {}", v.describe()),
+                Err(e) => eprintln!("led sync: layer {device_layer} LED write failed: {e:#}"),
+            }
         }
     });
 }

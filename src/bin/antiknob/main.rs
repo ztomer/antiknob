@@ -212,6 +212,7 @@ fn main() -> Result<()> {
             flag(m, "read"),
             num::<usize>(m, "reads")?,
         )?,
+        "get_knob_mode" => cmds::run_knob_mode(opt_num::<usize>(m, "buttons")?)?,
         "mcp" => {
             let config_path = match opt_path(m, "config") {
                 Some(p) => p,
@@ -287,6 +288,7 @@ mod tests {
             "probe_gestures",
             "led_probe",
             "send_raw",
+            "get_knob_mode",
             "mcp",
         ];
         for spec in registry::for_surface(false) {

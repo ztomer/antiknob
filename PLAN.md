@@ -160,6 +160,13 @@ sitting. Exit: each item below has a recorded measurement in VENDOR_UI_MAP
   layers 3-15 ever renders (FIRMWARE_REVIEW #7; storage measured, render
   not). If they never render, cap `SET_LED_LAYER_MAX` at the firmware's
   three layers. Needs eyes on the LED.
+  *Webcam, 2026-11-01 (wired VK01, layer 0, calibrated off/red/green):*
+  off = dark base, 1 red ring, 2 green ring, 4 rainbow and 5 rgb both cycle
+  colour between frames, 3 "ripple" stays dark at idle over ~12 s (fits a
+  press-triggered effect; one press under the camera settles it). Layers
+  3-15 cannot be made active (Rulings: no device-layer switching, 3 firmware
+  layers), so a mode stored there has no way to render: the cap is due.
+  Frames: scratchpad `knob/m0_off.jpg` .. `m5_rgb_b.jpg` (not committed).
 * **S.9** done 2026-11-01 (`fde6d87`): `device::mode::classify_layers`
   reads each device layer from its own records and lists the knob keys that
   carry something other than the `SLOT_SPECS` chords; `get_knob_mode`'s

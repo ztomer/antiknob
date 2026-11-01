@@ -394,8 +394,8 @@ pub const COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         name: "get_knob_mode",
-        about: "Report whether the firmware sends the bound slot chords, and which device \
-                layer carries them.",
+        about: "Report, per device layer and read from the device, whether the knob sends \
+                the bound slot chords, naming any layer whose keys carry other chords.",
         params: &[Param::opt(
             "buttons",
             Kind::Int,
@@ -411,6 +411,10 @@ pub const COMMANDS: &[CommandSpec] = &[
             ("knob_key_ids", "array"),
             ("slots_read", "integer"),
             ("host_layers_can_fire", "boolean"),
+            ("layers", "array"),
+            ("device_binding", "object"),
+            ("device_binding_summary", "string"),
+            ("recorded_device_binding", "object"),
         ],
     },
     CommandSpec {

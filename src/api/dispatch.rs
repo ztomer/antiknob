@@ -277,32 +277,17 @@ pub fn execute_command(ctx: &mut ApiContext, cmd: Command) -> Result<Value> {
             // (three queries here instead of eighteen, and complete).
             let table = device::with_device(|dev| Ok(device::read_full_table(dev)))
                 .context("Cannot read the slot table from the Anticater USB device")?;
-            let mode = device::mode::classify(&table, buttons);
-            // WHICH device layer carries the host chords, alongside whether
-            // any does. The mode above is read from the hardware; this is
-            // read from what `bind-slots` recorded, and the two answer
-            // different questions -- "can a host layer fire at all" versus
-            // "which of your three layers is the daemon involved in". The
-            // GUI presented three host layers as though all three were live.
-            let bound = crate::host::HostConfig::try_load_json(
+            let recorded = crate::host::HostConfig::try_load_json(
                 &std::fs::read_to_string(&ctx.config_path).unwrap_or_default(),
             )
             .map(|c| c.bound_device_layers)
             .unwrap_or_default();
-            let arrangement = crate::host::device_binding::arrangement(&bound, DEVICE_LAYERS);
-            Ok(json!({
-                "mode": mode.as_str(),
-                "buttons": buttons,
-                // The slots this layout puts the knob's gestures on. The
-                // declared button count places them, and a layout that
-                // declares the wrong number moves every gesture along
-                // without any surface saying so -- so the surfaces say so.
-                "knob_key_ids": knob_key_ids,
-                "slots_read": table.len(),
-                "host_layers_can_fire": mode == device::mode::KnobMode::HostTranslate,
-                "device_binding": arrangement,
-                "device_binding_summary": arrangement.describe()
-            }))
+            Ok(device_cmds::knob_mode_report(
+                &table,
+                buttons,
+                &knob_key_ids,
+                &recorded,
+            ))
         }
 
         Command::BindSlots {

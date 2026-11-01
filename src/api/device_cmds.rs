@@ -107,6 +107,48 @@ pub fn vocabulary_reply() -> serde_json::Value {
     })
 }
 
+/// The `get_knob_mode` reply, read from the device's own table.
+///
+/// Pure, so the reply is testable without a knob. The mode, the arrangement
+/// and the summary are all read per device layer from `table`. The
+/// arrangement used to come from `host.json` -- what `bind-slots` last
+/// flashed -- and said "All 3 device layers send the slot chords" over a
+/// knob whose layer 1 had been rebound since; that record is still
+/// returned, as `recorded_device_binding`, so a disagreement is visible
+/// rather than resolved in favour of the file.
+pub fn knob_mode_report(
+    table: &[Vec<u8>],
+    buttons: usize,
+    knob_key_ids: &[u8],
+    recorded: &[u8],
+) -> serde_json::Value {
+    let layers = device::mode::classify_layers(table, buttons);
+    let mode = device::mode::aggregate(&layers);
+    let arrangement = crate::host::device_binding::arrangement(
+        &device::mode::host_translated_layers(&layers),
+        DEVICE_LAYERS,
+    );
+    let recorded = crate::host::device_binding::arrangement(recorded, DEVICE_LAYERS);
+    json!({
+        "mode": mode.as_str(),
+        "buttons": buttons,
+        // The slots this layout puts the knob's gestures on. The declared
+        // button count places them, and a layout that declares the wrong
+        // number moves every gesture along without any surface saying so.
+        "knob_key_ids": knob_key_ids,
+        "slots_read": table.len(),
+        "host_layers_can_fire": mode == device::mode::KnobMode::HostTranslate,
+        "layers": layers.iter().map(|l| json!({
+            "layer": l.layer,
+            "mode": l.mode.as_str(),
+            "not_slot_chords": l.not_slot_chords,
+        })).collect::<Vec<_>>(),
+        "device_binding": arrangement,
+        "device_binding_summary": device::mode::describe_layers(&layers),
+        "recorded_device_binding": recorded,
+    })
+}
+
 /// Bind one gesture to a sequence, and read it back before saying so.
 pub fn bind_sequence(
     key: u8,
@@ -361,5 +403,46 @@ mod bind_slots_tests {
             }
             other => panic!("wrong command: {other:?}"),
         }
+    }
+
+    /// S.9: the reply's binding is read from the DEVICE. The host.json
+    /// record says all three layers were flashed; the table says layer 1 has
+    /// been rebound to chords the daemon does not hear. The reply must say
+    /// what the table says, and still show the record it disagrees with.
+    #[test]
+    fn the_knob_mode_reply_reads_the_binding_from_the_device_not_host_json() {
+        let as_reply = |mut p: Vec<u8>| {
+            p[1] = crate::firmware::SLOT_TABLE_QUERY_CMD;
+            p
+        };
+        let mut table: Vec<Vec<u8>> = (16..=20)
+            .zip(2u8..=6)
+            .map(|(f, key)| {
+                as_reply(
+                    Action::parse(&format!("ctrl-alt-f{f}"))
+                        .unwrap()
+                        .to_packet(key, 0),
+                )
+            })
+            .collect();
+        table.extend(
+            crate::host::bind::binding_packets(1, &[1, 2])
+                .unwrap()
+                .into_iter()
+                .map(as_reply),
+        );
+        let v = knob_mode_report(&table, 1, &[2, 3, 4, 5, 6], &[0, 1, 2]);
+        assert_eq!(v["mode"], "host-translate");
+        assert_eq!(v["layers"][0]["mode"], "standalone");
+        assert_eq!(v["layers"][0]["not_slot_chords"], json!([2, 3, 4, 5, 6]));
+        assert_eq!(v["layers"][1]["mode"], "host-translate");
+        assert_ne!(v["device_binding"]["state"], "all_bound", "{v}");
+        assert_eq!(v["recorded_device_binding"]["state"], "all_bound");
+        let said = v["device_binding_summary"].as_str().unwrap();
+        assert!(!said.contains("All 3"), "{said}");
+        assert!(
+            said.contains("Device layer 1: key(s) 2, 3, 4, 5, 6"),
+            "{said}"
+        );
     }
 }

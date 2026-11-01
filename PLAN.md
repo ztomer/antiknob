@@ -146,7 +146,17 @@ sitting. Exit: each item below has a recorded measurement in VENDOR_UI_MAP
   `ctrl-alt-F16..F20` flash and read back on keys 2-6; daemon tap active.
   *Left for a person:* the gestures themselves. *Acceptance:* daemon FIRED
   lines for all five gestures and no other app reacting, then a ruling
-  recorded here. Changing the chord touches `SLOT_SPECS`,
+  recorded here.
+  *Guided run 2026-11-01 (owner's hands, wired VK01, daemon 0.15.1):*
+  round 1 with `ctrl-alt-F16..F20` on layer 0: no FIRED (by design, the
+  engine matches only the shift chords) and a twist CW (`ctrl-alt-F18`)
+  opened the Claude desktop chat. Round 2 after `bind-slots`
+  (`ctrl-alt-shift-F16..F20`): FIRED for all five, one line per detent
+  (VolumeDown x6, Mute, VolumeUp x8, BrightnessDown x4, BrightnessUp x9),
+  but hold+twist CW also opened the Claude chat. **Ruling: keep shift**
+  (the unshifted chord collides). Not met: "no other app reacting"; the
+  leak is AK.LEAK (Claude's own shortcut is Ctrl+Backspace, and no Karabiner
+  rule or Service claims F16-F20, so the trigger is unidentified). Changing the chord touches `SLOT_SPECS`,
   `host::gesture::SLOT_MODS` and their pinning tests together.
 * **H.3 Fresh wired capture** with `tools/hidsnoop/snoop-vendor-app.sh`,
   frames added to `tests/fixtures/vendor_capture.json` (no invented frames).

@@ -155,7 +155,7 @@ sitting. Exit: each item below has a recorded measurement in VENDOR_UI_MAP
   step in a sequence), what byte 5 MEANS (its storage is measured: kept as
   written), why swipes and the `Ctrl+Alt+` combo buttons never assign in the
   vendor UI. Needs a person driving the vendor app.
-* **H.4 LED:** watch mode 3 ("ripple", still taken from
+* **H.4 LED:** done 2026-11-01 (SHA_TBD): `SET_LED_LAYER_MAX` = 2, refused in `build_led_packet` for every write path. Watch mode 3 ("ripple", still taken from
   kriomant/ch57x-keyboard-tool#173) and whether a mode stored on device
   layers 3-15 ever renders (FIRMWARE_REVIEW #7; storage measured, render
   not). If they never render, cap `SET_LED_LAYER_MAX` at the firmware's
@@ -163,7 +163,7 @@ sitting. Exit: each item below has a recorded measurement in VENDOR_UI_MAP
   *Webcam, 2026-11-01 (wired VK01, layer 0, calibrated off/red/green):*
   off = dark base, 1 red ring, 2 green ring, 4 rainbow and 5 rgb both cycle
   colour between frames, 3 "ripple" stays dark at idle over ~12 s and
-  flashes a blue-violet ring on a press (owner pressing under the camera;
+  flashes a blue ring on a press (owner's eyes; camera frame read blue-violet) (owner pressing under the camera;
   one frame of six lit): mode 3 is press-reactive, name confirmed. Layers
   3-15 cannot be made active (Rulings: no device-layer switching, 3 firmware
   layers), so a mode stored there has no way to render: the cap is due.

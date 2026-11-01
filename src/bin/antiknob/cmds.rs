@@ -285,12 +285,6 @@ pub fn run_led(layer: u8, mode: Vec<String>) -> Result<()> {
         goh_tui::outln!("{OK} Layer {layer} already holds that mode; no write sent.");
     } else {
         println!("        If the ring doesn't follow, unplug/replug the knob -- its renderer can wedge after a mode change.");
-        if layer >= firmware::DEVICE_LAYERS {
-            println!(
-                "        Layer {layer} is past the firmware's {} layers: it stores, render unmeasured.",
-                firmware::DEVICE_LAYERS
-            );
-        }
     }
     Ok(())
 }

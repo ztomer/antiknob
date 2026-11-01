@@ -61,9 +61,9 @@ pub const KEYMAP_YAML_MAX_BYTES: usize = 65_536;
 /// Longest `set_led` mode string, in characters.
 pub const SET_LED_SPEC_MAX_LEN: usize = 64;
 
-/// Highest device layer `set_led` addresses. Layer indexes above this are
-/// refused rather than written somewhere unmapped.
-pub const SET_LED_LAYER_MAX: u8 = 15;
+/// Highest device layer any LED write addresses: the firmware's last layer.
+/// Layers above it store but can never render (PLAN H.4), so they refuse.
+pub const SET_LED_LAYER_MAX: u8 = crate::firmware::DEVICE_LAYERS - 1;
 
 /// Longest raw HID payload `send_raw` accepts, in bytes: one report.
 pub const RAW_PAYLOAD_MAX_LEN: usize = 64;

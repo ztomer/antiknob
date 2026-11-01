@@ -37,6 +37,15 @@ pub fn led_mode_number(spec: &str) -> Option<u8> {
 }
 
 pub fn build_led_packet(layer: u8, mode: &str) -> Result<Vec<u8>> {
+    // The firmware holds 3 layers and nothing switches the active one, so a
+    // mode stored past them can never render (PLAN H.4, webcam 2026-11-01).
+    if layer > crate::policy::SET_LED_LAYER_MAX {
+        return Err(anyhow!(
+            "Layer {layer} is past the firmware's {} layers (0-{}): a mode stored there can never render",
+            crate::firmware::DEVICE_LAYERS,
+            crate::policy::SET_LED_LAYER_MAX
+        ));
+    }
     let mut packet = vec![0u8; REPORT_LEN];
     packet[0] = REPORT_ID;
     packet[1] = LED_CMD;
@@ -229,6 +238,21 @@ mod palette_tests {
     /// This knob ignores the colour bytes -- three different values all came
     /// out red -- but the 16-key variant sharing its product id honours
     /// them, so they must still be well-formed: base at 5-7, per-key from 8.
+    #[test]
+    fn layers_past_the_firmware_three_refuse_on_every_write_path() {
+        // Every LED write (CLI led, led-probe, MCP set_led, upload, daemon
+        // sync) builds its packet here, so the cap lives here.
+        for layer in 0..crate::firmware::DEVICE_LAYERS {
+            assert!(build_led_packet(layer, "green").is_ok(), "layer {layer}");
+        }
+        for layer in [3u8, 9, 15, 255] {
+            let e = build_led_packet(layer, "green")
+                .expect_err("must refuse")
+                .to_string();
+            assert!(e.contains("3 layers"), "layer {layer}: {e}");
+        }
+    }
+
     #[test]
     fn the_base_colour_and_palette_sit_where_the_protocol_says() {
         let p = build_led_packet(0, "static blue").expect("packet");

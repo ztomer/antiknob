@@ -289,13 +289,6 @@ pub fn set_led(layer: u8, mode: String, color: Option<String>) -> Result<serde_j
             crate::policy::SET_LED_SPEC_MAX_LEN
         );
     }
-    if layer > crate::policy::SET_LED_LAYER_MAX {
-        anyhow::bail!(
-            "Layer index {} exceeds maximum of {}",
-            layer,
-            crate::policy::SET_LED_LAYER_MAX
-        );
-    }
     let spec = match color {
         Some(c) if !c.is_empty() => format!("{mode} {c}"),
         _ => mode,
@@ -326,20 +319,9 @@ pub fn set_led(layer: u8, mode: String, color: Option<String>) -> Result<serde_j
         device::write_led(dev, &packet)?.confirmed()
     })
     .context("Cannot drive the Anticater USB device")?;
-    // Layers past the firmware's own are storage without a measured
-    // render effect: layer 9 holds whatever was last written (green
-    // was stored and read back on hardware) while layers 0-2 sit
-    // untouched beside it. Say so, or "stored" will be read as
-    // "showing" for layers nobody has watched.
-    let mut note = String::from(
+    let note = String::from(
         "If the ring doesn't match, unplug/replug the knob -- its renderer can wedge after a mode change.",
     );
-    if layer >= crate::firmware::DEVICE_LAYERS {
-        note.push_str(&format!(
-            " Layer {layer} is past the firmware's {} layers: it stores, render unmeasured.",
-            crate::firmware::DEVICE_LAYERS
-        ));
-    }
     Ok(json!({
         "ok": true,
         "layer": layer,

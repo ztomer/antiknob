@@ -242,8 +242,12 @@ pub fn sync_led(cfg: &HostConfig, layer_idx: usize) {
             if superseded(ticket) {
                 return;
             }
-            let Ok(packet) = crate::protocol::build_led_packet(device_layer, &mode) else {
-                continue;
+            let packet = match crate::protocol::build_led_packet(device_layer, &mode) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("LED sync: device layer {device_layer} refused: {e}");
+                    continue;
+                }
             };
             // Read back like every LED write; a background job has no
             // caller to return to, so a write that did not take is said

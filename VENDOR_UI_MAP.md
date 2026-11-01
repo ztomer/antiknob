@@ -740,3 +740,44 @@ needs a person turning the knob. `get_knob_mode` still said
 for: `device::mode::classify` counts a chord on ANY layer, and
 `device_binding` is read from `host.json`, not from the device. The slots
 were then put back with `bind-slots`.
+
+## 2026-11-01 wired session, part 2 -- restores, read-back blindness
+
+Same knob, same cable. The full table was saved first (75 records, identical
+to the morning's reference copy) and put back at the end, proven by a
+read-back identical to it byte for byte.
+
+**The read-back cannot tell `0xFE` from `0xFD`.** Key 20 on device layer `01`
+(factory `t`, `03 fa 14 01 01 01 01 00 00 17`), written with `antiknob raw`
+and committed:
+
+    03 fe 14 01 01 01 01 00 00 18   -> reads back 03 fa 14 01 01 01 01 00 00 18
+    03 fd 14 01 01 01 01 00 00 17   -> reads back 03 fa 14 01 01 01 01 00 00 17
+
+`0xFE` STORES the stored-layout record exactly as `0xFD` does, so a read-back
+after a `0xFE` restore is a perfect match over a slot the firmware has been
+seen not to run (see "The `0xFE` single-action record was never
+executable"). `probe-gestures` restored its candidate slots that way and
+reported "restored, and read back to confirm" -- true of the bytes, silent
+about the behaviour. Restores now replay the read record with `0xFD`
+(`fd::restore_packet`), which is the command whose payload IS the stored
+layout and the one every record the firmware runs was written with,
+including the vendor's own mouse record on key 16 layer `02`
+(`03 fa 10 02 03 00 04 ...`). Not measured today: that a restored slot
+FIRES, which needs a person on the knob; the 2026-09-08 result (a `0xFD`
+record typed `a`, the `0xFE` one did nothing) is what the choice rests on.
+
+**A keyboard `0xFD` write stores all 64 bytes as sent.** Key 16 on layer
+`03` holds an old `0xFE` keyboard record, `len 00` with `01 08 2d` at bytes
+10-12. Wiped (`03 fd 10 03 01 00 12`, zeros) and then replayed with `0xFD`,
+it read back with `01 08 2d` at 10-12 again. So "the firmware rewrites a
+keyboard record whole" (above) means it stores what was SENT past `len`,
+not that it zeroes it -- the replay is byte-exact for keyboard records, and
+the wipe is what a media record needs.
+
+**`probe-gestures --map` restored through `0xFD`.** Markers armed on keys
+1-6 of layer `01` and confirmed, a 2 s capture (nothing performed, so
+reported INCONCLUSIVE), then the six slots restored with `0xFD` and read
+back confirmed; the whole table then matched the reference byte for byte.
+`bind-slots` over the same chords now reads back too: "Flashed 15 slot
+binding(s), every one confirmed by read-back".

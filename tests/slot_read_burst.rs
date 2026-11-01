@@ -54,8 +54,10 @@ fn source(rel: &str) -> String {
 fn verify_and_get_knob_mode_call_the_burst_read() {
     for rel in ["src/bin/antiknob/cmds.rs", "src/api/dispatch.rs"] {
         let text = source(rel);
+        // `device::write_slots` is the burst read after a write; its own
+        // read is pinned by `tests/slot_write_confirmed.rs`.
         assert!(
-            text.contains("read_full_table"),
+            text.contains("read_full_table") || text.contains("write_slots("),
             "{rel} no longer reads the whole table"
         );
         assert!(
@@ -94,8 +96,9 @@ fn no_source_walks_the_table_at_a_layout_width() {
         "per-slot walk still called in {offenders:?}"
     );
     for rel in ["src/bin/antiknob/binding.rs", "src/bin/antiknob/probe.rs"] {
+        let text = source(rel);
         assert!(
-            source(rel).contains("read_full_table"),
+            text.contains("read_full_table") || text.contains("write_slots("),
             "{rel} no longer reads the whole table"
         );
     }

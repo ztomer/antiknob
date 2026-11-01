@@ -49,7 +49,7 @@ fn build_arg(param: &registry::Param) -> Arg {
     let mut arg = Arg::new(param.name).help(param.about);
 
     if !param.positional {
-        // `no_verify` is spelled `--no-verify`; the registry keeps the
+        // `knob_only` is spelled `--knob-only`; the registry keeps the
         // Rust-side name so the extraction below can use it verbatim.
         let long: &'static str = Box::leak(param.name.replace('_', "-").into_boxed_str());
         arg = arg.long(long);
@@ -149,7 +149,6 @@ fn main() -> Result<()> {
         "upload_keymap" => cmds::run_upload(
             opt_path(m, "file"),
             opt_num::<u8>(m, "layer")?,
-            flag(m, "no_verify"),
             flag(m, "knob_only"),
         )?,
         "set_led" => cmds::run_led(num::<u8>(m, "layer")?, strings(m, "mode"))?,

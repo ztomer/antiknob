@@ -16,9 +16,8 @@
 //! intention-presented-as-fact defect as drawing a standalone knob's host
 //! layers as live.
 
-use crate::device::send_report;
 use crate::device::HidDevice;
-use crate::firmware::{GESTURES_PER_KNOB, SLOT_WRITE_GAP_MS};
+use crate::firmware::GESTURES_PER_KNOB;
 use crate::protocol::{key_id_for_knob, Action, KnobEvent};
 use anyhow::{Context, Result};
 
@@ -124,18 +123,22 @@ pub fn binding_packets(button_count: usize, layers: &[u8]) -> Result<Vec<Vec<u8>
         .collect()
 }
 
-/// Flash the plan to the device with inter-packet pacing, then commit.
-/// Main thread only (same IOHIDManager thread-affinity contract as
-/// `crate::device`).
-pub fn flash_slot_bindings(dev: &HidDevice, button_count: usize, layers: &[u8]) -> Result<usize> {
-    let mut sent = 0;
-    for packet in binding_packets(button_count, layers)? {
-        send_report(dev, &packet)?;
-        sent += 1;
-        std::thread::sleep(std::time::Duration::from_millis(SLOT_WRITE_GAP_MS));
-    }
-    crate::device::send_commit(dev)?;
-    Ok(sent)
+/// Flash the plan through `device::write_slots`, which reads the whole
+/// table back, and fail unless every slot holds what was sent.
+///
+/// This returned a count of packets SENT and its callers printed it as
+/// "Flashed 15 slot binding(s)": nothing looked at the slots afterwards, so
+/// a flash the firmware dropped read exactly like one it kept. HID thread
+/// only (same IOHIDManager thread-affinity contract as `crate::device`).
+pub fn flash_slot_bindings(
+    dev: &HidDevice,
+    button_count: usize,
+    layers: &[u8],
+) -> Result<crate::device::SlotWrite> {
+    let packets = binding_packets(button_count, layers)?;
+    let written = crate::device::write_slots(dev, &packets)?;
+    written.ensure_confirmed()?;
+    Ok(written)
 }
 
 #[cfg(test)]

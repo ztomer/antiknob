@@ -261,6 +261,40 @@ fn a_leftover_tail_past_len_is_not_a_confirmed_write() {
     assert!(!record_matches(&sent, &back[..13]));
 }
 
+/// A restore replays the stored record with the command the firmware RUNS.
+/// Every kind on this table is stored in the `0xFD` layout -- the reference
+/// table of 2026-11-01 holds keyboard chains, media, and a vendor-written
+/// mouse record (`03 fa 10 02 03 00 04 ...`) -- and `0xFE` single-action
+/// records are stored and not executed. The read-back cannot catch a wrong
+/// choice (both commands read back identically), so this pins it.
+#[test]
+fn a_restore_replays_the_stored_record_with_the_command_the_firmware_runs() {
+    let chord = Action::parse("ctrl-alt-shift-f16").unwrap().to_packet(2, 0);
+    let media = Action::parse("mute").unwrap().to_packet(3, 1);
+    let mut mouse = vec![0u8; REPORT_LEN];
+    mouse[..13].copy_from_slice(&[3, 0xFA, 0x10, 2, 3, 0, 4, 0, 0, 0, 1, 5, 0]);
+    for written in [chord, media, mouse] {
+        let mut stored = written.clone();
+        stored[1] = crate::firmware::SLOT_TABLE_QUERY_CMD;
+        let restore = restore_packet(&stored);
+        assert_eq!(
+            restore[1], FD_CMD,
+            "restored with a command the firmware stores and does not run"
+        );
+        assert_eq!(restore.len(), REPORT_LEN);
+        assert_eq!(restore[0], stored[0]);
+        assert_eq!(
+            restore[2..],
+            stored[2..],
+            "a restore must not change the record"
+        );
+        assert!(
+            record_matches(&restore, &stored),
+            "the restore must confirm against the record it replays"
+        );
+    }
+}
+
 #[test]
 fn parse_sequence_reads_a_list_of_action_names() {
     let specs = vec!["cmd-c".to_string(), "cmd-v".to_string()];

@@ -12,8 +12,6 @@ use goh_tui::{OK, START, WARN};
 
 use anyhow::{Context, Result};
 use std::path::PathBuf;
-use std::thread::sleep;
-use std::time::Duration;
 
 /// The declared button count, which is what places every knob slot.
 pub fn button_count_for(config: Option<PathBuf>) -> Result<usize> {
@@ -101,9 +99,15 @@ pub fn run_bind_slots(
     }
     goh_tui::outln!("{START} Opening Anticater device via native IOHIDManager (no sudo)...");
     let flashed = layers.clone();
-    let sent =
+    // `flash_slot_bindings` reads the whole table back and fails unless
+    // every slot holds what was sent. This printed "Flashed 15 slot
+    // binding(s)" on `hid_write` alone, a count of packets, not of slots.
+    let written =
         device::with_device(move |dev| host::bind::flash_slot_bindings(dev, buttons, &flashed))?;
-    goh_tui::outln!("{OK} Flashed {sent} slot binding(s).");
+    goh_tui::outln!(
+        "{OK} Flashed {} slot binding(s), every one confirmed by read-back.",
+        written.confirmed()
+    );
     // Printed FROM the table that was flashed, never restated as a literal.
     // The literal version outlived two changes to the chords: it still said
     // "ctrl-alt-F16" immediately after a run that wrote ctrl-alt-SHIFT-F16,
@@ -191,26 +195,13 @@ pub fn run_bind_seq(
         key_id: key,
         layer: layer + 1,
     };
-    let sent = packet.clone();
-    let wipe = fd::wipe_packet(key, layer);
-    let readback = device::with_device(move |dev| {
-        // Clear every entry first. The device updates only the first `len`
-        // bytes' worth and leaves the rest, so a short sequence written over
-        // a long one strands the old tail in the slot.
-        device::send_report(dev, &wipe)?;
-        sleep(Duration::from_millis(antiknob::firmware::SLOT_WRITE_GAP_MS));
-        device::send_commit(dev)?;
-        device::send_report(dev, &packet)?;
-        sleep(Duration::from_millis(antiknob::firmware::SLOT_WRITE_GAP_MS));
-        device::send_commit(dev)?;
-        // Read the WHOLE table back, as `upload --verify` does. A lone
-        // per-slot query never answers (the counter is a position in a walk,
-        // not an index), and a walk at a layout width cannot see a key past
-        // it, so either shortcut would report a write that landed as
-        // UNCONFIRMED.
-        Ok(device::read_full_table(dev))
-    })?;
-    let readback = readback
+    // `write_slots` wipes the slot first (a media write updates only its
+    // first `len` entries, so a short record over a long one keeps the old
+    // tail), then reads the WHOLE table back: a lone per-slot query never
+    // answers, and a walk at a layout width cannot see a key past it.
+    let written = device::with_device(move |dev| device::write_slots(dev, &[packet]))?;
+    let readback = written
+        .table
         .into_iter()
         .find(|r| device::verify::parse_record(r).is_some_and(|(addr, _)| addr == want))
         .unwrap_or_default();
@@ -228,7 +219,11 @@ pub fn run_bind_seq(
             layer
         );
     }
-    if !fd::record_matches(&sent, &readback) {
+    if written
+        .verdicts
+        .iter()
+        .any(|(_, v)| *v != device::verify::SlotVerdict::Confirmed)
+    {
         anyhow::bail!("the device stored something other than what was sent; write UNCONFIRMED");
     }
     goh_tui::outln!(

@@ -85,12 +85,7 @@ pub fn run_validate(file: Option<PathBuf>) -> Result<()> {
     );
     Ok(())
 }
-pub fn run_upload(
-    file: Option<PathBuf>,
-    layer: Option<u8>,
-    skip_verify: bool,
-    knob_only: bool,
-) -> Result<()> {
+pub fn run_upload(file: Option<PathBuf>, layer: Option<u8>, knob_only: bool) -> Result<()> {
     let file = layout_path(file)?;
     goh_tui::outln!("{START} Loading and validating {}...", file.display());
     let cfg = config::DeviceConfig::load_from_file(&file)?;
@@ -164,49 +159,26 @@ pub fn run_upload(
     }
 
     goh_tui::outln!("{START} Opening Anticater device via native IOHIDManager (no sudo)...");
-    // Clear each slot before writing it. Neither write command clears the
-    // bytes it does not set, so a slot that used to hold a keyboard chord
-    // keeps that chord's modifier byte under a mouse binding written over
-    // it -- and the read-back then reports a mismatch that is real: the
-    // device really does hold bytes the new binding never wrote. Found
-    // when a corrected layout flashed two mouse gestures over old chords
-    // and came back with `01 08` still sitting at bytes 10-11.
-    let wipes = antiknob::fd::wipes_for(&packets);
-    // Keep a copy to check against: `hid_write` succeeding says the packet
-    // was well-formed, not that the firmware reads the slot it addressed.
-    let written = packets.clone();
-    let observed = device::with_device(move |dev| {
-        for wipe in &wipes {
-            device::send_report(dev, wipe)?;
-            sleep(Duration::from_millis(firmware::UPLOAD_PACKET_GAP_MS));
-        }
-        if !wipes.is_empty() {
-            device::send_commit(dev)?;
-        }
-        for packet in &packets {
-            device::send_report(dev, packet)?;
-            sleep(Duration::from_millis(firmware::UPLOAD_PACKET_GAP_MS));
-        }
-        if !packets.is_empty() {
-            device::send_commit(dev)?;
-        }
+    // `write_slots` clears each slot before writing it: neither write
+    // command clears every byte it does not set, so a slot that used to hold
+    // a keyboard chord kept that chord's modifier byte under a mouse binding
+    // written over it (found when a corrected layout flashed two mouse
+    // gestures over old chords and came back with `01 08` at bytes 10-11).
+    // It then reads the whole table back: `hid_write` succeeding says the
+    // packet was well-formed, not that the firmware reads the slot it
+    // addressed. There is no way to skip that read; `--no-verify` was one.
+    let written = device::with_device(move |dev| {
+        let written = device::write_slots(dev, &packets)?;
         for packet in &led_packets {
             device::send_led(dev, packet)?;
             sleep(Duration::from_millis(firmware::LED_INTER_LAYER_SETTLE_MS));
         }
-        if skip_verify {
-            return Ok(Vec::new());
-        }
-        sleep(Duration::from_millis(firmware::SLOT_VERIFY_SETTLE_MS));
-        Ok(device::read_full_table(dev))
+        Ok(written)
     })?;
-
-    if skip_verify {
-        goh_tui::outln!("{OK} Packets accepted by the device (read-back skipped).");
-        return Ok(());
-    }
-    report_flash_verdict(&written, &observed);
-    Ok(())
+    report_flash_verdict(&written.verdicts);
+    // An unconfirmed flash is a failed command, not a warning followed by
+    // exit 0: a script that flashes and moves on must be able to tell.
+    written.ensure_confirmed()
 }
 
 /// Say what the device now holds, not what was sent to it.
@@ -216,14 +188,13 @@ pub fn run_upload(
 /// well-formed packet addressed to a slot the firmware stores and never
 /// reads. That is how knob bindings went to key IDs 16/17/18 on a device
 /// that reads 4/5/6, for every flash, with a success line each time.
-fn report_flash_verdict(written: &[Vec<u8>], observed: &[Vec<u8>]) {
-    use device::verify::{summarize, verify, SlotVerdict};
-    let verdicts = verify(written, observed);
+fn report_flash_verdict(verdicts: &[(device::verify::SlotAddr, device::verify::SlotVerdict)]) {
+    use device::verify::{summarize, SlotVerdict};
     let confirmed = verdicts
         .iter()
         .filter(|(_, v)| *v == SlotVerdict::Confirmed)
         .count();
-    match summarize(&verdicts) {
+    match summarize(verdicts) {
         None => goh_tui::outln!(
             "{OK} Configuration written and read back: {}/{} slot(s) confirmed.",
             confirmed,

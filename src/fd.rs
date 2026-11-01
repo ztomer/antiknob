@@ -288,6 +288,24 @@ pub fn record_matches(sent: &[u8], readback: &[u8]) -> bool {
     sent[0] == readback[0] && sent[2..] == readback[2..]
 }
 
+/// The write that puts a record read off the device back exactly as it was.
+///
+/// An `FA` record is the STORED layout -- `len` at byte 6, entries from byte
+/// 7 -- and that is the `0xFD` layout, so a restore is the record replayed
+/// with `0xFD` and every other byte unchanged. The gesture probe's restore
+/// used `0xFE`, the command whose single-action records the firmware stores
+/// and has been seen not to RUN (VENDOR_UI_MAP, "The `0xFE` single-action
+/// record was never executable"). The read-back cannot tell the two apart:
+/// measured 2026-11-01, the same record written with either command reads
+/// back byte for byte the same. So the command is decided here, once, by
+/// what the firmware runs, and no read-back is asked to settle it.
+pub fn restore_packet(record: &[u8]) -> Vec<u8> {
+    let mut p = record.to_vec();
+    p.resize(REPORT_LEN, 0);
+    p[1] = FD_CMD;
+    p
+}
+
 /// One slot record read the way the firmware stores it: a kind and the
 /// value bytes of its entries.
 #[derive(Debug, Clone, PartialEq, Eq)]

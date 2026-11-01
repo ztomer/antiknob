@@ -63,8 +63,11 @@ pub fn bind_slots(
         .collect::<Result<Vec<_>, _>>()
         .context("knob slots out of range for the button count")?;
     let to_flash = flash_layers.clone();
+    // `flash_slot_bindings` reads the table back and fails unless every slot
+    // holds what was sent, so the count below is of CONFIRMED slots.
     let count = device::with_device(move |dev| flash_slot_bindings(dev, buttons, &to_flash))
-        .context("Cannot flash slot bindings to the Anticater USB device")?;
+        .context("Cannot flash slot bindings to the Anticater USB device")?
+        .confirmed();
 
     if let Some(engine) = &ctx.tap_engine {
         let mut lock = engine.lock().unwrap();
@@ -79,6 +82,7 @@ pub fn bind_slots(
     Ok(json!({
         "ok": true,
         "flashed_slots": count,
+        "confirmed": true,
         "layers": target_layers,
         "buttons": buttons,
         "key_ids": key_ids
@@ -122,27 +126,13 @@ pub fn bind_sequence(
         step.delay_ms = delay_ms;
     }
     let packet = crate::fd::build_packet(key, layer, &steps)?;
-    let wipe = crate::fd::wipe_packet(key, layer);
     let sent = packet.clone();
     // Read the whole table back: a write that landed nowhere must
     // report as unconfirmed, not as success.
-    let table = device::with_device(move |dev| {
-        device::send_report(dev, &wipe)?;
-        std::thread::sleep(Duration::from_millis(crate::firmware::SLOT_WRITE_GAP_MS));
-        device::send_commit(dev)?;
-        device::send_report(dev, &packet)?;
-        std::thread::sleep(Duration::from_millis(crate::firmware::SLOT_WRITE_GAP_MS));
-        device::send_commit(dev)?;
-        Ok(device::read_full_table(dev))
+    let written = device::with_device(move |dev| device::write_slots(dev, &[packet]))?;
+    written.ensure_confirmed().with_context(|| {
+        format!("slot {key} layer {layer} did not read back as written; the binding is UNCONFIRMED")
     })?;
-    let confirmed = table.iter().any(|r| crate::fd::record_matches(&sent, r));
-    if !confirmed {
-        anyhow::bail!(
-            "slot {} layer {} did not read back as written; the binding is UNCONFIRMED",
-            key,
-            layer
-        );
-    }
     Ok(json!({
         "key": key,
         "layer": layer,
@@ -220,22 +210,19 @@ pub fn read_slots(
     }))
 }
 
-/// Flash a standalone keymap's slot packets (committed via `send_commit`),
-/// followed by its LED mode packets (sent via `send_led` with the LED init packet).
+/// Flash a standalone keymap's slot packets through `device::write_slots`
+/// (wiped, committed, read back), then its LED mode packets (sent via
+/// `send_led` with the LED init packet). Fails unless every slot read back
+/// as written; this returned `Ok` on `hid_write` alone, which is no evidence
+/// the slots changed.
 pub fn flash_keymap_hardware(slot_packets: Vec<Vec<u8>>, led_packets: Vec<Vec<u8>>) -> Result<()> {
     // Pace against other LED jobs in this process: a keymap flash lands
     // its LED writes in one burst, the same shape that wedges the render.
     if !led_packets.is_empty() {
         crate::host::led_sync::pace_led();
     }
-    device::with_device(move |dev| {
-        for packet in &slot_packets {
-            device::send_report(dev, packet)?;
-            std::thread::sleep(Duration::from_millis(crate::firmware::UPLOAD_PACKET_GAP_MS));
-        }
-        if !slot_packets.is_empty() {
-            device::send_commit(dev)?;
-        }
+    let written = device::with_device(move |dev| {
+        let written = device::write_slots(dev, &slot_packets)?;
         for (i, packet) in led_packets.iter().enumerate() {
             if i > 0 {
                 std::thread::sleep(Duration::from_millis(
@@ -244,8 +231,9 @@ pub fn flash_keymap_hardware(slot_packets: Vec<Vec<u8>>, led_packets: Vec<Vec<u8
             }
             device::send_led(dev, packet)?;
         }
-        Ok(())
-    })
+        Ok(written)
+    })?;
+    written.ensure_confirmed()
 }
 
 /// Set one layer's backlight mode, paced and read-before-write like

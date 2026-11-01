@@ -60,7 +60,6 @@ pub const COMMANDS: &[CommandSpec] = &[
                 .only(On::CliOnly),
             Param::req("yaml", Kind::Str, "Layout YAML as a string").only(On::McpOnly),
             Param::opt("layer", Kind::Int, "Flash only this device layer"),
-            Param::flag("no_verify", "Skip the post-flash read-back").only(On::CliOnly),
             Param::flag("knob_only", "Confirm the device really has no keys").only(On::CliOnly),
         ],
         cli_as: Some("upload"),

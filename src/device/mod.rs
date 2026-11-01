@@ -13,6 +13,7 @@ mod select;
 #[cfg(test)]
 mod slot_address_tests;
 mod slot_read;
+mod slot_write;
 pub mod snoop;
 mod thread;
 pub mod verify;
@@ -20,6 +21,7 @@ pub use classify::classify_device;
 pub use led_state::{read_led_mode, send_led};
 pub use select::{primary_device, primary_transport};
 pub use slot_read::{read_full_table, read_slot, slot_table_query};
+pub use slot_write::{write_slots, SlotWrite};
 pub use thread::{enumeration_refreshes, with_device, with_hid, HidDevice};
 
 fn default_transport() -> TransportType {

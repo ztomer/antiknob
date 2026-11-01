@@ -78,19 +78,7 @@ pub fn run_map(keys: Vec<u8>, layer: u8, capture_secs: u64, devices: Vec<String>
     let before = snapshot(&plan, layer)?;
     println!("        {} slot(s) captured for restore.", before.len());
 
-    let packets = gesture_probe::probe_packets(&plan, layer).map_err(|e| anyhow::anyhow!(e))?;
-    let armed = packets.clone();
-    device::with_device(move |dev| {
-        for p in &armed {
-            device::send_report(dev, p)?;
-            sleep(Duration::from_millis(antiknob::firmware::SLOT_WRITE_GAP_MS));
-        }
-        device::send_commit(dev)
-    })
-    .context("could not arm the probe")?;
-
-    let check = device::with_device(|dev| Ok(device::read_full_table(dev)))?;
-    let verdicts = device::verify::verify(&packets, &check);
+    let verdicts = arm(&plan, layer)?;
     let confirmed = verdicts
         .iter()
         .filter(|(_, v)| *v == device::verify::SlotVerdict::Confirmed)
@@ -204,21 +192,9 @@ pub fn run(
     let before = snapshot(&plan, layer)?;
     println!("        {} slot(s) captured for restore.", before.len());
 
-    let packets = gesture_probe::probe_packets(&plan, layer).map_err(|e| anyhow::anyhow!(e))?;
-    let armed = packets.clone();
-    device::with_device(move |dev| {
-        for p in &armed {
-            device::send_report(dev, p)?;
-            sleep(Duration::from_millis(antiknob::firmware::SLOT_WRITE_GAP_MS));
-        }
-        device::send_commit(dev)
-    })
-    .context("could not arm the probe")?;
-
     // Confirm the markers actually landed. Without this a gesture that
     // produces nothing is ambiguous: unbound slot, or a write that missed?
-    let check = device::with_device(|dev| Ok(device::read_full_table(dev)))?;
-    let verdicts = device::verify::verify(&packets, &check);
+    let verdicts = arm(&plan, layer)?;
     let confirmed = verdicts
         .iter()
         .filter(|(_, v)| *v == device::verify::SlotVerdict::Confirmed)
@@ -233,8 +209,8 @@ pub fn run(
         .filter_map(|r| device::verify::parse_record(r).map(|(a, _)| a.key_id))
         .collect();
     if !fabricated.is_empty() {
-        println!(
-            "[ --- ] Slot(s) {:?} hold the firmware's synthetic default, not a",
+        goh_tui::outln!(
+            "{START} Slot(s) {:?} hold the firmware's synthetic default, not a",
             fabricated
         );
         println!("        configured binding. Every key id answers this device, so their");
@@ -308,7 +284,7 @@ pub fn run(
 /// to put them back by hand.
 fn restore(before: &[Vec<u8>]) {
     if before.is_empty() {
-        println!("[ --- ] The candidate slots were empty; nothing to restore.");
+        goh_tui::outln!("{START} The candidate slots were empty; nothing to restore.");
         return;
     }
     let packets: Vec<Vec<u8>> = before.iter().map(|r| to_write(r)).collect();
@@ -318,20 +294,13 @@ fn restore(before: &[Vec<u8>]) {
             antiknob::firmware::PROBE_READ_RETRY_BASE_MS * attempt,
         ));
         let batch = packets.clone();
-        match device::with_device(move |dev| {
-            for p in &batch {
-                device::send_report(dev, p)?;
-                sleep(Duration::from_millis(antiknob::firmware::SLOT_WRITE_GAP_MS));
+        match device::with_device(move |dev| device::write_slots(dev, &batch))
+            .and_then(|w| w.ensure_confirmed())
+        {
+            Ok(()) => {
+                goh_tui::outln!("{OK} Candidate slots restored, and read back to confirm.");
+                return;
             }
-            device::send_commit(dev)
-        }) {
-            Ok(()) => match confirm_restored(&packets) {
-                Ok(()) => {
-                    goh_tui::outln!("{OK} Candidate slots restored, and read back to confirm.");
-                    return;
-                }
-                Err(e) => last = e.to_string(),
-            },
             Err(e) => last = e.to_string(),
         }
     }
@@ -342,28 +311,23 @@ fn restore(before: &[Vec<u8>]) {
     println!("        Put them back with: antiknob upload");
 }
 
-/// Read the candidate slots again and check they hold what they held.
-///
-/// The write returning Ok says the packet was accepted, which this session
-/// has already learned is not the same as the slot changing -- and a probe
-/// that says "restored" without looking would leave the knob carrying probe
-/// markers while reporting that it does not.
-fn confirm_restored(packets: &[Vec<u8>]) -> Result<()> {
-    let table = device::with_device(|dev| Ok(device::read_full_table(dev)))?;
-    let verdicts = device::verify::verify(packets, &table);
-    match device::verify::summarize(&verdicts) {
-        None => Ok(()),
-        Some(problem) => Err(anyhow::anyhow!(problem)),
-    }
+/// Write the probe's markers through the confirming writer.
+fn arm(
+    plan: &[ProbeSlot],
+    layer: u8,
+) -> Result<Vec<(device::verify::SlotAddr, device::verify::SlotVerdict)>> {
+    let packets = gesture_probe::probe_packets(plan, layer).map_err(|e| anyhow::anyhow!(e))?;
+    let written = device::with_device(move |dev| device::write_slots(dev, &packets))
+        .context("could not arm the probe")?;
+    Ok(written.verdicts)
 }
 
-/// Turn a read record back into the write that reproduces it. The two share
-/// every offset; only the tag byte differs (0xFA read, 0xFE write).
+/// Turn a read record back into the write that reproduces it.
+///
+/// `fd::restore_packet` decides the command; see there for why it is
+/// `0xFD` and never the `0xFE` this used to send.
 fn to_write(record: &[u8]) -> Vec<u8> {
-    let mut p = record.to_vec();
-    p.resize(antiknob::firmware::REPORT_LEN, 0);
-    p[1] = antiknob::firmware::FE_CHORD_CMD;
-    p
+    antiknob::fd::restore_packet(record)
 }
 
 /// Collect the distinct consumer usages the knob emits during the window.

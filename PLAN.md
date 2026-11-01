@@ -160,13 +160,30 @@ sitting. Exit: each item below has a recorded measurement in VENDOR_UI_MAP
   layers 3-15 ever renders (FIRMWARE_REVIEW #7; storage measured, render
   not). If they never render, cap `SET_LED_LAYER_MAX` at the firmware's
   three layers. Needs eyes on the LED.
-* **S.9 `get_knob_mode` is not per-layer.** Found in H.2: with layer 0
-  carrying `ctrl-alt-F16..F20` (chords the daemon does not listen for) it
-  still said `host-translate` and "All 3 device layers send the slot
-  chords" -- `device::mode::classify` counts a chord on ANY layer and
-  `device_binding` comes from `host.json`, not the device. *Acceptance:* the
-  mode and the binding summary are read per layer from the table and name
-  a layer whose chords are not `SLOT_SPECS`.
+* **S.9** done 2026-11-01 (`fde6d87`): `device::mode::classify_layers`
+  reads each device layer from its own records and lists the knob keys that
+  carry something other than the `SLOT_SPECS` chords; `get_knob_mode`'s
+  `device_binding` and summary come from those layers (`knob_mode_report`,
+  tested on the H.2 table), with host.json's record kept beside it as
+  `recorded_device_binding`. *Left for a person:* the GUI line (H.1 item 2).
+* **S.10** done 2026-11-01, same session -- four defects found on the knob:
+  a read-back compares the whole record, so a stale tail past `len` is not
+  confirmed (`a655e70`); every slot write goes through `device::write_slots`
+  (wipe, write, commit, full-table read-back), which `bind-slots`, the
+  daemon's `bind_slots` and keymap flash skipped, and a commit sent anywhere
+  else is red (`tests/slot_write_confirmed.rs`); `upload --no-verify` is
+  gone; the probe's restore replays with `0xFD`, not the `0xFE` the firmware
+  stores and does not run (`cfa0b3f`, VENDOR_UI_MAP "part 2"); the `/tmp`
+  socket symlink is retired and `install.sh` asks the daemon through
+  `antiknob status --json`, in the Kare TUI (`4296094`).
+* **S.11 LED writes are not read back.** `upload` and the daemon's keymap
+  flash send `send_led` packets after the confirmed slot write and report
+  nothing about them; `set_led` reads back. *Acceptance:* every LED write
+  path reports the mode read back, or names why it cannot (the echo in
+  VENDOR_UI_MAP "Reading the LED mode back").
+* **S.12** `get_knob_mode`'s registry entry says the CLI "reports the same
+  thing through get_status"; `antiknob status` reports no knob mode.
+  *Acceptance:* the CLI shows the per-layer mode, or the reason is true.
 
 **Person-only checklist (knob on USB-C, daemon running):**
 

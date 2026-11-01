@@ -276,12 +276,10 @@ pub fn run_led(layer: u8, mode: Vec<String>) -> Result<()> {
         device::write_led(dev, &packet).map(Some)
     })?;
     if let Some(verdict) = &written {
-        let confirmed = matches!(verdict, device::LedVerdict::Confirmed { .. });
-        goh_tui::outln!(
-            "{} {}",
-            if confirmed { OK } else { WARN },
-            verdict.describe()
-        );
+        // An unconfirmed write fails the command, as it fails `upload`
+        // and the keymap flash: it used to print WARN and exit 0.
+        verdict.confirmed()?;
+        goh_tui::outln!("{OK} {}", verdict.describe());
     }
     if written.is_none() {
         goh_tui::outln!("{OK} Layer {layer} already holds that mode; no write sent.");

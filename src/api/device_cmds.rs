@@ -321,10 +321,9 @@ pub fn set_led(layer: u8, mode: String, color: Option<String>) -> Result<serde_j
                 return Ok(current);
             }
         }
-        let verdict = device::write_led(dev, &packet)?;
-        verdict
-            .stored()
-            .ok_or_else(|| anyhow::anyhow!("{}", verdict.describe()))
+        // Confirmed or an error: a layer that reads back some OTHER mode
+        // used to come back as `ok: true` carrying that mode.
+        device::write_led(dev, &packet)?.confirmed()
     })
     .context("Cannot drive the Anticater USB device")?;
     // Layers past the firmware's own are storage without a measured

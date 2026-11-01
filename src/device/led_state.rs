@@ -120,6 +120,17 @@ impl LedVerdict {
         }
     }
 
+    /// The mode that was sent, when the layer reads it back -- and an error
+    /// naming what the layer holds otherwise. An unconfirmed write is a
+    /// failure (PLAN S.11), on every surface that reports one: `antiknob
+    /// led`, MCP `set_led`, `upload` and the keymap flash all decide it here.
+    pub fn confirmed(&self) -> Result<u8> {
+        match self {
+            Self::Confirmed { mode, .. } => Ok(*mode),
+            _ => anyhow::bail!("LED write not confirmed: {}", self.describe()),
+        }
+    }
+
     /// The mode the layer holds, when the read-back answered.
     pub fn stored(&self) -> Option<u8> {
         match self {
@@ -171,7 +182,7 @@ pub fn write_led(dev: &HidDevice, packet: &[u8]) -> Result<LedVerdict> {
 pub fn ensure_leds_confirmed(leds: &[LedVerdict]) -> Result<()> {
     let bad: Vec<String> = leds
         .iter()
-        .filter(|v| !matches!(v, LedVerdict::Confirmed { .. }))
+        .filter(|v| v.confirmed().is_err())
         .map(LedVerdict::describe)
         .collect();
     if bad.is_empty() {
@@ -214,6 +225,13 @@ mod led_verdict_tests {
             wrong.describe()
         );
         let unread = led_verdict(&packet(0, 2), &Err(anyhow::anyhow!("timed out")));
+        // A write is confirmed only when it reads back AS SENT: a layer
+        // holding some other mode is a failure, not an answer.
+        assert_eq!(led_verdict(&packet(1, 4), &Ok(4)).confirmed().unwrap(), 4);
+        let err = wrong.confirmed().unwrap_err().to_string();
+        assert!(err.contains("reads back mode 0"), "{err}");
+        assert!(unread.confirmed().is_err());
+        assert!(ensure_leds_confirmed(std::slice::from_ref(&wrong)).is_err());
         assert_eq!(unread.stored(), None);
         assert!(
             unread.describe().contains("timed out"),

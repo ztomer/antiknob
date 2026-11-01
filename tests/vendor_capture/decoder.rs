@@ -48,7 +48,7 @@ pub struct Record {
     pub layer: u8,
     /// Byte 4: 1 keyboard, 2 media, 3 mouse.
     pub kind: u8,
-    /// Byte 5. Device-owned: it reads back whatever was sent here.
+    /// Byte 5. Stored as written (measured 2026-11-01); not decoded.
     pub b5: u8,
     /// Byte 6. The declared payload LENGTH IN BYTES, not an entry count.
     pub declared_bytes: u8,

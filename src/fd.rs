@@ -202,7 +202,9 @@ pub fn build_packet(key_id: u8, layer: u8, steps: &[Step]) -> Result<Vec<u8>> {
     packet[2] = key_id;
     packet[3] = layer + 1;
     packet[4] = kind as u8;
-    // Byte 5 is device-owned: it reads back the same whatever is sent here.
+    // Byte 5 is stored as written (measured 2026-11-01). The vendor app
+    // writes `01` when appending and `04` for `Like`; this writer never
+    // appends, so it writes `00`, which is what its records read back with.
     packet[5] = 0;
     packet[6] = entries.len() as u8;
 
@@ -265,9 +267,10 @@ fn significant_len(record: &[u8]) -> Option<usize> {
 /// which is the same false confidence as the `hid_write` return value that
 /// let knob bindings flash into dead slots for months.
 ///
-/// Byte 1 is skipped because it is `0xFD` out and `0xFA` back, and byte 5
-/// because the device owns it -- it reads back the same regardless of what
-/// was sent in that position.
+/// Byte 1 is skipped because it is `0xFD` out and `0xFA` back. Byte 5 is
+/// compared: it was once skipped as "device-owned", and measured 2026-11-01
+/// it is stored exactly as written (VENDOR_UI_MAP, "Byte 5 is stored as
+/// written"), so skipping it let a slot holding a different record confirm.
 pub fn record_matches(sent: &[u8], readback: &[u8]) -> bool {
     let Some(end) = significant_len(sent) else {
         return false;
@@ -275,9 +278,7 @@ pub fn record_matches(sent: &[u8], readback: &[u8]) -> bool {
     if significant_len(readback) != Some(end) {
         return false;
     }
-    sent.first() == readback.first()
-        && sent[2..5] == readback[2..5]
-        && sent[6..end] == readback[6..end]
+    sent.first() == readback.first() && sent[2..end] == readback[2..end]
 }
 
 /// One slot record read the way the firmware stores it: a kind and the

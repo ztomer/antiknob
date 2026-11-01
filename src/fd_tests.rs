@@ -189,14 +189,28 @@ fn the_wipe_record_covers_every_entry() {
     assert!(w[7..].iter().all(|b| *b == 0), "entries must be zero");
 }
 
-/// Byte 5 is device-owned and must not break the comparison.
+/// Only byte 1 differs between a write and its read-back (`0xFD` out,
+/// `0xFA` back).
 #[test]
 fn a_readback_of_what_was_written_matches() {
     let sent = build_packet(7, 0, &[kb("cmd-x"), kb("cmd-z")]).unwrap();
     let mut back = sent.clone();
     back[1] = 0xFA;
-    back[5] = 1;
     assert!(record_matches(&sent, &back));
+}
+
+/// Byte 5 is STORED, not device-owned: measured 2026-11-01 on the knob,
+/// `03 fd 14 01 01 <b5> 01 00 00 17` sent with b5 = 02, 00, 04, 01 read back
+/// with exactly that byte each time (VENDOR_UI_MAP, "Byte 5 is stored as
+/// written"). A slot holding a different byte 5 holds a different record,
+/// so the comparison must see it.
+#[test]
+fn a_readback_differing_only_in_byte_5_is_rejected() {
+    let sent = build_packet(7, 0, &[kb("cmd-x"), kb("cmd-z")]).unwrap();
+    let mut back = sent.clone();
+    back[1] = 0xFA;
+    back[5] = 1;
+    assert!(!record_matches(&sent, &back));
 }
 
 /// Every byte that carries the binding must be able to break the match,
@@ -205,7 +219,7 @@ fn a_readback_of_what_was_written_matches() {
 fn a_readback_differing_in_any_binding_byte_is_rejected() {
     let sent = build_packet(7, 0, &[kb("a"), kb("b")]).unwrap();
     let end = FD_HEADER_LEN + 2 * FD_ENTRY_LEN;
-    for i in (2..5).chain(6..end).chain(std::iter::once(0)) {
+    for i in (2..end).chain(std::iter::once(0)) {
         let mut bad = sent.clone();
         bad[1] = 0xFA;
         bad[i] = bad[i].wrapping_add(1);

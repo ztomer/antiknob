@@ -550,7 +550,8 @@ entry for the keycode. No new vocabulary is needed.
 * **`Ctrl+Alt+` combo buttons** in the `Ctrl Shift Alt` category did not
   assign either, while the single modifiers in the same panel do.
 * **Byte 5.** Mostly `00`; `01` when appending to an existing binding, `04`
-  for `Like`. Not decoded, and nothing built here depends on it.
+  for `Like`. Not decoded. Stored as written (measured 2026-11-01), so the
+  read-back comparison checks it.
 * **Layer.** Every packet observed used layer `01`. The vendor UI exposes no
   layer switch for this device.
 * **Mode 3 ("ripple").** Still the one LED mode whose behaviour is taken
@@ -567,7 +568,7 @@ Written with `antiknob raw` and read back off the device:
 Both echoed byte for byte. So the format is not merely observed in the
 vendor's traffic, it is one this repo can produce.
 
-### A write does NOT clear entries past `len`
+### A write does NOT clear entries past `len` -- for MEDIA records
 
 Restoring a one-action binding over a three-action one left the third entry's
 value in place, and a zero-filled 64-byte write did not remove it either --
@@ -576,11 +577,38 @@ needs an explicit long write (`kind 01`, `len 18`, zero entries) BEFORE the
 short one. Harmless in practice, because `len` bounds what the firmware
 reads, but it means a slot dump can show bytes that no longer mean anything.
 
-### Byte 5 is device-owned
+**Re-measured 2026-11-01, and it depends on the kind.** Key 2, device layer `01`, an
+11-entry keyboard chain written first, then a short record with NO wipe,
+read back with `read-slots --full`:
 
-It read `01` on every slot at session start and `00` after this work,
-regardless of whether the last write was `0xFE` or `0xFD` and regardless of
-what value was sent in that position. Nothing here writes or reads it.
+    kind 01, len 1/2/3/4 over len 11 -> tail beyond len reads all zero
+    kind 02 (mute) over len 11       -> 03 fa 02 01 02 00 02 00 00 e2 00 00
+                                        00 00 00 f3 00 00 6b 00 00 04 ...
+                                        (old entries 3-11 still there)
+
+So the firmware rewrites a keyboard record whole and a media record only
+up to its `len`. The wipe `upload` sends (`fd::wipes_for`) is what clears
+the media case -- measured, see "2026-11-01 wired session" below.
+
+### Byte 5 is stored as written (corrected 2026-11-01)
+
+This section used to say byte 5 is device-owned: it read `01` on every slot
+at that session's start and `00` after it, "regardless of what value was
+sent". Measured directly on 2026-11-01 (USB-C, firmware as shipped), that is
+wrong. One slot, key 20 on device layer `01`, written with `antiknob raw` and committed,
+then read back with `read-slots --full`:
+
+    sent 03 fd 14 01 01 02 01 00 00 17   -> read 03 fa 14 01 01 02 01 00 00 17
+    sent 03 fd 14 01 01 00 01 00 00 17   -> read 03 fa 14 01 01 00 01 00 00 17
+    sent 03 fd 14 01 01 04 01 00 00 17   -> read 03 fa 14 01 01 04 01 00 00 17
+    sent 03 fd 14 01 01 01 01 00 00 17   -> read 03 fa 14 01 01 01 01 00 00 17
+
+Every value came back as sent (the slot was left at its factory `01`). The
+earlier "always 00 afterwards" is what this repo's own writer produces,
+since it writes `00` there. So `fd::record_matches` now compares byte 5
+too; skipping it let a slot holding a different record confirm. What byte
+5 MEANS (the vendor writes `01` when appending, `04` for `Like`) is still
+not decoded.
 
 ## Device restored
 
@@ -644,8 +672,9 @@ Two facts about editing this document, both learned by being wrong first:
   holds no capture of a CH57x.
 * **Byte 5 of a chained record.** The factory frame
   `03 fd 06 01 02 01 04 00 00 b5` shows `01` where this repo writes `00`. The
-  frame is pinned in the fixture so it cannot be lost, but "is byte 5 an index"
-  is still open, exactly as the section above says.
+  frame is pinned in the fixture so it cannot be lost. Storage is measured
+  (byte 5 is kept as written, 2026-11-01); its MEANING ("is byte 5 an index")
+  is still open and needs a vendor-app capture.
 * **Mode 3's behaviour.** Taken from kriomant/ch57x-keyboard-tool#173, not
   watched here. Unchanged by this work.
 * **The frame at line 137**, written with `...` and so not a complete frame to
@@ -669,3 +698,45 @@ that gap**; every one is transcribed from this file. A fresh capture on wired
 hardware would be strictly better and is the obvious next thing to do with the
 device plugged in — `tools/hidsnoop/snoop-vendor-app.sh` plus the method at the
 top of this document, then add the frames to the fixture.
+
+## 2026-11-01 wired session (PLAN S.8, H.1, H.2)
+
+Knob on USB-C (`514c:8850`, `antiknob status --json`: transport `usb`,
+"Wired (USB Bus Powered)"); the 2.4G receiver was plugged in too. The full
+table was saved first (`read-slots --full`, 75 records, 33 configured) and
+the session ended with a read-back identical to it, byte for byte. Layers
+here are the device's (`01` is the CLI's `--layer 0`).
+
+**S.8, `bind-seq` reads the whole table back.** Same-content writes, each
+confirmed by the burst read-back: key 2 layer 1 (`ctrl-alt-shift-f16`),
+key 7 layer 1 (`g`, the factory placeholder) and key 20 layer 1 (`t`) --
+the last two past the six-wide layout the old walk was sized to.
+
+**H.1, K.1 confirmed.** Positive control first: the installed daemon was
+v0.15.1, which predates K.1 and S.4, and over the socket `get_knob_mode`
+answered `"mode":"standalone","slots_read":18` on a knob carrying the slot
+chords on every layer. After `./install.sh` (v0.15.1-31) and a fresh
+`antiknob bind-slots` (15 slots), the socket and `antiknob mcp`
+(`tools/call get_knob_mode`) both answered `"mode":"host-translate",
+"host_layers_can_fire":true,"slots_read":75`.
+
+**H.1, the `upload` wipes.** Layer 1 only (`upload --layer 0`), CCW =
+`ctrl-alt-shift-f16 a b c d e f g` (11 entries), read back `len 0b` with
+the tail present. Then CCW = `mute` over it: `03 fa 02 01 02 00 02 00 00
+e2` and zeros after -- clean. Positive control, the same media record
+written over the same long one with `raw` and no wipe: entries 3-11
+stranded (see "A write does NOT clear entries past `len`"). For a keyboard
+record the control is blind -- the firmware clears the tail itself -- so a
+clean keyboard read-back after upload proves nothing about the wipe; the
+media one does. Then CCW = `ctrl-alt-shift-f16` again: `len 04`, clean.
+
+**H.2, the shift-less chords are stored.** `bind-seq` wrote
+`ctrl-alt-f16`..`f20` to keys 2-6 on layer 1; each read back
+`03 fa 0N 01 01 00 03 00 00 f1 00 00 f3 ...` (two modifiers, the key) and
+confirmed. The daemon was ready (`tap_active:true`, no `tap_error`). Not
+measured: whether the gestures FIRE and whether another app reacts -- that
+needs a person turning the knob. `get_knob_mode` still said
+`host-translate` with layer 1 carrying chords the daemon does not listen
+for: `device::mode::classify` counts a chord on ANY layer, and
+`device_binding` is read from `host.json`, not from the device. The slots
+were then put back with `bind-slots`.

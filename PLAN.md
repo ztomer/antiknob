@@ -132,29 +132,55 @@ Goal: every question that only the device can answer, batched into one
 sitting. Exit: each item below has a recorded measurement in VENDOR_UI_MAP
 (positive control included) or a stated reason it could not be taken.
 
-* **H.1 Confirm K.1 on the knob:** after `bind-slots`, `get_knob_mode`
-  (MCP / socket) and the GUI report host-translate. Also confirm the
-  `upload` wipes (`fd::wipes_for`, new for keyboard and media slots): flash a
-  long sequence, then a short one over it, and read the slot back.
+* **H.1** done 2026-11-01 (VENDOR_UI_MAP, "2026-11-01 wired session"):
+  socket and MCP `get_knob_mode` report `host-translate` / 75 slots after
+  `bind-slots` (control: the v0.15.1 daemon said `standalone` / 18). The
+  `upload` wipe clears a media record written over an 11-entry chain; the
+  no-wipe control strands the tail. A keyboard record clears itself, so the
+  wipe is only observable for media. Byte 5 measured stored-as-written, so
+  `record_matches` now compares it. *Left for a person:* look at the GUI's
+  mode line (it reads the same socket answer).
 * **H.2 Do the chords need shift?** They moved to `ctrl-alt-shift` when
   `ctrl-alt-F18..F20` seemed to collide with another app; the collision was
-  probably the since-fixed modifier-inheritance bug. One flash of
-  `ctrl-alt-F16..F20` settles it. *Acceptance:* daemon FIRED lines for all
-  five gestures and no other app reacting, then a ruling recorded here.
-  Changing the chord touches `SLOT_SPECS`, `host::gesture::SLOT_MODS` and
-  their pinning tests together.
+  probably the since-fixed modifier-inheritance bug. *Measured 2026-11-01:*
+  `ctrl-alt-F16..F20` flash and read back on keys 2-6; daemon tap active.
+  *Left for a person:* the gestures themselves. *Acceptance:* daemon FIRED
+  lines for all five gestures and no other app reacting, then a ruling
+  recorded here. Changing the chord touches `SLOT_SPECS`,
+  `host::gesture::SLOT_MODS` and their pinning tests together.
 * **H.3 Fresh wired capture** with `tools/hidsnoop/snoop-vendor-app.sh`,
   frames added to `tests/fixtures/vendor_capture.json` (no invented frames).
   Targets, by value: mouse under `0xFD` (only buttons at byte 12 and wheel at
   byte 21 measured; `fd::build_packet` refuses mouse until then, so no mouse
-  step in a sequence), byte 5 of a chained record (factory frame shows `01`
-  where we write `00`), why swipes and the `Ctrl+Alt+` combo buttons never
-  assign in the vendor UI.
+  step in a sequence), what byte 5 MEANS (its storage is measured: kept as
+  written), why swipes and the `Ctrl+Alt+` combo buttons never assign in the
+  vendor UI. Needs a person driving the vendor app.
 * **H.4 LED:** watch mode 3 ("ripple", still taken from
   kriomant/ch57x-keyboard-tool#173) and whether a mode stored on device
   layers 3-15 ever renders (FIRMWARE_REVIEW #7; storage measured, render
   not). If they never render, cap `SET_LED_LAYER_MAX` at the firmware's
-  three layers.
+  three layers. Needs eyes on the LED.
+* **S.9 `get_knob_mode` is not per-layer.** Found in H.2: with layer 0
+  carrying `ctrl-alt-F16..F20` (chords the daemon does not listen for) it
+  still said `host-translate` and "All 3 device layers send the slot
+  chords" -- `device::mode::classify` counts a chord on ANY layer and
+  `device_binding` comes from `host.json`, not the device. *Acceptance:* the
+  mode and the binding summary are read per layer from the table and name
+  a layer whose chords are not `SLOT_SPECS`.
+
+**Person-only checklist (knob on USB-C, daemon running):**
+
+1. H.2: `for i in 2 3 4 5 6; do antiknob bind-seq --key $i ctrl-alt-f$((14+i)); done`,
+   then perform CCW, press, CW, hold+twist L, hold+twist R; watch the daemon
+   log for five FIRED lines and every other app for a reaction. Restore with
+   `antiknob bind-slots`.
+2. H.1: open Antiknob.app and check its knob-mode line reads host-translate.
+3. H.3: run `tools/hidsnoop/snoop-vendor-app.sh`, assign in the vendor app a
+   mouse action, an appended action (byte 5 = 01), a swipe and a `Ctrl+Alt+`
+   combo; add the captured frames to the fixture.
+4. H.4: `antiknob led 0 ripple` and watch; store a mode on layers 3-15 the
+   way FIRMWARE_REVIEW #7 did (`led` takes 0-2), switch to them, and record
+   whether anything renders.
 
 ### Phase 3 -- design and hardware we do not have -- parked
 

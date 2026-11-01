@@ -22,7 +22,7 @@ use std::time::Duration;
 
 /// Capacities, timeouts, and paths live in the policy map; the server
 /// that enforces them lives here.
-pub use crate::policy::{MAX_CONCURRENT_CLIENTS, MAX_REQUEST_SIZE, TMP_SOCKET_PATH};
+pub use crate::policy::{MAX_CONCURRENT_CLIENTS, MAX_REQUEST_SIZE};
 
 /// Active concurrent clients tracking counter.
 static ACTIVE_CLIENTS: AtomicUsize = AtomicUsize::new(0);
@@ -59,9 +59,12 @@ pub struct SocketServer {
 
 impl SocketServer {
     pub fn start(socket_path: PathBuf, ctx: ApiContext) -> Result<Self> {
-        // Clean up any stale socket files from prior runs
+        // Clean up a stale socket file from a prior run. Only this server's
+        // OWN path: the `/tmp` discovery symlink this used to manage was one
+        // global path every server shared, so each test server deleted the
+        // real daemon's link on start and on drop, and `install.sh`, which
+        // asked the link, then reported a running daemon as not running.
         let _ = std::fs::remove_file(&socket_path);
-        let _ = std::fs::remove_file(TMP_SOCKET_PATH);
 
         let listener = UnixListener::bind(&socket_path)
             .with_context(|| format!("Failed to bind Unix socket at {}", socket_path.display()))?;
@@ -71,10 +74,6 @@ impl SocketServer {
             &socket_path,
             std::fs::Permissions::from_mode(SOCKET_FILE_MODE),
         );
-
-        // Create /tmp symlink for easy client discovery
-        #[cfg(unix)]
-        let _ = std::os::unix::fs::symlink(&socket_path, TMP_SOCKET_PATH);
 
         let running = Arc::new(AtomicBool::new(true));
         let running_clone = running.clone();
@@ -135,7 +134,6 @@ impl SocketServer {
                 }
             }
             let _ = std::fs::remove_file(&path_clone);
-            let _ = std::fs::remove_file(TMP_SOCKET_PATH);
         });
 
         Ok(Self {
@@ -157,7 +155,6 @@ impl Drop for SocketServer {
             let _ = h.join();
         }
         let _ = std::fs::remove_file(&self.socket_path);
-        let _ = std::fs::remove_file(TMP_SOCKET_PATH);
     }
 }
 
@@ -299,6 +296,32 @@ pub fn process_json_rpc(ctx: &mut ApiContext, input: &str) -> Value {
                 "error": { "code": -32603, "message": format!("Internal error: {}", msg) }
             })
         }
+    }
+}
+
+/// What the daemon at `socket_path` says about its keyboard tap.
+///
+/// The question a shell asks after an install, answered from Rust so the
+/// socket path is resolved in one place (`default_socket_path`) rather than
+/// spelled again in `install.sh` -- which asked a `/tmp` symlink that was
+/// routinely absent and reported a running daemon as "not running". A
+/// daemon that does not answer is `answering: false` with the reason, never
+/// a tap reported as off.
+pub fn daemon_report(socket_path: &Path) -> Value {
+    match call_daemon_socket(socket_path, &Command::GetStatus {}) {
+        Ok(v) => json!({
+            "socket": socket_path,
+            "answering": true,
+            "tap_active": v.get("tap_active").cloned().unwrap_or(Value::Null),
+            "tap_error": v.get("tap_error").cloned().unwrap_or(Value::Null),
+            "tap_events_seen": v.get("tap_events_seen").cloned().unwrap_or(Value::Null),
+        }),
+        Err(e) => json!({
+            "socket": socket_path,
+            "answering": false,
+            "error": e.to_string(),
+            "tap_active": Value::Null,
+        }),
     }
 }
 

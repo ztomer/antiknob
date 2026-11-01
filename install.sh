@@ -59,7 +59,7 @@ if [[ -f "${DEST_DIR}/config.yaml" ]]; then
         info "Moved your layout to ${LAYOUT_DIR}/config.yaml"
     else
         rm -f "${DEST_DIR}/config.yaml"
-        echo "[ --- ] Removed the unused ${DEST_DIR}/config.yaml (yours is in ${LAYOUT_DIR})."
+        info "Removed the unused ${DEST_DIR}/config.yaml (yours is in ${LAYOUT_DIR})."
     fi
 fi
 
@@ -144,10 +144,10 @@ if [[ -d "${HOME}/.local/bin" ]]; then
 fi
 
 ok "Antiknob installed successfully to ${DEST_DIR}!"
-echo "        GUI App: ${APP_BUNDLE}"
-echo "        Daemon App: ${DAEMON_BUNDLE} (background service, no dock icon)"
-echo "        CLI tool: ${DEST_DIR}/bin/antiknob"
-echo "        Start at login with: ${DAEMON_EXE} --install-login-item"
+step "GUI App: ${APP_BUNDLE}"
+step "Daemon App: ${DAEMON_BUNDLE} (background service, no dock icon)"
+step "CLI tool: ${DEST_DIR}/bin/antiknob"
+step "Start at login with: ${DAEMON_EXE} --install-login-item"
 
 # The binary was just replaced under a daemon that is still running the old
 # one, so restart it. Without this the user keeps the previous build until
@@ -170,27 +170,49 @@ fi
 # success while the launchd-launched daemon still cannot tap -- silent in
 # exactly the case the warning exists for. The daemon's own status is the
 # only answer that is about the daemon.
-TAP_STATE="$(printf '{"jsonrpc":"2.0","id":1,"method":"get_status","params":{}}\n' \
-    | nc -U /tmp/antiknob.sock 2>/dev/null | head -1 || true)"
-case "${TAP_STATE}" in
-    *'"tap_active":true'*) ;;   # tapping fine, say nothing
-    "")
+#
+# Asked THROUGH THE CLI, which resolves the socket the daemon serves
+# (`api::default_socket_path`). This used to `nc` a /tmp symlink that was
+# routinely absent, and said "not running" about a daemon that was up.
+daemon_state() {
+    "${DEST_DIR}/bin/antiknob" status --json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin).get("daemon", {})
+except ValueError:
+    print("unknown"); sys.exit()
+if not d.get("answering"):
+    print("down")
+elif d.get("tap_active") is True:
+    print("tap")
+else:
+    print("refused")' || echo unknown
+}
+# The login item was just restarted; give it a few seconds to bind.
+STATE="down"
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+    STATE="$(daemon_state)"
+    [[ "${STATE}" == "down" ]] || break
+    sleep 1
+done
+case "${STATE}" in
+    tap) ok "Daemon is running and its keyboard tap is active." ;;
+    down)
         # No answer at all is a different problem from a refused tap, and
         # telling the user to go and flip a switch would send them to fix
         # something that is not broken.
-        echo
-        echo "[ --- ] The daemon is not running. Start it at login with:"
-        echo "          ${DAEMON_EXE} --install-login-item"
+        info "The daemon is not running. Start it at login with:"
+        step "${DAEMON_EXE} --install-login-item"
         ;;
-    *)
-        echo
-        echo "[ --- ] Knob gestures stay off until macOS lets AntiknobDaemon read the keyboard:"
-        echo "        System Settings > Privacy & Security > Accessibility → switch on AntiknobDaemon"
-        echo "        Not listed? Click +, then add ${DAEMON_BUNDLE}"
+    refused)
+        warn "Knob gestures stay off until macOS lets AntiknobDaemon read the keyboard:"
+        step "System Settings > Privacy & Security > Accessibility → switch on AntiknobDaemon"
+        step "Not listed? Click +, then add ${DAEMON_BUNDLE}"
         if [[ "${SIGN_ID}" == "-" ]]; then
-            echo "        (Ad-hoc signed: macOS reads each reinstall as a new program, so an"
-            echo "        already-granted switch must be toggled off and on again. Run"
-            echo "        ./tools/make_signing_cert.sh once to stop that.)"
+            step "Ad-hoc signed: macOS reads each reinstall as a new program, so an"
+            step "already-granted switch must be toggled off and on again. Run"
+            step "./tools/make_signing_cert.sh once to stop that."
         fi
         ;;
+    *) warn "Could not read the daemon's status: ${DEST_DIR}/bin/antiknob status --json gave no answer." ;;
 esac

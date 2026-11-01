@@ -1,5 +1,5 @@
 // SocketClient.swift — Unix domain socket JSON-RPC client for antiknob-daemon.
-// Connects to /tmp/antiknob.sock and communicates with the single source of truth.
+// Connects to the daemon's Application Support socket (`AppConstants.Socket`).
 // Provides graceful fallback to local host.json when daemon is offline.
 
 import Foundation
@@ -27,7 +27,7 @@ enum SocketError: LocalizedError {
 /// The JSON-RPC wire format, with no socket attached.
 ///
 /// `SocketClient` is 250 lines that a unit test could not reach, because every
-/// path ran through a live `/tmp/antiknob.sock`. The framing and the parsing
+/// path ran through a live daemon socket. The framing and the parsing
 /// are pure functions of their inputs, though, and they are where the format
 /// bugs live -- a mis-shaped request or an error reply read as a result is
 /// silent, and only shows up as the UI quietly doing nothing. Splitting them
@@ -117,18 +117,15 @@ final class SocketClient: @unchecked Sendable {
 
     /// Where the daemon's socket can be, in the order this client tries.
     ///
-    /// `/tmp/antiknob.sock` is a convenience SYMLINK the daemon creates when
-    /// it can; the real socket lives in Application Support. Three panes
-    /// used to print the /tmp path as fact -- "Socket Path: /tmp/antiknob.sock",
-    /// "Connected (/tmp/antiknob.sock)" -- on a machine where that symlink
-    /// does not exist and every call was going to the fallback. A path the
-    /// app prints should be the path the app used.
+    /// The daemon serves ONE socket, in Application Support. It used to add
+    /// a `/tmp` symlink as well, and this tried that first; the link was
+    /// routinely missing (every test server deleted the shared global path),
+    /// and three panes printed it as fact on machines where it did not
+    /// exist. The link is gone, and a path the app prints is the path the
+    /// app used.
     private var candidatePaths: [String] {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return [
-            AppConstants.Socket.tmpPath,
-            "\(home)/\(AppConstants.Socket.appSupportSubpath)"
-        ]
+        return ["\(home)/\(AppConstants.Socket.appSupportSubpath)"]
     }
 
     /// The path the last successful call went to, or nil if none has

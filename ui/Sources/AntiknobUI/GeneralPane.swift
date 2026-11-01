@@ -34,10 +34,9 @@ struct GeneralPane: View {
                 }
 
                 StatusRow(
-                    // The socket in use. This printed `/tmp/antiknob.sock`
-                    // as a constant; that path is a symlink the daemon
-                    // creates when it can, and on a machine without it every
-                    // call was going somewhere else entirely.
+                    // The socket in use. This printed the daemon's old /tmp
+                    // symlink as a constant, and on a machine without that
+                    // link every call was going somewhere else entirely.
                     label: "Daemon Socket",
                     value: store.daemonConnected
                         ? "Connected (\(store.socketPath ?? "path unknown"))"

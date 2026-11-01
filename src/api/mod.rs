@@ -11,7 +11,7 @@ mod virtual_layer_tests;
 
 pub use dispatch::{execute_command, ApiContext, TapHealth};
 pub use mcp::{run_mcp_server, AntiknobMcp, McpOptions};
-pub use socket::{call_daemon_socket, default_socket_path, SocketServer, TMP_SOCKET_PATH};
+pub use socket::{call_daemon_socket, daemon_report, default_socket_path, SocketServer};
 pub use types::{all_tools, led_mode_name, Command, ToolDef};
 
 #[cfg(test)]
@@ -46,6 +46,28 @@ mod tests {
         assert_eq!(val["params"]["layer"], 1);
         assert_eq!(val["params"]["mode"], "backlight");
         assert_eq!(val["params"]["color"], "cyan");
+    }
+
+    /// The installer's question, both ways: a socket nobody serves is
+    /// "not answering" (never "tap off"), and a live server answers with
+    /// its tap state -- off here, since a test server has no engine.
+    #[test]
+    fn the_daemon_report_tells_not_running_from_tap_off() {
+        let dir = std::env::temp_dir().join(format!("antiknob_report_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let sock = dir.join("d.sock");
+        let down = daemon_report(&sock);
+        assert_eq!(down["answering"], false, "{down}");
+        assert!(down["tap_active"].is_null(), "{down}");
+
+        let server =
+            SocketServer::start(sock.clone(), ApiContext::new(dir.join("h.json"), None)).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let up = daemon_report(&sock);
+        assert_eq!(up["answering"], true, "{up}");
+        assert_eq!(up["tap_active"], false, "{up}");
+        drop(server);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

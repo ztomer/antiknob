@@ -13,16 +13,22 @@ pub fn run_status(json: bool) -> Result<()> {
     let connected = !devices.is_empty();
     let primary = device::primary_transport(&devices);
     let power = api::types::PowerStatus::current(&devices);
+    // The daemon is asked at the socket it serves, resolved here and not
+    // spelled by any caller (`install.sh` reads this instead of guessing).
+    let daemon = api::daemon_report(&api::default_socket_path()?);
     if json {
         let out = serde_json::json!({
             "connected": connected,
             "transport": primary.map(|t| t.as_str()).unwrap_or("disconnected"),
             "power": power,
             "devices": devices,
+            "tap_active": daemon["tap_active"],
+            "daemon": daemon,
         });
         println!("{}", serde_json::to_string_pretty(&out)?);
         return Ok(());
     }
+    print_daemon(&daemon);
     goh_tui::outln!("{START} Scanning for Anticater / CH57x devices...");
 
     if devices.is_empty() {
@@ -59,6 +65,26 @@ pub fn run_status(json: bool) -> Result<()> {
     }
     Ok(())
 }
+/// One line on the daemon: answering or not, and whether its tap is up.
+fn print_daemon(daemon: &serde_json::Value) {
+    let socket = daemon["socket"].as_str().unwrap_or("?");
+    match (
+        daemon["answering"].as_bool(),
+        daemon["tap_active"].as_bool(),
+    ) {
+        (Some(true), Some(true)) => {
+            goh_tui::outln!("{OK} Daemon answering at {socket}; keyboard tap active.");
+        }
+        (Some(true), _) => {
+            goh_tui::outln!("{WARN} Daemon answering at {socket}, but its keyboard tap is off.");
+            if let Some(e) = daemon["tap_error"].as_str() {
+                println!("        {e}");
+            }
+        }
+        _ => goh_tui::outln!("{START} No daemon answering at {socket}."),
+    }
+}
+
 /// The layout file to act on: the explicit argument, else the one in
 /// Application Support, seeded from the packaged starter on first use.
 pub fn layout_path(explicit: Option<PathBuf>) -> Result<PathBuf> {

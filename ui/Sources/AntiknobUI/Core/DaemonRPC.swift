@@ -2,7 +2,7 @@
 //
 // `ConfigStore`'s one-shot commands used to reach `SocketClient.shared`
 // directly, so every success path and every failure path ran through a live
-// `/tmp/antiknob.sock`: nothing could exercise them, and the mapping from an
+// daemon socket: nothing could exercise them, and the mapping from an
 // RPC outcome to the message the user reads (`statusMessage`, the completion
 // result) was verified by nobody. The protocol is the seam: the socket
 // client conforms, a test supplies a hand-written fake, and a store built

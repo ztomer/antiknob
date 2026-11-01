@@ -61,9 +61,9 @@ struct ServicesPane: View {
                         .foregroundStyle(.secondary)
                         .gridColumnAlignment(.leading)
                     // The socket in use, not the one the app hopes is there.
-                    // /tmp/antiknob.sock is a convenience symlink the daemon
-                    // creates when it can, and this pane printed it as fact
-                    // on machines where it does not exist.
+                    // The daemon once added a /tmp convenience symlink, and
+                    // this pane printed it as fact on machines where it did
+                    // not exist; it is gone, and this names what answered.
                     Text(store.socketPath ?? "Not connected")
                         .font(.system(.body, design: .monospaced))
                         .foregroundStyle(store.socketPath == nil ? .secondary : .primary)

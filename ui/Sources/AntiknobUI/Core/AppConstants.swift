@@ -19,13 +19,12 @@ enum AppConstants {
         static let vendorUsagePage = 0xFF00
     }
 
-    /// Where the daemon lives. Sources of truth: `policy.rs`
-    /// (`TMP_SOCKET_PATH`) and the Application Support layout both sides
-    /// hard-code.
+    /// Where the daemon lives. Source of truth: `api::default_socket_path`
+    /// in `src/api/socket.rs`; this is the Swift side's one spelling of it
+    /// (`tests/socket_path_one_source.rs` holds both to that).
     enum Socket {
-        /// Convenience symlink the daemon creates when it can.
-        static let tmpPath = "/tmp/antiknob.sock"
-        /// The real socket, relative to home.
+        /// The daemon's socket, relative to home. There is no `/tmp`
+        /// symlink any more.
         static let appSupportSubpath = "Library/Application Support/antiknob/antiknob.sock"
         /// The host config, relative to home. Read when the daemon is down.
         static let hostConfigSubpath = "Library/Application Support/antiknob/host.json"

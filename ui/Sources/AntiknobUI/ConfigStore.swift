@@ -65,8 +65,8 @@ public final class ConfigStore: ObservableObject {
     @Published var knobKeyIds: [Int]?
     @Published var startOnLogin: Bool = false
     /// The socket path the last successful call actually went to. nil when
-    /// nothing has answered. Three panes printed `/tmp/antiknob.sock` as a
-    /// constant, on a machine where that symlink does not exist and every
+    /// nothing has answered. Three panes printed the old /tmp symlink as a
+    /// constant, on a machine where that symlink did not exist and every
     /// call was going to the Application Support socket instead.
     @Published var socketPath: String?
 

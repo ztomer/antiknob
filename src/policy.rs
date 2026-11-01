@@ -26,9 +26,6 @@ pub const MAX_REQUEST_SIZE: usize = 65_536;
 /// "Server busy" instead of stalling its accept loop.
 pub const MAX_CONCURRENT_CLIENTS: usize = 16;
 
-/// Convenience symlink to the real socket, for client discovery.
-pub const TMP_SOCKET_PATH: &str = "/tmp/antiknob.sock";
-
 /// File mode of the bound socket (user-only read/write).
 pub const SOCKET_FILE_MODE: u32 = 0o600;
 

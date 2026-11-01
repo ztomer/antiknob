@@ -409,7 +409,7 @@ struct ConfigStoreReadRPCTests: RPCSuite {
     @Test("a connected daemon's status is what the banner shows, and the socket in use is named")
     func statusFromTheDaemon() async {
         let rpc = FakeDaemonRPC()
-        rpc.path = "/tmp/antiknob.sock"
+        rpc.path = "/Users/me/Library/Application Support/antiknob/antiknob.sock"
         rpc.status = [
             "devices": [["product": "Anticater VK01"]],
             "transport": "usb",
@@ -424,6 +424,6 @@ struct ConfigStoreReadRPCTests: RPCSuite {
         #expect(s.transport == "usb")
         #expect(s.tapActive)
         #expect(s.activeLayerIdx == 1)
-        #expect(s.socketPath == "/tmp/antiknob.sock")
+        #expect(s.socketPath == "/Users/me/Library/Application Support/antiknob/antiknob.sock")
     }
 }

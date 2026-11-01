@@ -347,9 +347,6 @@ pub const SLOT_WALK_GAP_MS: u64 = 50;
 /// Settle after a flash before reading the table back to verify it.
 pub const SLOT_VERIFY_SETTLE_MS: u64 = 100;
 
-/// Gap between burst queries while reading the whole slot table.
-pub const SLOT_TABLE_READ_GAP_MS: u64 = 20;
-
 /// Settle after the slot-commit tail (`send_commit`).
 pub const COMMIT_SETTLE_MS: u64 = 50;
 

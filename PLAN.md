@@ -119,12 +119,12 @@ Software only. `tools/gate.sh --full` green at the push of this commit.
 
 ### Phase 1b -- sibling readers (software only) -- size S
 
-* **S.8 Per-slot walks left in the hardware tooling.** `bind-seq`'s
-  read-back (`binding.rs`) and the `probe-gestures` family (`probe.rs`, five
-  call sites) still call `read_slot_table` at a layout width, which cannot see
-  a key past it; `read_full_table` can. They write to the device, so the
-  change is exercised in the H.x session. *Acceptance:* no `read_slot_table`
-  caller outside `read-slots` (the exploratory walk), proven on the knob.
+* **S.8** done 2026-11-01: `bind-seq`'s read-back and all five
+  `probe-gestures` reads moved to `read_full_table`; `read_slot_table` and its
+  gap constant deleted, so the walk at a layout width cannot come back
+  (`no_source_walks_the_table_at_a_layout_width`). `bind-seq --width` and the
+  probe's width plumbing went with it. On the knob: `bind-seq` confirmed key 2
+  (inside the layout) and keys 7 and 20 (past it) by the full-table read-back.
 
 ### Phase 2 -- one wired hardware session -- size M, needs the knob on USB-C
 

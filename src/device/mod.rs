@@ -1,6 +1,6 @@
 use crate::firmware::{
-    TransportType, COMMIT_SETTLE_MS, REPORT_ID, REPORT_LEN, SLOT_COMMIT_PREFIX,
-    SLOT_TABLE_READ_GAP_MS, SUPPORTED_DEVICES, VENDOR_USAGE_PAGE,
+    TransportType, COMMIT_SETTLE_MS, REPORT_ID, REPORT_LEN, SLOT_COMMIT_PREFIX, SUPPORTED_DEVICES,
+    VENDOR_USAGE_PAGE,
 };
 use anyhow::{anyhow, Context, Result};
 use hidapi::HidApi;
@@ -253,19 +253,6 @@ pub fn slot_table_addresses(slots_per_layer: u8, layers: u8) -> Vec<(u8, u8)> {
     (1..=slots_per_layer.saturating_mul(layers))
         .map(|counter| (slots_per_layer, counter))
         .collect()
-}
-
-/// Read every slot on the device. Used to confirm a flash landed; a write on
-/// its own proves only that the packet was well-formed.
-pub fn read_slot_table(dev: &HidDevice, slots_per_layer: u8, layers: u8) -> Vec<Vec<u8>> {
-    let mut out = Vec::new();
-    for (group, counter) in slot_table_addresses(slots_per_layer, layers) {
-        if let Ok(bytes) = read_slot(dev, group, counter) {
-            out.push(bytes);
-        }
-        std::thread::sleep(std::time::Duration::from_millis(SLOT_TABLE_READ_GAP_MS));
-    }
-    out
 }
 
 /// Commit staged key writes, mirroring the vendor app's `HID_write`

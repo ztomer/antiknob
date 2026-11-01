@@ -64,3 +64,39 @@ fn verify_and_get_knob_mode_call_the_burst_read() {
         );
     }
 }
+
+/// S.8: the hardware tooling that writes and then reads back -- `bind-seq`
+/// and the `probe-gestures` family -- reads the whole table too. A walk at a
+/// layout width cannot see a key past it, so a probe marker or a bind-seq
+/// record above the width read back as missing. No file in `src/` may walk
+/// the table that way; `read-slots` keeps its exploratory per-slot walk
+/// through `read_slot`, which this does not forbid.
+#[test]
+fn no_source_walks_the_table_at_a_layout_width() {
+    let mut offenders = Vec::new();
+    let mut stack = vec![PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|e| e == "rs")
+                && std::fs::read_to_string(&path)
+                    .unwrap()
+                    .contains("read_slot_table(")
+            {
+                offenders.push(path.display().to_string());
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "per-slot walk still called in {offenders:?}"
+    );
+    for rel in ["src/bin/antiknob/binding.rs", "src/bin/antiknob/probe.rs"] {
+        assert!(
+            source(rel).contains("read_full_table"),
+            "{rel} no longer reads the whole table"
+        );
+    }
+}

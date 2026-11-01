@@ -38,7 +38,8 @@ fn generated_schemas_carry_required_params_and_omit_cli_only_ones() {
         .as_object()
         .expect("properties");
     assert!(props.contains_key("delay_ms"));
-    // `--dry-run` and `--width` are CLI conveniences, not part of the tool.
+    // `--dry-run` is a CLI convenience, not part of the tool. (`--width` was
+    // one too, until S.8 made the read-back the whole table.)
     assert!(
         !props.contains_key("dry_run"),
         "cli-only param leaked into MCP"

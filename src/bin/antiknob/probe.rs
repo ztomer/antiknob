@@ -17,7 +17,6 @@
 //! purpose is the thing being determined.
 
 use antiknob::device;
-use antiknob::firmware::DEVICE_LAYERS;
 use antiknob::host::gesture_probe::{self, ProbeSlot, Verdict};
 use goh_tui::{OK, START, WARN};
 
@@ -26,12 +25,10 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 /// Read every candidate slot's current contents so they can be put back.
-fn snapshot(slots: &[ProbeSlot], layer: u8, slots_per_layer: u8) -> Result<Vec<Vec<u8>>> {
+fn snapshot(slots: &[ProbeSlot], layer: u8) -> Result<Vec<Vec<u8>>> {
     let wanted: Vec<u8> = slots.iter().map(|s| s.key_id).collect();
-    let table = device::with_device(move |dev| {
-        Ok(device::read_slot_table(dev, slots_per_layer, DEVICE_LAYERS))
-    })
-    .context("cannot read the slot table; refusing to write to slots it cannot restore")?;
+    let table = device::with_device(|dev| Ok(device::read_full_table(dev)))
+        .context("cannot read the slot table; refusing to write to slots it cannot restore")?;
     Ok(table
         .into_iter()
         .filter(|r| {
@@ -76,10 +73,9 @@ pub fn run_map(keys: Vec<u8>, layer: u8, capture_secs: u64, devices: Vec<String>
     let in_use = gesture_probe::usages_in_use(&outside);
 
     let plan = gesture_probe::plan_avoiding(&keys, &in_use).map_err(|e| anyhow::anyhow!(e))?;
-    let width = keys.iter().copied().max().unwrap_or(6);
 
     goh_tui::outln!("{START} Reading the current contents of the candidate slots first...");
-    let before = snapshot(&plan, layer, width)?;
+    let before = snapshot(&plan, layer)?;
     println!("        {} slot(s) captured for restore.", before.len());
 
     let packets = gesture_probe::probe_packets(&plan, layer).map_err(|e| anyhow::anyhow!(e))?;
@@ -93,8 +89,7 @@ pub fn run_map(keys: Vec<u8>, layer: u8, capture_secs: u64, devices: Vec<String>
     })
     .context("could not arm the probe")?;
 
-    let check =
-        device::with_device(move |dev| Ok(device::read_slot_table(dev, width, DEVICE_LAYERS)))?;
+    let check = device::with_device(|dev| Ok(device::read_full_table(dev)))?;
     let verdicts = device::verify::verify(&packets, &check);
     let confirmed = verdicts
         .iter()
@@ -189,15 +184,12 @@ pub fn run(
     control: u8,
     candidates: Vec<u8>,
     layer: u8,
-    slots_per_layer: u8,
     capture_secs: u64,
     devices: Vec<String>,
 ) -> Result<()> {
     goh_tui::outln!("{START} Reading the device's own bindings so the markers cannot collide...");
-    let table = device::with_device(move |dev| {
-        Ok(device::read_slot_table(dev, slots_per_layer, DEVICE_LAYERS))
-    })
-    .context("cannot read the slot table; refusing to probe blind")?;
+    let table = device::with_device(|dev| Ok(device::read_full_table(dev)))
+        .context("cannot read the slot table; refusing to probe blind")?;
     let in_use = gesture_probe::usages_in_use(&table);
     println!(
         "        {} usage(s) this device already emits; markers avoid every one.",
@@ -209,7 +201,7 @@ pub fn run(
     let plan = probe.all();
 
     goh_tui::outln!("{START} Reading the current contents of the candidate slots first...");
-    let before = snapshot(&plan, layer, slots_per_layer)?;
+    let before = snapshot(&plan, layer)?;
     println!("        {} slot(s) captured for restore.", before.len());
 
     let packets = gesture_probe::probe_packets(&plan, layer).map_err(|e| anyhow::anyhow!(e))?;
@@ -225,9 +217,7 @@ pub fn run(
 
     // Confirm the markers actually landed. Without this a gesture that
     // produces nothing is ambiguous: unbound slot, or a write that missed?
-    let check = device::with_device(move |dev| {
-        Ok(device::read_slot_table(dev, slots_per_layer, DEVICE_LAYERS))
-    })?;
+    let check = device::with_device(|dev| Ok(device::read_full_table(dev)))?;
     let verdicts = device::verify::verify(&packets, &check);
     let confirmed = verdicts
         .iter()
@@ -335,7 +325,7 @@ fn restore(before: &[Vec<u8>]) {
             }
             device::send_commit(dev)
         }) {
-            Ok(()) => match confirm_restored(before, &packets) {
+            Ok(()) => match confirm_restored(&packets) {
                 Ok(()) => {
                     goh_tui::outln!("{OK} Candidate slots restored, and read back to confirm.");
                     return;
@@ -358,14 +348,8 @@ fn restore(before: &[Vec<u8>]) {
 /// has already learned is not the same as the slot changing -- and a probe
 /// that says "restored" without looking would leave the knob carrying probe
 /// markers while reporting that it does not.
-fn confirm_restored(before: &[Vec<u8>], packets: &[Vec<u8>]) -> Result<()> {
-    let width = before
-        .iter()
-        .filter_map(|r| device::verify::parse_record(r).map(|(a, _)| a.key_id))
-        .max()
-        .unwrap_or(DEVICE_LAYERS);
-    let table =
-        device::with_device(move |dev| Ok(device::read_slot_table(dev, width, DEVICE_LAYERS)))?;
+fn confirm_restored(packets: &[Vec<u8>]) -> Result<()> {
+    let table = device::with_device(|dev| Ok(device::read_full_table(dev)))?;
     let verdicts = device::verify::verify(packets, &table);
     match device::verify::summarize(&verdicts) {
         None => Ok(()),

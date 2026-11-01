@@ -166,7 +166,6 @@ pub const COMMANDS: &[CommandSpec] = &[
                 "Milliseconds before each step after the first",
             )
             .default("0"),
-            Param::opt("width", Kind::Int, "Width to read the table back at").only(On::CliOnly),
             Param::flag("dry_run", "Print the packet without writing").only(On::CliOnly),
             Param::req(
                 "actions",
@@ -277,7 +276,7 @@ pub const COMMANDS: &[CommandSpec] = &[
             Param::opt("layer", Kind::Int, "Device layer to probe on").default("0"),
             Param::opt("capture_secs", Kind::Int, "Seconds to capture for").default("45"),
             Param::opt("device", Kind::StrList, "Only watch these devices"),
-            Param::opt("config", Kind::Str, "Layout to read the layer width from"),
+            Param::opt("config", Kind::Str, "Layout to read the button count from"),
             Param::flag("map", "Map EVERY gesture at once across keys 1-6"),
         ],
         cli_as: None,

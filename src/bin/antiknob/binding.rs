@@ -145,7 +145,6 @@ pub fn run_bind_slots(
 pub fn run_bind_seq(
     key: u8,
     layer: u8,
-    width: Option<u8>,
     dry_run: bool,
     delay_ms: u16,
     actions: Vec<String>,
@@ -187,9 +186,6 @@ pub fn run_bind_seq(
         return Ok(());
     }
 
-    // The read-back has to be at least as wide as the key, or the counter
-    // addresses a slot on another layer entirely.
-    let width = width.unwrap_or(key).max(key);
     goh_tui::outln!("{START} Opening Anticater device via native IOHIDManager (no sudo)...");
     let want = device::verify::SlotAddr {
         key_id: key,
@@ -207,14 +203,12 @@ pub fn run_bind_seq(
         device::send_report(dev, &packet)?;
         sleep(Duration::from_millis(antiknob::firmware::SLOT_WRITE_GAP_MS));
         device::send_commit(dev)?;
-        // The table is walked, not addressed. A lone query for counter 7
-        // never answers, while the same query as step 7 of a walk from 1
-        // answers every time -- so the counter is a position in a sequence
-        // the firmware tracks, not a random-access index. Reading the whole
-        // table is what `upload --verify` already does for exactly this
-        // reason; a single-slot shortcut here would time out and report a
-        // write that landed as UNCONFIRMED.
-        Ok(device::read_slot_table(dev, width, DEVICE_LAYERS))
+        // Read the WHOLE table back, as `upload --verify` does. A lone
+        // per-slot query never answers (the counter is a position in a walk,
+        // not an index), and a walk at a layout width cannot see a key past
+        // it, so either shortcut would report a write that landed as
+        // UNCONFIRMED.
+        Ok(device::read_full_table(dev))
     })?;
     let readback = readback
         .into_iter()
@@ -229,8 +223,7 @@ pub fn run_bind_seq(
     println!("        read back: {} ...", hex.join(" "));
     if readback.is_empty() {
         anyhow::bail!(
-            "no record for key {} layer {} came back; widen the read with --width \
-             if the slot sits past this layout, otherwise the write is UNCONFIRMED",
+            "no record for key {} layer {} came back from the full table; the write is UNCONFIRMED",
             key,
             layer
         );

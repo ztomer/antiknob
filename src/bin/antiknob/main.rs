@@ -164,7 +164,6 @@ fn main() -> Result<()> {
         "bind_sequence" => binding::run_bind_seq(
             num::<u8>(m, "key")?,
             num::<u8>(m, "layer")?,
-            opt_num::<u8>(m, "width")?,
             flag(m, "dry_run"),
             num::<u16>(m, "delay_ms")?,
             strings(m, "actions"),
@@ -191,11 +190,6 @@ fn main() -> Result<()> {
             if flag(m, "map") {
                 return probe::run_map((1..=6).collect(), layer, capture_secs, devices);
             }
-            // Widen to the highest candidate so the read can address it: the
-            // device only walks a table as wide as it is told, and the
-            // candidates deliberately sit past the declared layout.
-            let width = cmds::layout_slots_per_layer(config.clone())?
-                .max(candidates.iter().copied().max().unwrap_or(0));
             // The knob's CCW slot follows the buttons, so it is the first
             // slot past them -- the same arithmetic `key_id_for_knob` does.
             let control = match opt_num::<u8>(m, "control")? {
@@ -207,7 +201,7 @@ fn main() -> Result<()> {
                 )
                 .context("knob slot out of range")?,
             };
-            probe::run(control, candidates, layer, width, capture_secs, devices)?
+            probe::run(control, candidates, layer, capture_secs, devices)?
         }
         "led_probe" => diag::run_led_probe(
             num::<u8>(m, "layer")?,

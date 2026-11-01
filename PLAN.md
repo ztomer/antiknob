@@ -181,8 +181,12 @@ sitting. Exit: each item below has a recorded measurement in VENDOR_UI_MAP
   call anywhere else is red (`tests/led_write_confirmed.rs`). `upload` and the
   daemon's keymap flash fail on an LED write that does not read back; the
   LED sync names one in the daemon log. Proven with the pure verdict
-  (`led_verdict`); not yet run live over USB-C (only the 2.4G receiver was
-  attached).
+  (`led_verdict`) and live 2026-11-01 on the wired VK01 (0x514c:0x8850,
+  serial EB60121120051103, build e6004e6): layer 0 green -> ripple -> green,
+  each write read back as sent; a layer-3 write reads back. The mismatch path
+  is proven only on simulated answers. Layers past the three read 0 (8, 15)
+  or 16 (4), a code no mode name maps: H.4's render question stands.
+  `antiknob knob-mode` live: host-translate on all 3 device layers.
 * **S.12 done**: `antiknob knob-mode` reports the per-layer mode through the
   same dispatch as MCP `get_knob_mode`; the false registry note is gone.
   `Arrangement::describe` names every layer of a bound subset of 2+

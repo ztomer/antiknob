@@ -1,0 +1,162 @@
+{
+ "_comment": [
+  "STATIC-DERIVED records: NOT captures. Each one is what ANTICATER.app's own packet",
+  "builder (x86_64 Mach-O, Qt 5.12.9) writes into its PHY2_KEY_Value record table, read from the",
+  "disassembly; HID_write @0x10003dea0 sends that record as-is after report id 03. Key 02 and",
+  "device layer 01 are fixed for every entry (the builders take both from the selected gesture).",
+  "Delay bytes are 00: on_CleanButton_clicked @0x100043850 zeroes bytes 5..61 before a mouse",
+  "action, and the delay page (onSpinBoxValueChanged @0x100044100) can rewrite them at save time.",
+  "Kept apart from vendor_capture.json on purpose: nothing here was seen on the wire, and the",
+  "two sources must never be mixed. `reproduce` names the antiknob action whose 0xFD record must",
+  "equal the frame; null means antiknob has no action for it (decode-only)."
+ ],
+ "records": [
+  {
+   "id": "mouse-left",
+   "hex": "03fd0201030104000000000001",
+   "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'a' @0x10004783c",
+   "establishes": "mouse-report action: kind 03 (mouse tab, on_tabWidget_currentChanged @0x10004510f), byte 5 = 01, len = 04 (tail @0x100047f86); modifier entry at byte 9, buttons at byte 12, wheel at byte 21",
+   "reproduce": "click"
+  },
+  {
+   "id": "mouse-middle",
+   "hex": "03fd0201030104000000000004",
+   "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'b' @0x100047c21",
+   "establishes": "mouse-report action: kind 03 (mouse tab, on_tabWidget_currentChanged @0x10004510f), byte 5 = 01, len = 04 (tail @0x100047f86); modifier entry at byte 9, buttons at byte 12, wheel at byte 21",
+   "reproduce": "mclick"
+  },
+  {
+   "id": "mouse-right",
+   "hex": "03fd0201030104000000000002",
+   "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'c' @0x100047c59",
+   "establishes": "mouse-report action: kind 03 (mouse tab, on_tabWidget_currentChanged @0x10004510f), byte 5 = 01, len = 04 (tail @0x100047f86); modifier entry at byte 9, buttons at byte 12, wheel at byte 21",
+   "reproduce": "rclick"
+  },
+  {
+   "id": "mouse-wheel-up",
+   "hex": "03fd0201030104000000000000000000000000000001",
+   "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'd' @0x100047c91",
+   "establishes": "mouse-report action: kind 03 (mouse tab, on_tabWidget_currentChanged @0x10004510f), byte 5 = 01, len = 04 (tail @0x100047f86); modifier entry at byte 9, buttons at byte 12, wheel at byte 21",
+   "reproduce": "wheelup"
+  },
+  {
+   "id": "mouse-wheel-down",
+   "hex": "03fd02010301040000000000000000000000000000ff",
+   "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'e' @0x100047cbf",
+   "establishes": "mouse-report action: kind 03 (mouse tab, on_tabWidget_currentChanged @0x10004510f), byte 5 = 01, len = 04 (tail @0x100047f86); modifier entry at byte 9, buttons at byte 12, wheel at byte 21",
+   "reproduce": "wheeldown"
+  },
+  {
+   "id": "ctrl-wheel-up",
+   "hex": "03fd02010301040000f1000000000000000000000001",
+   "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'f' @0x100047ced",
+   "establishes": "mouse-report action: kind 03 (mouse tab, on_tabWidget_currentChanged @0x10004510f), byte 5 = 01, len = 04 (tail @0x100047f86); modifier entry at byte 9, buttons at byte 12, wheel at byte 21",
+   "reproduce": null
+  },
+  {
+   "id": "ctrl-wheel-down",
+   "hex": "03fd02010301040000f10000000000000000000000ff",
+   "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'g' @0x100047d20",
+   "establishes": "mouse-report action: kind 03 (mouse tab, on_tabWidget_currentChanged @0x10004510f), byte 5 = 01, len = 04 (tail @0x100047f86); modifier entry at byte 9, buttons at byte 12, wheel at byte 21",
+   "reproduce": null
+  },
+  {
+   "id": "shift-wheel-up",
+   "hex": "03fd02010301040000f2000000000000000000000001",
+   "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'h' @0x100047d53",
+   "establishes": "mouse-report action: kind 03 (mouse tab, on_tabWidget_currentChanged @0x10004510f), byte 5 = 01, len = 04 (tail @0x100047f86); modifier entry at byte 9, buttons at byte 12, wheel at byte 21",
+   "reproduce": null
+  },
+  {
+   "id": "shift-wheel-down",
+   "hex": "03fd02010301040000f20000000000000000000000ff",
+   "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'i' @0x100047d83",
+   "establishes": "mouse-report action: kind 03 (mouse tab, on_tabWidget_currentChanged @0x10004510f), byte 5 = 01, len = 04 (tail @0x100047f86); modifier entry at byte 9, buttons at byte 12, wheel at byte 21",
+   "reproduce": null
+  },
+  {
+   "id": "alt-wheel-up",
+   "hex": "03fd02010301040000f3000000000000000000000001",
+   "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'j' @0x100047db3",
+   "establishes": "mouse-report action: kind 03 (mouse tab, on_tabWidget_currentChanged @0x10004510f), byte 5 = 01, len = 04 (tail @0x100047f86); modifier entry at byte 9, buttons at byte 12, wheel at byte 21",
+   "reproduce": null
+  },
+  {
+   "id": "alt-wheel-down",
+   "hex": "03fd02010301040000f30000000000000000000000ff",
+   "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'k' @0x100047df0",
+   "establishes": "mouse-report action: kind 03 (mouse tab, on_tabWidget_currentChanged @0x10004510f), byte 5 = 01, len = 04 (tail @0x100047f86); modifier entry at byte 9, buttons at byte 12, wheel at byte 21",
+   "reproduce": null
+  },
+  {
+   "id": "like",
+   "hex": "03fd0201030404000005",
+   "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'p' @0x100047f2a",
+   "establishes": "touch-gesture action: byte 5 = 04, byte 9 = gesture (1 left, 2 right, 3 up, 4 down, 5 like); Like is also measured on the wire (VENDOR_UI_MAP 'Mouse')",
+   "reproduce": null
+  },
+  {
+   "id": "swipe-left",
+   "hex": "03fd0201030404000001",
+   "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'l' @0x100047e2d",
+   "establishes": "touch-gesture action: byte 5 = 04, byte 9 = gesture (1 left, 2 right, 3 up, 4 down, 5 like); Like is also measured on the wire (VENDOR_UI_MAP 'Mouse')",
+   "reproduce": null
+  },
+  {
+   "id": "swipe-right",
+   "hex": "03fd0201030404000002",
+   "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'm' @0x100047e97",
+   "establishes": "touch-gesture action: byte 5 = 04, byte 9 = gesture (1 left, 2 right, 3 up, 4 down, 5 like); Like is also measured on the wire (VENDOR_UI_MAP 'Mouse')",
+   "reproduce": null
+  },
+  {
+   "id": "swipe-up",
+   "hex": "03fd0201030404000003",
+   "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'n' @0x100047eca",
+   "establishes": "touch-gesture action: byte 5 = 04, byte 9 = gesture (1 left, 2 right, 3 up, 4 down, 5 like); Like is also measured on the wire (VENDOR_UI_MAP 'Mouse')",
+   "reproduce": null
+  },
+  {
+   "id": "swipe-down",
+   "hex": "03fd0201030404000004",
+   "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'o' @0x100047efa",
+   "establishes": "touch-gesture action: byte 5 = 04, byte 9 = gesture (1 left, 2 right, 3 up, 4 down, 5 like); Like is also measured on the wire (VENDOR_UI_MAP 'Mouse')",
+   "reproduce": null
+  },
+  {
+   "id": "combo-ctrl-alt",
+   "hex": "03fd02010100020000f10000f3",
+   "source": "static: Widget::SetFunKey(int) @0x100046eb0, jump table @0x100047228, code 0x05 @0x10004701e (on an empty record: len 0)",
+   "establishes": "modifier combo 0x05 appended at the record's current len as 2 entries; len advances by 2",
+   "reproduce": null
+  },
+  {
+   "id": "combo-ctrl-shift",
+   "hex": "03fd02010100020000f10000f2",
+   "source": "static: Widget::SetFunKey(int) @0x100046eb0, jump table @0x100047228, code 0x03 @0x100046ff9 (on an empty record: len 0)",
+   "establishes": "modifier combo 0x03 appended at the record's current len as 2 entries; len advances by 2",
+   "reproduce": null
+  },
+  {
+   "id": "combo-ctrl-shift-alt",
+   "hex": "03fd02010100020000f10000f20000f3",
+   "source": "static: Widget::SetFunKey(int) @0x100046eb0, jump table @0x100047228, code 0x07 @0x100047056 (on an empty record: len 0)",
+   "establishes": "modifier combo 0x07 appended at the record's current len as 3 entries; len advances by 2 -- one entry FEWER than written (vendor defect: the last modifier sits past len)",
+   "reproduce": null
+  },
+  {
+   "id": "combo-ctrl-alt-win",
+   "hex": "03fd02010100020000f10000f30000f4",
+   "source": "static: Widget::SetFunKey(int) @0x100046eb0, jump table @0x100047228, code 0x0d @0x1000470a1 (on an empty record: len 0)",
+   "establishes": "modifier combo 0x0d appended at the record's current len as 3 entries; len advances by 2 -- one entry FEWER than written (vendor defect: the last modifier sits past len)",
+   "reproduce": null
+  },
+  {
+   "id": "combo-ctrl-alt-shift-win",
+   "hex": "03fd02010100020000f10000f30000f20000f4",
+   "source": "static: Widget::SetFunKey(int) @0x100046eb0, jump table @0x100047228, code 0x0f @0x1000470c1 (on an empty record: len 0)",
+   "establishes": "modifier combo 0x0f appended at the record's current len as 4 entries; len advances by 2 -- one entry FEWER than written (vendor defect: the last modifier sits past len)",
+   "reproduce": null
+  }
+ ]
+}

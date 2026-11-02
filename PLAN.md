@@ -158,14 +158,27 @@ sitting. Exit: each item below has a recorded measurement in VENDOR_UI_MAP
   leak is AK.LEAK (Claude's own shortcut is Ctrl+Backspace, and no Karabiner
   rule or Service claims F16-F20, so the trigger is unidentified). Changing the chord touches `SLOT_SPECS`,
   `host::gesture::SLOT_MODS` and their pinning tests together.
-* **H.3 Fresh wired capture: DROPPED by the owner 2026-11-01** ("Drop it").
-  What stays unmeasured, and so stays refused or unsupported: capture with
-  `tools/hidsnoop/snoop-vendor-app.sh`, frames added to `tests/fixtures/vendor_capture.json` (no invented frames).
-  Targets, by value: mouse under `0xFD` (only buttons at byte 12 and wheel at
-  byte 21 measured; `fd::build_packet` refuses mouse until then, so no mouse
-  step in a sequence), what byte 5 MEANS (its storage is measured: kept as
-  written), why swipes and the `Ctrl+Alt+` combo buttons never assign in the
-  vendor UI. Needs a person driving the vendor app.
+* **H.3 Vendor encodings, static route** (owner 2026-11-01, superseding the
+  drop at bb27b0f: "we have the anticater binary, you can just figure out
+  everything from there"). ANTICATER.app disassembled, never run; findings
+  in VENDOR_UI_MAP "STATIC READING OF ANTICATER.app", records in
+  `tests/fixtures/vendor_static.json` (labelled static, kept apart from the
+  captures, checked by `tests/vendor_capture/static_derived.rs`).
+  (a) mouse: the vendor's record is pinned (`SetMousePage` @0x1000477f0:
+  kind 03, byte 5 01, len 04, buttons byte 12, wheel byte 21), and
+  `fd::build_packet` / `Action::to_packet` now write it (mouse was the last
+  kind on `0xFE`). One mouse action per record; other values refused.
+  (b) byte 5 = mouse action class (01 report, 04 touch gesture), written
+  only by the mouse page; not an index. (c) swipes: UI label mismatch in
+  the vendor app (`Left Swipe` vs `Swipe left`), packets exist; 3- and
+  4-modifier combos are written with `len` one short. (d) `FC FC` layout
+  select, `EF EF` firmware entry, 48 per-key RGB bytes after the LED mode.
+  *Open, each needing one owner-approved wired write:* does the knob RUN
+  the new mouse record (`bind-seq` a `click` to the press slot, press it,
+  see a click); X/Y at bytes 15/18 (write byte 15 = `0a`, watch the
+  pointer); whether zeros in the LED's 48 colour bytes change what modes
+  0-5 show (read `03 FA B0` before and after one `led` write); swipes/Like
+  as antiknob actions (no `Action` variant yet).
 * **H.4 LED:** done 2026-11-01 (9ef462b): `SET_LED_LAYER_MAX` = 2, refused in `build_led_packet` for every write path. Watch mode 3 ("ripple", still taken from
   kriomant/ch57x-keyboard-tool#173) and whether a mode stored on device
   layers 3-15 ever renders (FIRMWARE_REVIEW #7; storage measured, render

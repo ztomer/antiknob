@@ -1,6 +1,6 @@
 //! The byte goldens, checked against a capture instead of against a comment.
 //!
-//! One test crate, four modules, because the two halves share a decoder and a
+//! One test crate, five modules, because the two halves share a decoder and a
 //! fixture loader: as separate integration-test files each would compile its
 //! own copy, and every item only one of them used would be dead code in the
 //! other. One crate, one copy, no suppressions.
@@ -13,6 +13,9 @@
 //!   own producers re-derive it byte for byte.
 //! * `claims` — each frame DECODES, and what it decodes to is what the
 //!   document claims about it.
+//! * `static_derived` — records read out of the vendor binary (a separate,
+//!   weaker source than a capture, in its own fixture) that the producers
+//!   must also rebuild.
 //!
 //! ## What this replaces
 //!
@@ -59,3 +62,4 @@ mod claims;
 mod decoder;
 mod fixture;
 mod oracle;
+mod static_derived;

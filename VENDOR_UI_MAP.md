@@ -377,8 +377,10 @@ USB HID usages and no translation is needed.
     Like           -> kind 03, b5 = 04, byte 9 = 05
 
 Note this is NOT the `0xFE` mouse layout, which puts the button at byte 12
-and the wheel delta at byte 15. Under `0xFD` the wheel is at byte 21. That
-difference is why `fd::build_packet` refusing mouse was right.
+and the wheel delta at byte 15. Under `0xFD` the wheel is at byte 21. The
+rest of the record (kind 03, byte 5 = 01, len 04) was read out of the
+vendor binary on 2026-11-01 -- see "STATIC READING OF ANTICATER.app" -- and
+`fd::build_packet` now writes exactly that record.
 
 ### RGB LED is NOT a gesture action
 
@@ -450,9 +452,9 @@ uses the `0xFD` encoder, wrote `03 fd 03 01 01 00 01 00 00 04` to the press
 slot and the knob typed `a`. One gesture, one visible effect, no daemon in
 the path. `bind-slots` on the same slot produced nothing.
 
-Keyboard and media single actions now go out as `0xFD`. Mouse stays on
-`0xFE`, because it is the one kind whose FE layout WAS measured and whose FD
-layout differs -- see the byte 15 / byte 21 note above.
+Keyboard and media single actions now go out as `0xFD`, and since
+2026-11-01 mouse does too, in the vendor's own record (static reading
+below). The vendor binary never sends `0xFE` for a slot record at all.
 
 **The lesson this file should carry loudest:** an `FA` read-back proves the
 device STORED bytes. It has never proved the device ACTS on them. Both the
@@ -547,11 +549,16 @@ entry for the keycode. No new vocabulary is needed.
   refuses a media chain. What the knob held when it arrived is not explained
   by that and stays unexplained.
 * **Swipes.** `Left/Right/Up/Down Swipe` never assign to a knob gesture.
+  Explained statically: a UI label mismatch (see the static reading).
 * **`Ctrl+Alt+` combo buttons** in the `Ctrl Shift Alt` category did not
-  assign either, while the single modifiers in the same panel do.
-* **Byte 5.** Mostly `00`; `01` when appending to an existing binding, `04`
-  for `Like`. Not decoded. Stored as written (measured 2026-11-01), so the
-  read-back comparison checks it.
+  assign either, while the single modifiers in the same panel do. The
+  static reading finds the three- and four-modifier combos written one
+  entry short; which buttons were clicked is not recorded, so this is not
+  closed.
+* **Byte 5.** Decoded statically: the mouse action class (`01` mouse
+  report, `04` touch gesture), written only by the mouse page; on keyboard
+  and media records it is whatever the slot held. Stored as written
+  (measured 2026-11-01), so the read-back comparison checks it.
 * **Layer.** Every packet observed used layer `01`. The vendor UI exposes no
   layer switch for this device.
 * **Mode 3 ("ripple").** Still the one LED mode whose behaviour is taken
@@ -673,8 +680,10 @@ Two facts about editing this document, both learned by being wrong first:
 * **Byte 5 of a chained record.** The factory frame
   `03 fd 06 01 02 01 04 00 00 b5` shows `01` where this repo writes `00`. The
   frame is pinned in the fixture so it cannot be lost. Storage is measured
-  (byte 5 is kept as written, 2026-11-01); its MEANING ("is byte 5 an index")
-  is still open and needs a vendor-app capture.
+  (byte 5 is kept as written, 2026-11-01). Its meaning is read statically
+  (not an index; see the static reading): the vendor never writes it on a
+  media record, so that `01` is the device's own value, carried over when
+  the app appended to a record it had read back.
 * **Mode 3's behaviour.** Taken from kriomant/ch57x-keyboard-tool#173, not
   watched here. Unchanged by this work.
 * **The frame at line 137**, written with `...` and so not a complete frame to
@@ -781,3 +790,85 @@ reported INCONCLUSIVE), then the six slots restored with `0xFD` and read
 back confirmed; the whole table then matched the reference byte for byte.
 `bind-slots` over the same chords now reads back too: "Flashed 15 slot
 binding(s), every one confirmed by read-back".
+
+## STATIC READING OF ANTICATER.app (2026-11-01)
+
+No capture: the x86_64 Mach-O was disassembled (`objdump -d`, symbols are
+not stripped) and nothing was run or written to the knob. The app is Qt
+Widgets, not QML -- the only rcc resource is `qInitResources_image`, so no
+UI logic lives in a readable resource. Every record the builders produce is
+in `tests/fixtures/vendor_static.json`, labelled `static: <function> @<addr>`,
+apart from the captures; `tests/vendor_capture/static_derived.rs` checks it.
+
+**The record table.** `PHY2_KEY_Value` holds 3 layers x 60 keys x 65 bytes.
+`Widget::HID_write` @0x10003dea0 sends each modified record as-is after
+report id `03` (record byte 0 is packet byte 1), then the commit
+`03 FD FE FF`. Builders write into the table; none builds a packet. A
+second table, `PHY_KEY_Value`, is used when the device reports fewer than
+10 keys (`Cur_KeyBoard_KeyNum+2 < 0x0a`): also `0xFD`, but the older layout
+(type at byte 10, modifier BITMASK at byte 11, button 12, wheel 15). The
+knob takes the PHY2 path, which is what the captures show.
+
+**Click routing.** `Widget::eventFilter` @0x1000484e0 takes the clicked
+button's `text()`, looks it up in a `QMap<QString,int>` built by
+`InitBasicEn` @0x10000d8a0 from the 224 names at `this+0x940`, and
+dispatches on the index: 0x00-0x28 `SetFunKey`, 0x29-0x51 `SetMulKey`,
+0x60-0x6f `SetMousePage`, the rest `SetBasicKey` (ranges at `this+0x80`,
+set in the constructor @0x10000e6a1). The action code per index is the
+table at file offset 0xad2a0.
+
+**(a) Mouse, `SetMousePage` @0x1000477f0.** It first calls
+`on_CleanButton_clicked`, which zeroes record bytes 5-61, so a mouse record
+holds one action. Then (PHY2 jump table @0x100048088): kind = the mouse
+tab's mode `03`, byte 6 (`len`) = `04`, and
+
+| action | byte 5 | byte 9 | byte 12 | byte 21 |
+|---|---|---|---|---|
+| Mouse LeftKey / Middle / Right | 01 | | 01 / 04 / 02 | |
+| Mouse Wheel+ / Wheel- | 01 | | | 01 / ff |
+| Ctrl+, Shift+, Alt+ Mouse Up/Down | 01 | f1 / f2 / f3 | | 01 / ff |
+| Swipe left / right / Up / Down | 04 | 01 / 02 / 03 / 04 | | |
+| Like | 04 | 05 | | |
+
+Every byte the wire capture saw (buttons 1/2/4 at 12, wheel 01/ff at 21,
+Like `04` / `05`) agrees. Nothing in the binary writes bytes 15 or 18, so
+X/Y movement has no vendor encoding: those bytes are probably the X and Y
+of a buttons/X/Y/wheel report, and that is an inference, not a reading.
+
+**(b) Byte 5** is written in one place, `SetMousePage`: `01` for a
+mouse-report action, `04` for a touch gesture. `SetBasicKey`, `SetFunKey`
+and `SetMulKey` never touch it; they append at the record's current `len`.
+`read_Hidkey_Data` @0x10003ef30 copies the device's stored records into the
+table, byte 5 included. So the `01` on the factory media chain is the
+device's own value, kept when the app appended to a record it had read
+back, and `00` after any clear. It is not an index, and the device stores
+whatever it is sent.
+
+**(c) Swipes: a UI bug.** The names map holds `Swipe left`, `Swipe right`,
+`Swipe Up`, `Swipe Down` (constructor @0x100011753..0x1000117b0), but
+`Mouse_Page` @0x100038730 sets the buttons' text to `Left Swipe`, `Right
+Swipe`, `Up Swipe`, `Down Swipe` (@0x100038978..0x100038a71). The lookup
+in `eventFilter` misses, the click is dropped, and the title stays `NULL`.
+`Like` has the same text in both places and assigns. The swipe records
+themselves are built (table above). **Combos:** `SetFunKey` @0x100046eb0
+appends modifier entries (`F1 + bit`) at `len`. Two-modifier combos
+(`Ctrl+Alt+` = `F1 F3`, `Ctrl+Shift+` = `F1 F2`, ...) are written whole.
+`Ctrl+Shift+Alt+`, `Ctrl+Alt+Win+` and `Ctrl+Alt+Shift+Win+` write three or
+four entries but advance `len` by 2 (@0x100047056, 0x1000470a1,
+0x1000470c1), so the last modifiers sit past `len`. A vendor defect.
+Whether those are the buttons that "did not assign" is not recorded.
+
+**(d) Packets VENDOR_UI_MAP did not list.** Every `hid_write` caller:
+`HID_write` (records, commit, LED), `Set_Keyboard_Ver_SLOT` @0x10003d850
+`03 FC FC <a> <b>` (layout select; pairs 02 00, 03 01, 04 00, 04 01, 05 00,
+06 00, 06 01, 06 02, 09 02, ...), `KB_UpData_SoftWare` @0x10003bd70
+`03 EF EF` (firmware update entry; never send it), `Read_KeyBoard_KeyNum`
+`03 FB FB FB`, `Read_RgbLed_DataDsp` `03 FA B0`, `read_Hidkey_Data`
+`03 FA ...`. The LED write is `03 FE B0 <layer> <mode>` followed by 48
+bytes from `_KeyBoard_KeyLed`: 16 RGB triplets per layer, defaults (`ff0000 ff8030
+ffff30 00ff00 00ffff 0000ff 800080 8b0000 ffa500 ffff96 7dff00 008b8b
+00008b ff00ff ff6666 ffc864`). The `led-init-echo` reply starts with the
+same `ff0000 ff8030 ffff30`. `build_led_packet` sends zeros there. Also in
+`Init_All_PHY_KEY_Value` @0x10000db40: every record of all three layers
+is initialised `FD <key> 01 01` (device layer `01`, kind keyboard),
+which fits every captured packet using layer `01`.

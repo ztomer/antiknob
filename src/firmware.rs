@@ -215,9 +215,10 @@ pub const FD_MOD_ENTRY_BASE: u8 = 0xF1;
 /// Record kind for keyboard actions in slot-table dumps.
 pub const FD_KIND_KEYBOARD: u8 = 1;
 
-/// The chord/mouse write command byte. `FD_CMD` is the sequence writer;
-/// this one carries single chords and the mouse records whose `0xFD`
-/// layout was never measured.
+/// The old single-action write command byte. Nothing here WRITES it any
+/// more: the firmware stores its records and does not run them, and the
+/// vendor binary never sends it for a slot record (its only `0xFE` packet is
+/// the LED write). Kept so records written with it are still recognised.
 pub const FE_CHORD_CMD: u8 = 0xFE;
 
 /// Record kind for mouse actions in slot-table dumps.

@@ -1,4 +1,4 @@
-use crate::firmware::{FD_KIND_MOUSE, FE_CHORD_CMD, GESTURES_PER_KNOB, REPORT_ID, REPORT_LEN};
+use crate::firmware::GESTURES_PER_KNOB;
 use anyhow::{anyhow, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,43 +127,18 @@ impl Action {
     /// `03 fd 03 01 01 00 01 00 00 04` and the knob types `a`; `bind-slots`
     /// (the old one) wrote the record above and the knob did nothing.
     ///
-    /// Mouse stays on `0xFE` because it is the one kind whose FE layout WAS
-    /// measured and whose FD layout differs (wheel at byte 15 under FE, 21
-    /// under FD), which is why `fd::build_packet` refuses it.
+    /// Mouse goes out as `0xFD` too, in the record the vendor's own builder
+    /// writes for this knob (`Widget::SetMousePage` @0x1000477f0, read
+    /// statically; `tests/fixtures/vendor_static.json`). It used to be the
+    /// last kind left on `0xFE` -- a command the vendor binary never sends
+    /// for a slot record at all: its only `0xFE` packet is the LED write.
     pub fn to_packet(&self, key_id: u8, layer: u8) -> Vec<u8> {
-        match self {
-            Action::Key { .. } | Action::Media(_) => {
-                return crate::fd::build_packet(
-                    key_id,
-                    layer,
-                    std::slice::from_ref(&crate::fd::Step::now(self.clone())),
-                )
-                .expect("one keyboard or media action always fits a single slot");
-            }
-            Action::MouseClick { .. } | Action::MouseWheel { .. } => {}
-        }
-
-        let mut packet = vec![0u8; REPORT_LEN];
-        packet[0] = REPORT_ID;
-        packet[1] = FE_CHORD_CMD;
-        packet[2] = key_id;
-        packet[3] = layer + 1;
-
-        match self {
-            Action::Key { .. } | Action::Media(_) => unreachable!("returned above"),
-            Action::MouseClick { button } => {
-                packet[4] = FD_KIND_MOUSE; // Kind = Mouse
-                packet[10] = 0x01; // Click
-                packet[12] = *button;
-            }
-            Action::MouseWheel { delta } => {
-                packet[4] = FD_KIND_MOUSE; // Kind = Mouse
-                packet[10] = 0x03; // Wheel
-                packet[15] = *delta as u8;
-            }
-        }
-
-        packet
+        crate::fd::build_packet(
+            key_id,
+            layer,
+            std::slice::from_ref(&crate::fd::Step::now(self.clone())),
+        )
+        .expect("every action `Action::parse` produces fits a single slot")
     }
 }
 

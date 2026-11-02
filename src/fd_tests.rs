@@ -156,15 +156,49 @@ fn a_sequence_mixing_keyboard_and_media_is_refused() {
     assert!(err.to_string().contains("mixes"), "{err}");
 }
 
-/// Mouse has no measured `0xFD` encoding: its bytes land at 12 and 21,
-/// not where the `0xFE` layout puts them. Guessing is how media spent
-/// months being written to bytes the firmware never read.
+/// A mouse record is the vendor's (`Widget::SetMousePage` @0x1000477f0,
+/// `tests/fixtures/vendor_static.json`): kind 03, byte 5 = 01, len 04,
+/// buttons at byte 12, wheel at byte 21. The cross-check against every
+/// static record is `tests/vendor_capture/static_derived.rs`.
 #[test]
-fn mouse_actions_are_refused_rather_than_guessed_at() {
-    for spec in ["click", "wheelup"] {
-        let err = build_packet(4, 0, &[kb(spec)]).expect_err("mouse must be refused");
-        assert!(err.to_string().contains("0xFE"), "{spec}: {err}");
+fn a_mouse_action_is_written_as_the_vendor_writes_it() {
+    let click = build_packet(4, 0, &[kb("rclick")]).unwrap();
+    assert_eq!(&click[..13], &[3, 0xFD, 4, 1, 3, 1, 4, 0, 0, 0, 0, 0, 2]);
+    assert!(click[13..].iter().all(|b| *b == 0));
+    let wheel = build_packet(4, 0, &[kb("wheeldown")]).unwrap();
+    assert_eq!(&wheel[4..7], &[3, 1, 4]);
+    assert_eq!(wheel[21], 0xFF);
+    assert!(wheel[7..21].iter().all(|b| *b == 0));
+}
+
+/// The vendor clears the record before every mouse action, so a mouse
+/// record holds one; values it never writes have no known encoding.
+#[test]
+fn what_the_vendor_never_writes_for_mouse_is_refused() {
+    let two = build_packet(4, 0, &[kb("click"), kb("click")]).expect_err("two mouse steps");
+    assert!(two.to_string().contains("alone"), "{two}");
+    let mixed = build_packet(4, 0, &[kb("a"), kb("click")]).expect_err("mixed");
+    assert!(mixed.to_string().contains("mixes"), "{mixed}");
+    for action in [
+        Action::MouseClick { button: 3 },
+        Action::MouseClick { button: 8 },
+        Action::MouseWheel { delta: 2 },
+        Action::MouseWheel { delta: 0 },
+    ] {
+        let err = build_packet(4, 0, &[Step::now(action.clone())]).expect_err("unpinned");
+        assert!(
+            err.to_string().contains("not a mouse record"),
+            "{action:?}: {err}"
+        );
     }
+    let late = Step {
+        action: Action::parse("click").unwrap(),
+        delay_ms: 50,
+    };
+    assert!(
+        build_packet(4, 0, &[late]).is_err(),
+        "no measured mouse delay"
+    );
 }
 
 #[test]
@@ -310,9 +344,10 @@ fn parse_sequence_reads_a_list_of_action_names() {
 fn every_written_slot_gets_a_wipe() {
     let fd_packet = build_packet(5, 1, &[kb("a"), kb("b")]).unwrap();
     let media = Action::parse("mute").unwrap().to_packet(6, 0);
-    let mouse = Action::parse("click").unwrap().to_packet(1, 2);
-    assert_eq!(mouse[1], crate::firmware::FE_CHORD_CMD, "mouse stays 0xFE");
-    let wipes = wipes_for(&[fd_packet, media, mouse]);
+    // A record some older writer left in the `0xFE` layout still gets one.
+    let mut legacy = vec![0u8; REPORT_LEN];
+    legacy[..5].copy_from_slice(&[REPORT_ID, crate::firmware::FE_CHORD_CMD, 1, 3, 3]);
+    let wipes = wipes_for(&[fd_packet, media, legacy]);
     let slots: Vec<(u8, u8)> = wipes.iter().map(|w| (w[2], w[3])).collect();
     assert_eq!(slots, vec![(5, 2), (6, 1), (1, 3)]);
     assert!(wipes

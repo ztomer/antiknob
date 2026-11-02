@@ -35,13 +35,20 @@
 //! modifier bitmask into the delay's high byte, so `ctrl-alt-f16` would have
 //! typed F16 after a 5 ms pause with no modifiers held at all.
 //!
-//! Mouse actions are refused. Their four bytes do not sit where the `0xFE`
-//! layout puts them -- the button mask lands at byte 12 and the wheel delta
-//! at byte 21 -- and only the buttons (1 left, 2 right, 4 middle) and the
-//! wheel (`01` / `ff`) have been measured, not the remaining two bytes.
+//! **Mouse** follows the vendor's own builder, read statically out of
+//! ANTICATER.app (`Widget::SetMousePage(int)` @0x1000477f0, records in
+//! `tests/fixtures/vendor_static.json`): kind `03`, byte 5 `01` (a
+//! mouse-report action; `04` is a touch gesture), `len` `04`, the button
+//! mask at byte 12 (1 left, 2 right, 4 middle) and the wheel at byte 21
+//! (`01` / `ff`). Those are the bytes the wire capture saw too. The vendor
+//! clears the record before every mouse action, so a mouse record holds ONE
+//! action: a mouse step inside a sequence is refused, as is any button or
+//! wheel value the vendor never writes (X/Y movement at bytes 15/18 is not
+//! written by anything in the vendor binary).
 
 use crate::firmware::{
-    FD_CMD, FD_ENTRY_LEN, FD_HEADER_LEN, FD_MAX_ENTRIES, FD_MOD_ENTRY_BASE, REPORT_ID, REPORT_LEN,
+    FD_CMD, FD_ENTRY_LEN, FD_HEADER_LEN, FD_KIND_MOUSE, FD_MAX_ENTRIES, FD_MOD_ENTRY_BASE,
+    REPORT_ID, REPORT_LEN,
 };
 use crate::protocol::Action;
 use anyhow::{anyhow, Result};
@@ -59,14 +66,15 @@ pub fn modifier_entry(bit: u8) -> u8 {
 pub enum Kind {
     Keyboard = 1,
     Media = 2,
+    Mouse = FD_KIND_MOUSE as isize,
 }
 
 impl Kind {
-    fn of(action: &Action) -> Option<Self> {
+    fn of(action: &Action) -> Self {
         match action {
-            Action::Key { .. } => Some(Self::Keyboard),
-            Action::Media(_) => Some(Self::Media),
-            Action::MouseClick { .. } | Action::MouseWheel { .. } => None,
+            Action::Key { .. } => Self::Keyboard,
+            Action::Media(_) => Self::Media,
+            Action::MouseClick { .. } | Action::MouseWheel { .. } => Self::Mouse,
         }
     }
 
@@ -74,6 +82,7 @@ impl Kind {
         match self {
             Self::Keyboard => "keyboard",
             Self::Media => "media",
+            Self::Mouse => "mouse",
         }
     }
 }
@@ -116,7 +125,7 @@ fn value_bytes(action: &Action) -> Vec<u8> {
             let [low, high] = usage.to_le_bytes();
             vec![low, high]
         }
-        // Unreachable: `plan_kind` refuses mouse before we get here.
+        // Never flattened: `build_packet` writes a mouse record whole.
         Action::MouseClick { .. } | Action::MouseWheel { .. } => Vec::new(),
     }
 }
@@ -130,14 +139,7 @@ fn value_bytes(action: &Action) -> Vec<u8> {
 fn plan_kind(steps: &[Step]) -> Result<Kind> {
     let mut kind: Option<Kind> = None;
     for step in steps {
-        let this = Kind::of(&step.action).ok_or_else(|| {
-            anyhow!(
-                "the 0xFD writer has no measured encoding for mouse actions; \
-                 their bytes do not sit where the 0xFE layout puts them \
-                 (button at byte 12, wheel at byte 21). Bind mouse actions \
-                 with the 0xFE path instead"
-            )
-        })?;
+        let this = Kind::of(&step.action);
         match kind {
             None => kind = Some(this),
             Some(first) if first == this => {}
@@ -154,12 +156,64 @@ fn plan_kind(steps: &[Step]) -> Result<Kind> {
     kind.ok_or_else(|| anyhow!("an empty sequence binds nothing; give at least one action"))
 }
 
+/// Byte 5 of a vendor mouse record: a mouse-report action (`04` is the
+/// touch-gesture class: Like and the four swipes).
+const MOUSE_REPORT_CLASS: u8 = 1;
+/// The `len` the vendor declares on every mouse record.
+const MOUSE_LEN: u8 = 4;
+/// Where the vendor puts the button mask and the wheel delta.
+const MOUSE_BUTTON_AT: usize = 12;
+const MOUSE_WHEEL_AT: usize = 21;
+
+/// The one mouse record for `steps`, exactly as the vendor writes it
+/// (`Widget::SetMousePage` @0x1000477f0, PHY2 cases `a`..`e`).
+fn mouse_packet(key_id: u8, layer: u8, steps: &[Step]) -> Result<Vec<u8>> {
+    let [step] = steps else {
+        return Err(anyhow!(
+            "a mouse action fills its slot alone: the vendor clears the record \
+             before every mouse action, so a {}-step sequence has no record to \
+             be written as. Split it across gestures",
+            steps.len()
+        ));
+    };
+    if step.delay_ms != 0 {
+        return Err(anyhow!(
+            "a mouse record carries no measured delay; bind it with no delay"
+        ));
+    }
+    let (at, value) = match step.action {
+        Action::MouseClick { button } if matches!(button, 1 | 2 | 4) => (MOUSE_BUTTON_AT, button),
+        Action::MouseWheel { delta } if matches!(delta, 1 | -1) => {
+            (MOUSE_WHEEL_AT, delta.to_le_bytes()[0])
+        }
+        ref other => {
+            return Err(anyhow!(
+                "{other:?} is not a mouse record the vendor writes (buttons 1, 2, 4 \
+                 alone; wheel +1 or -1), so its encoding is unknown"
+            ))
+        }
+    };
+    let mut packet = vec![0u8; REPORT_LEN];
+    packet[0] = REPORT_ID;
+    packet[1] = FD_CMD;
+    packet[2] = key_id;
+    packet[3] = layer + 1;
+    packet[4] = FD_KIND_MOUSE;
+    packet[5] = MOUSE_REPORT_CLASS;
+    packet[6] = MOUSE_LEN;
+    packet[at] = value;
+    Ok(packet)
+}
+
 /// Build the 64-byte `0xFD` record binding one slot to a sequence.
 ///
 /// `layer` is 0-based here and 1-based on the wire, matching
 /// `Action::to_packet` so callers never have to remember which is which.
 pub fn build_packet(key_id: u8, layer: u8, steps: &[Step]) -> Result<Vec<u8>> {
     let kind = plan_kind(steps)?;
+    if kind == Kind::Mouse {
+        return mouse_packet(key_id, layer, steps);
+    }
 
     // Flatten to entries. A chord contributes one per modifier plus one for
     // the key, and the step's delay belongs to the FIRST of them: the wait

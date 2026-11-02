@@ -872,3 +872,39 @@ same `ff0000 ff8030 ffff30`. `build_led_packet` sends zeros there. Also in
 `Init_All_PHY_KEY_Value` @0x10000db40: every record of all three layers
 is initialised `FD <key> 01 01` (device layer `01`, kind keyboard),
 which fits every captured packet using layer `01`.
+
+**(e) What antiknob now writes from this reading (2026-11-02, AK.SWIPE).**
+No device write was made; the live check is the owner's (PLAN OW.78).
+
+* *Touch gestures.* `swipe-left`, `swipe-right`, `swipe-up`, `swipe-down`
+  and `like` build the record of table (a): kind `03`, byte 5 `04`, `len`
+  `04`, the gesture (1 / 2 / 3 / 4 / 5) at byte 9. `fd::build_packet` and
+  `Action::to_packet` both write it; the five records are in
+  `tests/fixtures/vendor_static.json` (provenance `static: ... @0x...`, not
+  mixed into the captures) and `tests/vendor_capture/static_derived.rs`
+  rebuilds each byte for byte. One gesture per slot, no delay; a gesture
+  code outside 1..=5, two steps, or a mix with another kind is refused.
+  The vendor's own swipe buttons never reach this record (the label
+  mismatch in (c)), so these four are read from its code only; `like` is
+  also on the wire.
+* *Per-key colours.* The LED branch of `HID_write` builds
+  `fe b0 <layer> <_RGB_LED_Md[layer]>` and copies 48 bytes of
+  `_KeyBoard_KeyLed` (+ 48 per layer) to record byte 5: sixteen RGB
+  triplets from byte 5, directly after the mode, no base colour. The
+  initialised table (@0x10022f6e0) is identical for all three layers.
+  `antiknob led <layer> <mode> keys=vendor` writes that table;
+  `keys=RRGGBB,...` takes exactly sixteen colours and nothing else (no
+  padding, no repeating, no colour name beside it). A per-key write is
+  never skipped for "the layer already holds that mode". The three
+  `led_records` in the static fixture are whole LED writes.
+* *Not the layout the older modes use.* `led <layer> red` and the other
+  plain specs still write a base colour at 5-7 and the palette from byte 8
+  (`firmware::BASE_COLOR_OFFSET` / `PALETTE_OFFSET`, from an upstream issue
+  about the 16-key variant). That disagrees with the vendor's own code
+  above, which has no base colour. The knob ignores colour bytes, so it
+  has never been seen to matter here; the plain modes are unchanged until
+  the owner's live check says which layout the hardware reads.
+* *Firmware update stays unsendable.* `03 EF EF` (`KB_UpData_SoftWare`)
+  is refused by `firmware::ensure_sendable`, called from the one HID write
+  (`device::send_report`); `tests/firmware_update_unsendable.rs` sweeps
+  every builder and fails if a second write site appears.

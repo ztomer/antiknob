@@ -201,6 +201,69 @@ fn what_the_vendor_never_writes_for_mouse_is_refused() {
     );
 }
 
+/// A touch gesture is the vendor's `SetMousePage` record with byte 5 = 04
+/// (the touch class) and the gesture at byte 9: 1 left, 2 right, 3 up,
+/// 4 down, 5 like. `tests/fixtures/vendor_static.json` pins each one.
+#[test]
+fn a_touch_gesture_is_written_as_the_vendor_writes_it() {
+    for (name, code) in [
+        ("swipe-left", 1u8),
+        ("swipe-right", 2),
+        ("swipe-up", 3),
+        ("swipe-down", 4),
+        ("like", 5),
+    ] {
+        let p = build_packet(2, 0, &[kb(name)]).unwrap();
+        assert_eq!(&p[..10], &[3, 0xFD, 2, 1, 3, 4, 4, 0, 0, code], "{name}");
+        assert!(p[10..].iter().all(|b| *b == 0), "{name}: nothing else set");
+    }
+}
+
+/// Only the five gesture codes the vendor writes exist; one record holds one
+/// gesture, with no delay, and never beside another kind of action.
+#[test]
+fn what_the_vendor_never_writes_for_touch_is_refused() {
+    for gesture in [0u8, 6, 7, 0x80, 0xFF] {
+        let err = build_packet(2, 0, &[Step::now(Action::Touch { gesture })])
+            .expect_err("an unpinned gesture code");
+        assert!(
+            err.to_string().contains("not a mouse record"),
+            "{gesture}: {err}"
+        );
+    }
+    let two = build_packet(2, 0, &[kb("swipe-up"), kb("swipe-down")]).expect_err("two gestures");
+    assert!(two.to_string().contains("alone"), "{two}");
+    let mixed = build_packet(2, 0, &[kb("a"), kb("like")]).expect_err("mixed");
+    assert!(mixed.to_string().contains("mixes"), "{mixed}");
+    let late = Step {
+        action: Action::parse("like").unwrap(),
+        delay_ms: 50,
+    };
+    assert!(build_packet(2, 0, &[late]).is_err(), "no measured delay");
+}
+
+#[test]
+fn touch_gestures_parse_to_the_vendor_codes() {
+    for (name, gesture) in [
+        ("swipe-left", 1u8),
+        ("swipe-right", 2),
+        ("swipe-up", 3),
+        ("swipe-down", 4),
+        ("like", 5),
+        ("Swipe-Left", 1),
+    ] {
+        assert_eq!(
+            Action::parse(name).unwrap(),
+            Action::Touch { gesture },
+            "{name}"
+        );
+    }
+    // Not names the vendor app's own table has: neither is a key.
+    for name in ["swipe", "swipe-diagonal", "dislike", "swipe+left"] {
+        assert!(Action::parse(name).is_err(), "{name}");
+    }
+}
+
 #[test]
 fn an_empty_sequence_binds_nothing_and_is_refused() {
     let err = build_packet(4, 0, &[]).expect_err("empty must be refused");

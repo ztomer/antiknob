@@ -54,6 +54,13 @@ pub enum Action {
     MouseWheel {
         delta: i8, // 1=up, -1=down
     },
+    /// A touch gesture on the knob's surface: 1 swipe left, 2 right, 3 up,
+    /// 4 down, 5 like. A device-only record: the vendor writes it as a mouse
+    /// page record with byte 5 = 04 and the code at byte 9, and the host
+    /// daemon has no equivalent to run.
+    Touch {
+        gesture: u8,
+    },
 }
 
 impl Action {
@@ -77,6 +84,12 @@ impl Action {
         }
         if s.eq_ignore_ascii_case("mclick") {
             return Ok(Action::MouseClick { button: 4 });
+        }
+
+        // 2b. Touch gestures (before keys: `swipe-left` has a `-`, which
+        // the chord splitter below would read as a modifier).
+        if let Some(gesture) = crate::vocabulary::touch_gesture(&s.to_ascii_lowercase()) {
+            return Ok(Action::Touch { gesture });
         }
 
         // 3. Media Keys

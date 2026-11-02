@@ -8,7 +8,8 @@
   "action, and the delay page (onSpinBoxValueChanged @0x100044100) can rewrite them at save time.",
   "Kept apart from vendor_capture.json on purpose: nothing here was seen on the wire, and the",
   "two sources must never be mixed. `reproduce` names the antiknob action whose 0xFD record must",
-  "equal the frame; null means antiknob has no action for it (decode-only)."
+  "equal the frame; null means antiknob has no action for it (decode-only).",
+  "`led_records` are whole LED writes (not 0xFD slot records): `reproduce` is the `antiknob led <layer> <spec>` spec whose packet must equal `hex`."
  ],
  "records": [
   {
@@ -93,35 +94,35 @@
    "hex": "03fd0201030404000005",
    "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'p' @0x100047f2a",
    "establishes": "touch-gesture action: byte 5 = 04, byte 9 = gesture (1 left, 2 right, 3 up, 4 down, 5 like); Like is also measured on the wire (VENDOR_UI_MAP 'Mouse')",
-   "reproduce": null
+   "reproduce": "like"
   },
   {
    "id": "swipe-left",
    "hex": "03fd0201030404000001",
    "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'l' @0x100047e2d",
    "establishes": "touch-gesture action: byte 5 = 04, byte 9 = gesture (1 left, 2 right, 3 up, 4 down, 5 like); Like is also measured on the wire (VENDOR_UI_MAP 'Mouse')",
-   "reproduce": null
+   "reproduce": "swipe-left"
   },
   {
    "id": "swipe-right",
    "hex": "03fd0201030404000002",
    "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'm' @0x100047e97",
    "establishes": "touch-gesture action: byte 5 = 04, byte 9 = gesture (1 left, 2 right, 3 up, 4 down, 5 like); Like is also measured on the wire (VENDOR_UI_MAP 'Mouse')",
-   "reproduce": null
+   "reproduce": "swipe-right"
   },
   {
    "id": "swipe-up",
    "hex": "03fd0201030404000003",
    "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'n' @0x100047eca",
    "establishes": "touch-gesture action: byte 5 = 04, byte 9 = gesture (1 left, 2 right, 3 up, 4 down, 5 like); Like is also measured on the wire (VENDOR_UI_MAP 'Mouse')",
-   "reproduce": null
+   "reproduce": "swipe-up"
   },
   {
    "id": "swipe-down",
    "hex": "03fd0201030404000004",
    "source": "static: Widget::SetMousePage(int) @0x1000477f0, PHY2 jump table @0x100048088, case 'o' @0x100047efa",
    "establishes": "touch-gesture action: byte 5 = 04, byte 9 = gesture (1 left, 2 right, 3 up, 4 down, 5 like); Like is also measured on the wire (VENDOR_UI_MAP 'Mouse')",
-   "reproduce": null
+   "reproduce": "swipe-down"
   },
   {
    "id": "combo-ctrl-alt",
@@ -157,6 +158,35 @@
    "source": "static: Widget::SetFunKey(int) @0x100046eb0, jump table @0x100047228, code 0x0f @0x1000470c1 (on an empty record: len 0)",
    "establishes": "modifier combo 0x0f appended at the record's current len as 4 entries; len advances by 2 -- one entry FEWER than written (vendor defect: the last modifier sits past len)",
    "reproduce": null
+  }
+ ],
+ "led_records": [
+  {
+   "id": "led-layer0-mode3-vendor-palette",
+   "layer": 0,
+   "mode": 3,
+   "hex": "03feb00003ff0000ff8030ffff3000ff0000ffff0000ff8000808b0000ffa500ffff967dff00008b8b00008bff00ffff6666ffc864",
+   "source": "static: Widget::HID_write @0x10003dea0 (LED branch: record `fe b0 <layer> <_RGB_LED_Md[layer]>` then 48 bytes of _KeyBoard_KeyLed @0x10022f6e0 + 48*layer, copied to record byte 4 onward; initialised data, identical for all three layers)",
+   "establishes": "LED write: 48 colour bytes = 16 RGB triplets start at packet byte 5, straight after the mode byte (no separate base colour); the vendor sends them with every mode",
+   "reproduce": "ripple keys=vendor"
+  },
+  {
+   "id": "led-layer1-mode0-vendor-palette",
+   "layer": 1,
+   "mode": 0,
+   "hex": "03feb00100ff0000ff8030ffff3000ff0000ffff0000ff8000808b0000ffa500ffff967dff00008b8b00008bff00ffff6666ffc864",
+   "source": "static: Widget::HID_write @0x10003dea0 (LED branch: record `fe b0 <layer> <_RGB_LED_Md[layer]>` then 48 bytes of _KeyBoard_KeyLed @0x10022f6e0 + 48*layer, copied to record byte 4 onward; initialised data, identical for all three layers)",
+   "establishes": "LED write: 48 colour bytes = 16 RGB triplets start at packet byte 5, straight after the mode byte (no separate base colour); the vendor sends them with every mode",
+   "reproduce": "off keys=vendor"
+  },
+  {
+   "id": "led-layer2-mode5-vendor-palette",
+   "layer": 2,
+   "mode": 5,
+   "hex": "03feb00205ff0000ff8030ffff3000ff0000ffff0000ff8000808b0000ffa500ffff967dff00008b8b00008bff00ffff6666ffc864",
+   "source": "static: Widget::HID_write @0x10003dea0 (LED branch: record `fe b0 <layer> <_RGB_LED_Md[layer]>` then 48 bytes of _KeyBoard_KeyLed @0x10022f6e0 + 48*layer, copied to record byte 4 onward; initialised data, identical for all three layers)",
+   "establishes": "LED write: 48 colour bytes = 16 RGB triplets start at packet byte 5, straight after the mode byte (no separate base colour); the vendor sends them with every mode",
+   "reproduce": "rgb keys=vendor"
   }
  ]
 }

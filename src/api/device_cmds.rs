@@ -101,6 +101,7 @@ pub fn vocabulary_reply() -> serde_json::Value {
         "media": names(crate::vocabulary::MEDIA_NAMES),
         "modifiers": names(crate::vocabulary::MODIFIER_NAMES),
         "mouse": crate::vocabulary::MOUSE_NAMES,
+        "touch": names(crate::vocabulary::TOUCH_NAMES),
         "note": "Chords join a modifier and a key with '-' or '+', e.g. cmd-c. \
                  Knob gestures are keys 2=CCW, 3=press, 4=CW, 5=hold+twist L, \
                  6=hold+twist R.",
@@ -306,7 +307,7 @@ pub fn set_led(layer: u8, mode: String, color: Option<String>) -> Result<serde_j
     // a lighting click's three RPCs cannot burst, and
     // read-before-write, so re-setting the stored mode sends
     // nothing. A skipped write still reads back the truth.
-    let want = protocol::led_mode_number(&spec);
+    let want = crate::led::skippable_mode_number(&spec);
     crate::host::led_sync::pace_led();
     let applied = device::with_device(move |dev| {
         if let (Some(w), Ok(current)) = (want, device::read_led_mode(dev, layer)) {

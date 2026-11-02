@@ -143,6 +143,12 @@ fn device_action_to_host(action: &Action, original: &str) -> (HostAction, Option
             (HostAction::MouseClick { button: btn }, None)
         }
         Action::MouseWheel { delta } => (scroll_for(*delta), None),
+        Action::Touch { .. } => (
+            HostAction::None,
+            Some(format!(
+                "'{original}': a touch gesture is a device record with no host equivalent, left empty"
+            )),
+        ),
         Action::Key { modifiers, code } => match usb_to_cg(*code) {
             Some(cg) => (
                 HostAction::KeyChord {

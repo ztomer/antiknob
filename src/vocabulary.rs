@@ -162,6 +162,26 @@ pub const MOUSE_NAMES: &[&str] = &[
     "wheeldown",
 ];
 
+/// Touch-gesture names and the vendor's gesture codes (byte 9 of a touch
+/// record; `Widget::SetMousePage(int)` @0x1000477f0). The vendor app's own
+/// buttons say `Left Swipe` / `Like`; these are the spellings antiknob
+/// accepts, and each is pinned by `tests/fixtures/vendor_static.json`.
+pub const TOUCH_NAMES: &[(&str, u8)] = &[
+    ("swipe-left", 1),
+    ("swipe-right", 2),
+    ("swipe-up", 3),
+    ("swipe-down", 4),
+    ("like", 5),
+];
+
+/// Look up a touch-gesture name.
+pub fn touch_gesture(name: &str) -> Option<u8> {
+    TOUCH_NAMES
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, c)| *c)
+}
+
 /// Look up a key name.
 pub fn keycode(name: &str) -> Option<u8> {
     KEY_NAMES.iter().find(|(n, _)| *n == name).map(|(_, c)| *c)

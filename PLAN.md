@@ -178,7 +178,10 @@ sitting. Exit: each item below has a recorded measurement in VENDOR_UI_MAP
   see a click); X/Y at bytes 15/18 (write byte 15 = `0a`, watch the
   pointer); whether zeros in the LED's 48 colour bytes change what modes
   0-5 show (read `03 FA B0` before and after one `led` write); swipes/Like
-  as antiknob actions (no `Action` variant yet).
+  as antiknob actions (done 2026-11-02, AK.SWIPE: `swipe-left|right|up|down`, `like`
+  build the vendor records; whether the knob RUNS them is untried), per-key LED
+  colours (`led <layer> <mode> keys=vendor|RRGGBB,x16`; see VENDOR_UI_MAP (e) for
+  the layout disagreement with the plain modes).
 * **H.4 LED:** done 2026-11-01 (9ef462b): `SET_LED_LAYER_MAX` = 2, refused in `build_led_packet` for every write path. Watch mode 3 ("ripple", still taken from
   kriomant/ch57x-keyboard-tool#173) and whether a mode stored on device
   layers 3-15 ever renders (FIRMWARE_REVIEW #7; storage measured, render

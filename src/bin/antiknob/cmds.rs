@@ -266,7 +266,7 @@ pub fn run_led(layer: u8, mode: Vec<String>) -> Result<()> {
     // Read before writing: re-setting the stored mode is a no-op change,
     // and mode changes are what wedge this firmware's renderer until a
     // replug. A skipped write is reported as what it is, not as a failure.
-    let want = protocol::led_mode_number(&mode_str);
+    let want = antiknob::led::skippable_mode_number(&mode_str);
     let written = device::with_device(move |dev| {
         if let (Some(w), Ok(current)) = (want, device::read_led_mode(dev, layer)) {
             if current == w {
@@ -364,6 +364,13 @@ pub fn run_show_keys() -> Result<()> {
             .collect(),
     );
     render("Mouse Actions", antiknob::vocabulary::MOUSE_NAMES.to_vec());
+    render(
+        "Touch Gestures (one per slot, device-only)",
+        antiknob::vocabulary::TOUCH_NAMES
+            .iter()
+            .map(|(n, _)| *n)
+            .collect(),
+    );
     println!("Chords join a modifier and a key with '-' or '+', e.g. cmd-c.");
     Ok(())
 }

@@ -10,9 +10,12 @@
 //!
 //! What it pins, and what this crate checks:
 //!
-//! * the mouse records antiknob can express (click left/right/middle, wheel
-//!   up/down) are rebuilt byte for byte by `Action::to_packet` and by
-//!   `fd::build_packet`, the two producers that write them;
+//! * the mouse and touch-gesture records antiknob can express (click
+//!   left/right/middle, wheel up/down, the four swipes, Like) are rebuilt byte
+//!   for byte by `Action::to_packet` and by `fd::build_packet`, the two
+//!   producers that write them;
+//! * the whole LED write (`led_records`: mode, then the 48 per-key colour
+//!   bytes straight after it) is rebuilt byte for byte by `build_led_packet`;
 //! * every record decodes, with byte 5 and `len` as the vendor sets them;
 //! * no static record is passed off as a capture.
 
@@ -85,8 +88,8 @@ fn no_static_record_is_mixed_into_the_captures() {
     }
 }
 
-/// The mouse records antiknob can express are what the vendor writes, from
-/// both producers. Before this, `fd::build_packet` refused every mouse step
+/// The mouse and touch records antiknob can express are what the vendor
+/// writes, from both producers. Before this, `fd::build_packet` refused every mouse step
 /// and `Action::to_packet` wrote mouse as a `0xFE` record, the command whose
 /// single-action records the firmware stores and does not run.
 #[test]
@@ -104,7 +107,10 @@ fn antiknob_writes_the_mouse_records_the_vendor_writes() {
         assert_eq!(built, want, "{}: fd::build_packet", r.id);
         checked += 1;
     }
-    assert_eq!(checked, 5, "click, rclick, mclick, wheelup and wheeldown");
+    assert_eq!(
+        checked, 10,
+        "click, rclick, mclick, wheelup, wheeldown, the four swipes and like"
+    );
 }
 
 /// Byte 5 is written in exactly one place in the vendor binary,
@@ -133,5 +139,38 @@ fn byte_five_is_the_mouse_action_class() {
                 r.id
             );
         }
+    }
+}
+
+/// The whole LED write the vendor builds: `fe b0 <layer> <mode>` then 48
+/// colour bytes copied from `_KeyBoard_KeyLed` to byte 5. antiknob sent zeros
+/// there; `keys=vendor` is the palette the vendor's own table holds.
+#[test]
+fn antiknob_writes_the_led_records_the_vendor_writes() {
+    let text = std::fs::read_to_string(STATIC_FIXTURE).expect("the static fixture");
+    let json: Value = serde_json::from_str(&text).expect("the static fixture parses");
+    let list = json["led_records"]
+        .as_array()
+        .expect("a `led_records` array");
+    assert_eq!(list.len(), 3, "layers 0, 1 and 2 at distinct modes");
+    for r in list {
+        let id = r["id"].as_str().expect("id");
+        let source = r["source"].as_str().expect("source");
+        assert!(
+            source.starts_with("static: ") && source.contains("@0x"),
+            "{id}: {source:?}"
+        );
+        let want = padded(&hex(r["hex"].as_str().expect("hex")));
+        let layer = u8::try_from(r["layer"].as_u64().expect("layer")).unwrap();
+        let spec = r["reproduce"].as_str().expect("reproduce");
+        let built = antiknob::protocol::build_led_packet(layer, spec)
+            .unwrap_or_else(|e| panic!("{id}: build_led_packet({spec:?}) refused: {e}"));
+        assert_eq!(built, want, "{id}: {spec}");
+        assert_eq!(&want[..4], &[3, 0xFE, 0xB0, layer], "{id}");
+        assert_eq!(
+            want[4],
+            u8::try_from(r["mode"].as_u64().unwrap()).unwrap(),
+            "{id}"
+        );
     }
 }

@@ -26,6 +26,8 @@ use serde::{Deserialize, Serialize};
 // Reports: every exchange is one 64-byte report behind ID 0x03.
 // ---------------------------------------------------------------------------
 
+use std::ops::RangeInclusive;
+
 /// Report ID on every packet this tool sends and every reply it matches.
 pub const REPORT_ID: u8 = 0x03;
 
@@ -229,6 +231,41 @@ pub const FD_KIND_MOUSE: u8 = 3;
 /// never LED updates.
 pub const SLOT_COMMIT_PREFIX: [u8; 3] = [0xFD, 0xFE, 0xFF];
 
+/// Byte 5 of a vendor mouse-page record: `01` is a mouse-report action,
+/// `04` a touch gesture (`Widget::SetMousePage(int)` @0x1000477f0, the only
+/// writer of byte 5).
+pub const MOUSE_CLASS_REPORT: u8 = 1;
+pub const MOUSE_CLASS_TOUCH: u8 = 4;
+
+/// The vendor's touch-gesture codes, written at byte 9 of a touch record:
+/// 1 swipe left, 2 right, 3 up, 4 down, 5 like.
+pub const TOUCH_GESTURES: RangeInclusive<u8> = 1..=5;
+
+/// The firmware-update entry command: `03 EF EF`, sent by the vendor's
+/// `KB_UpData_SoftWare` @0x10003bd70. It reboots the knob into its
+/// bootloader and nothing here may ever send it.
+pub const FIRMWARE_UPDATE_CMD: u8 = 0xEF;
+
+/// Is this payload the firmware-update entry packet, with or without the
+/// leading report id?
+pub fn is_firmware_update(payload: &[u8]) -> bool {
+    let bare = match payload {
+        [REPORT_ID, rest @ ..] => rest,
+        other => other,
+    };
+    matches!(bare, [FIRMWARE_UPDATE_CMD, FIRMWARE_UPDATE_CMD, ..])
+}
+
+/// The one gate every HID write passes: refuses the firmware-update entry.
+pub fn ensure_sendable(payload: &[u8]) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !is_firmware_update(payload),
+        "refusing to send the firmware-update packet (03 EF EF): it puts the knob \
+         into its bootloader and antiknob never sends it"
+    );
+    Ok(())
+}
+
 /// The largest key id any supported layout reaches: a 4x4 grid plus four
 /// knobs. Anything above it in byte 2 is a subcommand, not a slot.
 pub const SLOT_MAX_KEY_ID: u8 = 40;
@@ -307,6 +344,37 @@ pub const VENDOR_RAINBOW: [(u8, u8, u8); 6] = [
 /// [base R G B] [16 x RGB]`. The base is what single-colour modes display.
 pub const BASE_COLOR_OFFSET: usize = 5;
 pub const PALETTE_OFFSET: usize = 8;
+
+/// Where the vendor's per-key colours start: 16 RGB triplets (48 bytes)
+/// straight after the mode byte, no base colour in front. Read from
+/// `Widget::HID_write` @0x10003dea0, which copies `_KeyBoard_KeyLed` to
+/// record byte 4 + 1 (VENDOR_UI_MAP, "STATIC READING"). This is NOT the
+/// `BASE_COLOR_OFFSET` / `PALETTE_OFFSET` layout above, which came from an
+/// upstream issue about the 16-key variant; the two disagree and only this
+/// one is read from the vendor's own code.
+pub const KEY_LED_OFFSET: usize = 5;
+
+/// The palette the vendor app holds for every layer: `_KeyBoard_KeyLed`
+/// @0x10022f6e0 in the binary's initialised data, 48 bytes per layer, the
+/// same on all three.
+pub const VENDOR_KEY_LED: [(u8, u8, u8); PALETTE_ENTRIES] = [
+    (0xFF, 0x00, 0x00),
+    (0xFF, 0x80, 0x30),
+    (0xFF, 0xFF, 0x30),
+    (0x00, 0xFF, 0x00),
+    (0x00, 0xFF, 0xFF),
+    (0x00, 0x00, 0xFF),
+    (0x80, 0x00, 0x80),
+    (0x8B, 0x00, 0x00),
+    (0xFF, 0xA5, 0x00),
+    (0xFF, 0xFF, 0x96),
+    (0x7D, 0xFF, 0x00),
+    (0x00, 0x8B, 0x8B),
+    (0x00, 0x00, 0x8B),
+    (0xFF, 0x00, 0xFF),
+    (0xFF, 0x66, 0x66),
+    (0xFF, 0xC8, 0x64),
+];
 
 /// How many unrelated reports to skip looking for an LED reply. Small on
 /// purpose: this drains a queue (the init packet's own echo arrives first),

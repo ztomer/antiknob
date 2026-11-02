@@ -70,10 +70,17 @@ pub const COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         name: "set_led",
-        about: "Set a layer's backlight mode. Modes: off, red, green, ripple, rainbow, rgb.",
+        about: "Set a layer's backlight mode. Modes: off, red, green, ripple, rainbow, rgb. \
+                Add `keys=vendor` or `keys=` and exactly 16 RRGGBB colours (comma-separated) \
+                for the per-key palette the vendor app writes after the mode byte.",
         params: &[
             Param::req("layer", Kind::Int, "Device layer 0-2").positional(),
-            Param::req("mode", Kind::StrList, "Mode name, optionally with a colour").positional(),
+            Param::req(
+                "mode",
+                Kind::StrList,
+                "Mode name, optionally with a colour or keys=vendor / keys=RRGGBB,... (16)",
+            )
+            .positional(),
         ],
         cli_as: Some("led"),
         cli: Reach::Yes,
@@ -151,7 +158,9 @@ pub const COMMANDS: &[CommandSpec] = &[
                 ids: 2=twist CCW, 3=press, 4=twist CW, 5=hold+twist left, 6=hold+twist right. \
                 A slot holds 19 entries and a chord costs one entry per modifier plus one for \
                 the key. Keyboard actions chain; the firmware stores only ONE media action per \
-                slot, so a media list is refused rather than silently truncated.",
+                slot, so a media list is refused rather than silently truncated. A mouse or \
+                touch action (click, wheelup, swipe-left, swipe-right, swipe-up, swipe-down, \
+                like) fills its slot alone.",
         params: &[
             Param::req(
                 "key",

@@ -5,9 +5,9 @@
 //! `03 FE B0 <layer> <mode>` followed by sixteen RGB triples from offset 5.
 
 use crate::firmware::{
-    BASE_COLOR_OFFSET, LED_CMD, LED_INIT_CMD, LED_MODE_GREEN, LED_MODE_OFF, LED_MODE_RAINBOW,
-    LED_MODE_RED, LED_MODE_RGB, LED_MODE_RIPPLE, LED_WRITE_SUB, PALETTE_ENTRIES, PALETTE_OFFSET,
-    REPORT_ID, REPORT_LEN, VENDOR_RAINBOW,
+    BASE_COLOR_OFFSET, KEY_LED_OFFSET, LED_CMD, LED_INIT_CMD, LED_MODE_GREEN, LED_MODE_OFF,
+    LED_MODE_RAINBOW, LED_MODE_RED, LED_MODE_RGB, LED_MODE_RIPPLE, LED_WRITE_SUB, PALETTE_ENTRIES,
+    PALETTE_OFFSET, REPORT_ID, REPORT_LEN, VENDOR_KEY_LED, VENDOR_RAINBOW,
 };
 use anyhow::{anyhow, Result};
 
@@ -36,6 +36,81 @@ pub fn led_mode_number(spec: &str) -> Option<u8> {
     }
 }
 
+/// The mode number a write may be SKIPPED on, because the layer already
+/// holds it. `None` when the spec carries a per-key palette: the stored
+/// mode says nothing about the stored colours, so a matching mode must not
+/// suppress the write that changes them.
+pub fn skippable_mode_number(spec: &str) -> Option<u8> {
+    if spec_keys(spec).is_some() {
+        None
+    } else {
+        led_mode_number(spec)
+    }
+}
+
+/// The `keys=...` token of a spec, if it has one.
+fn spec_keys(spec: &str) -> Option<String> {
+    spec.split_whitespace()
+        .skip(1)
+        .find(|t| t.to_ascii_lowercase().starts_with(KEYS_PREFIX))
+        .map(|t| t[KEYS_PREFIX.len()..].to_ascii_lowercase())
+}
+
+/// The spec token that selects a per-key palette: `<mode> keys=<palette>`.
+const KEYS_PREFIX: &str = "keys=";
+
+/// Parse a per-key palette: `vendor` (the table ANTICATER.app itself holds,
+/// `_KeyBoard_KeyLed` @0x10022f6e0) or exactly sixteen `RRGGBB` triplets,
+/// comma-separated, each with an optional leading `#`.
+///
+/// Strict on purpose: the static reading pins 16 triplets and nothing else
+/// (VENDOR_UI_MAP, "STATIC READING"). A short list that repeats to fill, as
+/// `parse_palette` does for named colours, would invent a layout the vendor
+/// never writes, so fewer or more than sixteen is refused, not padded.
+fn parse_key_palette(list: &str) -> Result<Vec<(u8, u8, u8)>> {
+    if list == "vendor" {
+        return Ok(VENDOR_KEY_LED.to_vec());
+    }
+    let entries: Vec<&str> = list.split(',').collect();
+    if entries.len() != PALETTE_ENTRIES {
+        return Err(anyhow!(
+            "keys= takes exactly {PALETTE_ENTRIES} comma-separated RRGGBB colours (one per \
+             entry the vendor writes), or `vendor`; got {}",
+            entries.len()
+        ));
+    }
+    entries
+        .into_iter()
+        .map(|e| {
+            let digits = e.strip_prefix('#').unwrap_or(e);
+            let ok = digits.len() == 6 && digits.bytes().all(|b| b.is_ascii_hexdigit());
+            let v = ok.then(|| u32::from_str_radix(digits, 16).ok()).flatten();
+            v.map(|v| {
+                let [_, r, g, b] = v.to_be_bytes();
+                (r, g, b)
+            })
+            .ok_or_else(|| anyhow!("keys= colour '{e}' is not six hex digits (RRGGBB)"))
+        })
+        .collect()
+}
+
+/// The vendor's LED write: `fe b0 <layer> <mode>` and the 48 colour bytes
+/// straight after the mode (`Widget::HID_write` @0x10003dea0). No base
+/// colour in front: the sixteen triplets start at byte 5.
+fn build_key_led_packet(layer: u8, mode: u8, palette: &[(u8, u8, u8)]) -> Vec<u8> {
+    let mut packet = vec![0u8; REPORT_LEN];
+    packet[0] = REPORT_ID;
+    packet[1] = LED_CMD;
+    packet[2] = LED_WRITE_SUB;
+    packet[3] = layer;
+    packet[4] = mode;
+    for (i, (r, g, b)) in palette.iter().take(PALETTE_ENTRIES).enumerate() {
+        let off = KEY_LED_OFFSET + i * 3;
+        packet[off..off + 3].copy_from_slice(&[*r, *g, *b]);
+    }
+    packet
+}
+
 pub fn build_led_packet(layer: u8, mode: &str) -> Result<Vec<u8>> {
     // The firmware holds 3 layers and nothing switches the active one, so a
     // mode stored past them can never render (PLAN H.4, webcam 2026-11-01).
@@ -57,6 +132,27 @@ pub fn build_led_packet(layer: u8, mode: &str) -> Result<Vec<u8>> {
 
     if parts.is_empty() {
         return Err(anyhow!("Empty LED mode"));
+    }
+
+    // Per-key colours: `<mode> keys=<palette>`, the vendor's layout.
+    if let Some(list) = spec_keys(&mode_lower) {
+        if parts.len() != 2 {
+            return Err(anyhow!(
+                "keys= stands alone after the mode (`rgb keys=vendor`); a colour name \
+                 beside it has no vendor encoding"
+            ));
+        }
+        let number = led_mode_number(parts[0]).ok_or_else(|| {
+            anyhow!(
+                "Unknown LED mode '{}'. Available: off, red, green, ripple, rainbow, rgb",
+                parts[0]
+            )
+        })?;
+        return Ok(build_key_led_packet(
+            layer,
+            number,
+            &parse_key_palette(&list)?,
+        ));
     }
 
     // Mode table for the 514c:8850, from watching the knob:
@@ -231,160 +327,5 @@ fn parse_color(s: &str) -> Result<(u8, u8, u8)> {
 }
 
 #[cfg(test)]
-mod palette_tests {
-    use super::*;
-    use crate::firmware::LED_MODE_NAMES;
-
-    /// This knob ignores the colour bytes -- three different values all came
-    /// out red -- but the 16-key variant sharing its product id honours
-    /// them, so they must still be well-formed: base at 5-7, per-key from 8.
-    #[test]
-    fn layers_past_the_firmware_three_refuse_on_every_write_path() {
-        // Every LED write (CLI led, led-probe, MCP set_led, upload, daemon
-        // sync) builds its packet here, so the cap lives here.
-        for layer in 0..crate::firmware::DEVICE_LAYERS {
-            assert!(build_led_packet(layer, "green").is_ok(), "layer {layer}");
-        }
-        for layer in [3u8, 9, 15, 255] {
-            let e = build_led_packet(layer, "green")
-                .expect_err("must refuse")
-                .to_string();
-            assert!(e.contains("3 layers"), "layer {layer}: {e}");
-        }
-    }
-
-    #[test]
-    fn the_base_colour_and_palette_sit_where_the_protocol_says() {
-        let p = build_led_packet(0, "static blue").expect("packet");
-        assert_eq!(&p[BASE_COLOR_OFFSET..BASE_COLOR_OFFSET + 3], &[0, 0, 255]);
-        assert_eq!(&p[PALETTE_OFFSET..PALETTE_OFFSET + 3], &[0, 0, 255]);
-    }
-
-    #[test]
-    fn a_list_repeats_to_fill_the_palette() {
-        let p = build_led_packet(0, "static red,blue").expect("packet");
-        for i in 0..PALETTE_ENTRIES {
-            let o = PALETTE_OFFSET + i * 3;
-            let want: [u8; 3] = if i % 2 == 0 { [255, 0, 0] } else { [0, 0, 255] };
-            assert_eq!(&p[o..o + 3], &want, "entry {i}");
-        }
-    }
-
-    #[test]
-    fn an_unknown_colour_in_a_list_is_refused_rather_than_skipped() {
-        assert!(build_led_packet(0, "static red,chartreuse").is_err());
-        assert!(parse_palette("").is_err());
-    }
-
-    /// Mode 5 was refused for weeks as "crashes the firmware". It does not:
-    /// a capture of ANTICATER.app walking its own mode buttons shows
-    /// `03 FE B0 00 05` sent like any other mode, and the knob renders a
-    /// second multicoloured effect. This test used to pin the refusal, which
-    /// made it part of the defect rather than a guard against one.
-    #[test]
-    fn mode_five_builds_because_the_vendor_app_sends_it() {
-        for spec in ["mode5", "custom", "rgb", "rgb rainbow"] {
-            let p = build_led_packet(0, spec).unwrap_or_else(|e| panic!("{spec}: {e}"));
-            assert_eq!(p[4], 5, "{spec}");
-            assert_eq!(&p[..4], &[0x03, 0xFE, 0xB0, 0x00]);
-        }
-    }
-
-    /// Modes 1 and 2 are fixed COLOURS on this device, not the effects the
-    /// reference project's table names. The old names stay as aliases so
-    /// configs written against them keep loading.
-    #[test]
-    fn the_colour_names_and_their_legacy_aliases_reach_the_same_modes() {
-        for (spec, mode) in [
-            ("red", 1u8),
-            ("static", 1),
-            ("backlight", 1),
-            ("green", 2),
-            ("reactive", 2),
-            ("shock", 2),
-            ("rainbow", 4),
-            ("press", 4),
-            ("rgb", 5),
-            ("custom", 5),
-        ] {
-            let p = build_led_packet(0, spec).unwrap_or_else(|e| panic!("{spec}: {e}"));
-            assert_eq!(p[4], mode, "{spec}");
-        }
-    }
-
-    /// Every mode the device has must be nameable, or `led-read` reports a
-    /// live mode as unknown and `led-probe` cannot walk them all.
-    #[test]
-    fn every_mode_the_device_has_is_named_and_buildable() {
-        assert_eq!(LED_MODE_NAMES.len(), 6);
-        for (mode, name) in LED_MODE_NAMES.iter().enumerate() {
-            let p = build_led_packet(0, name).unwrap_or_else(|e| panic!("{name}: {e}"));
-            assert_eq!(p[4] as usize, mode, "{name}");
-        }
-    }
-
-    /// The number mapping agrees with the packet builder everywhere they
-    /// overlap: canonical names hit their own index, aliases hit the same
-    /// mode the packet carries, and unknown words are `None` rather than a
-    /// mode that would read back as a mismatch. `sync_led` trusts this to
-    /// skip writes, so a wrong entry here silently drops a light change.
-    #[test]
-    fn mode_number_names_its_index() {
-        for (mode, name) in LED_MODE_NAMES.iter().enumerate() {
-            assert_eq!(led_mode_number(name), Some(mode as u8), "{name}");
-        }
-        for (spec, mode) in [
-            ("static", 1u8),
-            ("backlight", 1),
-            ("steady", 1),
-            ("mode1", 1),
-            ("reactive", 2),
-            ("shock", 2),
-            ("mode2", 2),
-            ("shock2", 3),
-            ("mode3", 3),
-            ("press", 4),
-            ("mode4", 4),
-            ("custom", 5),
-            ("mode5", 5),
-            ("mode0", 0),
-            ("red white", 1),
-            ("  GREEN  ", 2),
-        ] {
-            assert_eq!(led_mode_number(spec), Some(mode), "{spec}");
-        }
-        for spec in ["", "   ", "chartreuse", "mode6", "reddish"] {
-            assert_eq!(led_mode_number(spec), None, "{spec}");
-        }
-    }
-
-    /// Every LED write needs this in front or the device stores the mode,
-    /// reads it back, and changes nothing.
-    #[test]
-    fn the_init_packet_is_the_one_the_firmware_requires() {
-        let p = led_init_packet();
-        assert_eq!(&p[..4], &[0x03, 0xFB, 0xFB, 0xFB]);
-        assert_eq!(p.len(), 64);
-    }
-
-    #[test]
-    fn the_mode_table_matches_the_hardware_tested_one() {
-        // Named for what the knob shows, not for the reference project's
-        // effect names: mode 1 is red and mode 2 is green on this device.
-        assert_eq!(
-            LED_MODE_NAMES,
-            ["off", "red", "green", "ripple", "rainbow", "rgb"]
-        );
-        for (name, want) in [
-            ("off", 0u8),
-            ("red", 1),
-            ("green", 2),
-            ("ripple", 3),
-            ("rainbow", 4),
-            ("rgb", 5),
-        ] {
-            let p = build_led_packet(0, name).unwrap_or_else(|e| panic!("{name}: {e}"));
-            assert_eq!(p[4], want, "{name}");
-        }
-    }
-}
+#[path = "led_tests.rs"]
+mod palette_tests;

@@ -146,6 +146,8 @@ pub fn send_report(dev: &HidDevice, payload: &[u8]) -> Result<()> {
         payload.len(),
         REPORT_LEN
     );
+    // The one door every write goes through (`tests/firmware_update_unsendable.rs`).
+    crate::firmware::ensure_sendable(payload)?;
     let mut buf = [0u8; REPORT_LEN + 1];
     buf[0] = REPORT_ID;
     buf[1..1 + payload.len()].copy_from_slice(payload);

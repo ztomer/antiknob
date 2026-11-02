@@ -162,6 +162,10 @@ antiknob upload config.yaml --layer 0        # one layer only
 antiknob bind-seq --key 5 cmd-c cmd-v
 antiknob bind-seq --key 5 --delay-ms 120 cmd-a cmd-c
 antiknob bind-seq --key 5 --dry-run h e l l o     # see the packet first
+# Touch gestures (swipe-left/right/up/down, like) are the vendor's own
+# records, read from its code. One per slot. Whether the knob RUNS them has
+# not been tried on hardware.
+antiknob bind-seq --key 3 --dry-run swipe-left
 
 # LED. Modes 1 and 2 are fixed COLOURS on this device, not effects.
 antiknob led 0 red
@@ -169,6 +173,8 @@ antiknob led 0 green
 antiknob led 0 rainbow          # cycling multicolour, the shipped effect
 antiknob led 0 rgb              # a second multicolour effect
 antiknob led 0 off
+antiknob led 0 rgb keys=vendor  # per-key palette: the vendor app's own 16 colours
+antiknob led 0 rgb keys=ff0000,ff8030,ffff30,00ff00,00ffff,0000ff,800080,8b0000,ffa500,ffff96,7dff00,008b8b,00008b,ff00ff,ff6666,ffc864
 antiknob led-read 0
 
 # Read the device back. --full uses the vendor's burst read: three queries

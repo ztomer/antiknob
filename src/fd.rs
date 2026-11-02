@@ -45,10 +45,19 @@
 //! action: a mouse step inside a sequence is refused, as is any button or
 //! wheel value the vendor never writes (X/Y movement at bytes 15/18 is not
 //! written by anything in the vendor binary).
+//!
+//! **Touch gestures** are the same page and the same record with byte 5 =
+//! `04` and the gesture at byte 9 (1 left, 2 right, 3 up, 4 down, 5 like):
+//! `swipe-left`, `swipe-right`, `swipe-up`, `swipe-down`, `like`. One per
+//! slot, no delay, any other code refused. The vendor app's own swipe
+//! buttons never reach this record (a label mismatch drops the click), so
+//! the swipe records are read from its code, not seen on the wire; `like`
+//! is on the wire too. Whether the knob RUNS them is the owner's live
+//! check (PLAN OW.78).
 
 use crate::firmware::{
     FD_CMD, FD_ENTRY_LEN, FD_HEADER_LEN, FD_KIND_MOUSE, FD_MAX_ENTRIES, FD_MOD_ENTRY_BASE,
-    REPORT_ID, REPORT_LEN,
+    MOUSE_CLASS_REPORT, MOUSE_CLASS_TOUCH, REPORT_ID, REPORT_LEN, TOUCH_GESTURES,
 };
 use crate::protocol::Action;
 use anyhow::{anyhow, Result};
@@ -74,7 +83,9 @@ impl Kind {
         match action {
             Action::Key { .. } => Self::Keyboard,
             Action::Media(_) => Self::Media,
-            Action::MouseClick { .. } | Action::MouseWheel { .. } => Self::Mouse,
+            Action::MouseClick { .. } | Action::MouseWheel { .. } | Action::Touch { .. } => {
+                Self::Mouse
+            }
         }
     }
 
@@ -126,7 +137,7 @@ fn value_bytes(action: &Action) -> Vec<u8> {
             vec![low, high]
         }
         // Never flattened: `build_packet` writes a mouse record whole.
-        Action::MouseClick { .. } | Action::MouseWheel { .. } => Vec::new(),
+        Action::MouseClick { .. } | Action::MouseWheel { .. } | Action::Touch { .. } => Vec::new(),
     }
 }
 
@@ -156,14 +167,13 @@ fn plan_kind(steps: &[Step]) -> Result<Kind> {
     kind.ok_or_else(|| anyhow!("an empty sequence binds nothing; give at least one action"))
 }
 
-/// Byte 5 of a vendor mouse record: a mouse-report action (`04` is the
-/// touch-gesture class: Like and the four swipes).
-const MOUSE_REPORT_CLASS: u8 = 1;
 /// The `len` the vendor declares on every mouse record.
 const MOUSE_LEN: u8 = 4;
 /// Where the vendor puts the button mask and the wheel delta.
 const MOUSE_BUTTON_AT: usize = 12;
 const MOUSE_WHEEL_AT: usize = 21;
+/// Where it puts a touch gesture's code.
+const TOUCH_GESTURE_AT: usize = 9;
 
 /// The one mouse record for `steps`, exactly as the vendor writes it
 /// (`Widget::SetMousePage` @0x1000477f0, PHY2 cases `a`..`e`).
@@ -181,15 +191,20 @@ fn mouse_packet(key_id: u8, layer: u8, steps: &[Step]) -> Result<Vec<u8>> {
             "a mouse record carries no measured delay; bind it with no delay"
         ));
     }
-    let (at, value) = match step.action {
-        Action::MouseClick { button } if matches!(button, 1 | 2 | 4) => (MOUSE_BUTTON_AT, button),
+    let (class, at, value) = match step.action {
+        Action::MouseClick { button } if matches!(button, 1 | 2 | 4) => {
+            (MOUSE_CLASS_REPORT, MOUSE_BUTTON_AT, button)
+        }
         Action::MouseWheel { delta } if matches!(delta, 1 | -1) => {
-            (MOUSE_WHEEL_AT, delta.to_le_bytes()[0])
+            (MOUSE_CLASS_REPORT, MOUSE_WHEEL_AT, delta.to_le_bytes()[0])
+        }
+        Action::Touch { gesture } if TOUCH_GESTURES.contains(&gesture) => {
+            (MOUSE_CLASS_TOUCH, TOUCH_GESTURE_AT, gesture)
         }
         ref other => {
             return Err(anyhow!(
                 "{other:?} is not a mouse record the vendor writes (buttons 1, 2, 4 \
-                 alone; wheel +1 or -1), so its encoding is unknown"
+                 alone; wheel +1 or -1; touch gestures 1..=5), so its encoding is unknown"
             ))
         }
     };
@@ -199,7 +214,7 @@ fn mouse_packet(key_id: u8, layer: u8, steps: &[Step]) -> Result<Vec<u8>> {
     packet[2] = key_id;
     packet[3] = layer + 1;
     packet[4] = FD_KIND_MOUSE;
-    packet[5] = MOUSE_REPORT_CLASS;
+    packet[5] = class;
     packet[6] = MOUSE_LEN;
     packet[at] = value;
     Ok(packet)

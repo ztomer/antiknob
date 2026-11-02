@@ -158,8 +158,9 @@ sitting. Exit: each item below has a recorded measurement in VENDOR_UI_MAP
   leak is AK.LEAK (Claude's own shortcut is Ctrl+Backspace, and no Karabiner
   rule or Service claims F16-F20, so the trigger is unidentified). Changing the chord touches `SLOT_SPECS`,
   `host::gesture::SLOT_MODS` and their pinning tests together.
-* **H.3 Fresh wired capture** with `tools/hidsnoop/snoop-vendor-app.sh`,
-  frames added to `tests/fixtures/vendor_capture.json` (no invented frames).
+* **H.3 Fresh wired capture: DROPPED by the owner 2026-11-01** ("Drop it").
+  What stays unmeasured, and so stays refused or unsupported: capture with
+  `tools/hidsnoop/snoop-vendor-app.sh`, frames added to `tests/fixtures/vendor_capture.json` (no invented frames).
   Targets, by value: mouse under `0xFD` (only buttons at byte 12 and wheel at
   byte 21 measured; `fd::build_packet` refuses mouse until then, so no mouse
   step in a sequence), what byte 5 MEANS (its storage is measured: kept as
@@ -217,10 +218,7 @@ sitting. Exit: each item below has a recorded measurement in VENDOR_UI_MAP
    log for five FIRED lines and every other app for a reaction. Restore with
    `antiknob bind-slots`.
 2. H.1: open Antiknob.app and check its knob-mode line reads host-translate.
-3. H.3: run `tools/hidsnoop/snoop-vendor-app.sh`, assign in the vendor app a
-   mouse action, an appended action (byte 5 = 01), a swipe and a `Ctrl+Alt+`
-   combo; add the captured frames to the fixture.
-4. H.4: `antiknob led 0 ripple` and watch; store a mode on layers 3-15 the
+3. H.4: `antiknob led 0 ripple` and watch; store a mode on layers 3-15 the
    way FIRMWARE_REVIEW #7 did (`led` takes 0-2), switch to them, and record
    whether anything renders.
 

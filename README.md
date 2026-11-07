@@ -4,6 +4,8 @@ A modern native macOS Apple Silicon (`arm64`) configurator and utility for the *
 
 Antiknob is written in 100% pure Rust and native SwiftUI, permissively licensed (**MIT OR Apache-2.0**), fully commercializable with zero copyleft/dual-license traps, and operates completely unprivileged (**no `sudo` required**) via Apple's native `IOHIDManager`.
 
+<img width="1031" height="1242" alt="image" src="https://github.com/user-attachments/assets/0f605c44-df30-44ea-81a8-deac13d9c288" />
+
 ---
 
 ## Highlights

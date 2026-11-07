@@ -29,7 +29,7 @@ def _rust_block(src: str, header: str) -> str | None:
     i = src.find(header)
     if i < 0:
         return None
-    rest = src[i + len(header):]
+    rest = src[i + len(header) :]
     m = re.search(r"^\}", rest, re.M)
     return rest[: m.start()] if m else None
 
@@ -58,7 +58,7 @@ def _swift_type_body(src: str, decl: str) -> str | None:
         elif src[i] == "}":
             depth -= 1
             if depth == 0:
-                return src[m.end(): i]
+                return src[m.end() : i]
         i += 1
     return None
 
@@ -105,9 +105,7 @@ def rust_action_tags(src: str) -> set[str] | None:
 
 def rust_simple_enum_values(src: str, name: str) -> set[str] | None:
     """Wire values of `pub enum <name>`, honouring `rename_all` on it."""
-    m = re.search(
-        rf'((?:#\[serde\([^\)]*\)\]\s*)?)pub enum {name}\b', src, re.M
-    )
+    m = re.search(rf"((?:#\[serde\([^\)]*\)\]\s*)?)pub enum {name}\b", src, re.M)
     if not m:
         return None
     rename = re.search(r'rename_all\s*=\s*"(\w+)"', m.group(1) or "")
@@ -138,8 +136,10 @@ def rust_action_field_names(src: str) -> dict[str, set[str]]:
     # Scoped to the attribute block ON HostAction. Searching the whole file
     # would let an unrelated struct's `rename_all_fields` change what this
     # extractor believes about HostAction's wire, with nothing to connect them.
-    attrs = re.search(r'((?:#\[serde\([^\)]*\)\]\s*)?)pub enum HostAction', src)
-    has_rename_all_fields = bool(attrs and "rename_all_fields" in (attrs.group(1) or ""))
+    attrs = re.search(r"((?:#\[serde\([^\)]*\)\]\s*)?)pub enum HostAction", src)
+    has_rename_all_fields = bool(
+        attrs and "rename_all_fields" in (attrs.group(1) or "")
+    )
     body = _rust_block(src, "pub enum HostAction")
     if body is None:
         return {}
@@ -168,9 +168,7 @@ def rust_enum_variant_count(src: str, name: str) -> int | None:
     if body is None:
         return None
     body = re.sub(r"^\s*#\[[^\]]*\]\s*$", "", body, flags=re.M)
-    return len(
-        re.findall(r"^\s{4}([A-Z][A-Za-z0-9]*)\s*(?:,|\{)", body, re.M)
-    )
+    return len(re.findall(r"^\s{4}([A-Z][A-Za-z0-9]*)\s*(?:,|\{)", body, re.M))
 
 
 def rust_struct_wire_fields(src: str, name: str) -> tuple[set[str], set[str]] | None:
@@ -183,9 +181,7 @@ def rust_struct_wire_fields(src: str, name: str) -> tuple[set[str], set[str]] | 
     requiring the Swift model to be able to WRITE `twist_l` would be wrong —
     requiring it to be able to READ it is not.
     """
-    m = re.search(
-        rf'((?:#\[serde\([^\)]*\)\]\s*)?)pub struct {name}\b', src, re.M
-    )
+    m = re.search(rf"((?:#\[serde\([^\)]*\)\]\s*)?)pub struct {name}\b", src, re.M)
     if not m:
         return None
     attrs = m.group(1) or ""
@@ -209,7 +205,7 @@ def rust_struct_wire_fields(src: str, name: str) -> tuple[set[str], set[str]] | 
 
 
 def rust_led_modes(src: str) -> list[str] | None:
-    m = re.search(r'LED_MODE_NAMES:\s*\[&str;\s*\d+\]\s*=\s*\[(.*?)\]', src, re.S)
+    m = re.search(r"LED_MODE_NAMES:\s*\[&str;\s*\d+\]\s*=\s*\[(.*?)\]", src, re.S)
     if not m:
         return None
     return re.findall(r'"([^"]+)"', m.group(1))
@@ -247,7 +243,9 @@ def swift_enum_cases(src: str, name: str) -> list[str] | None:
     body = _swift_type_body(src, rf"(?:struct|enum)\s+{name}\b")
     if body is None:
         return None
-    cases = re.findall(r"^\s*case\s+([A-Za-z][A-Za-z0-9]*)", _strip_comments(body), re.M)
+    cases = re.findall(
+        r"^\s*case\s+([A-Za-z][A-Za-z0-9]*)", _strip_comments(body), re.M
+    )
     return cases or None
 
 
@@ -274,7 +272,7 @@ def _brace_block(text: str, open_at: int) -> str | None:
         elif text[i] == "}":
             depth -= 1
             if depth == 0:
-                return text[open_at: i + 1]
+                return text[open_at : i + 1]
     return None
 
 
@@ -398,7 +396,9 @@ def swift_vendor_rainbow(src: str) -> list[str] | None:
     m = re.search(r"static let vendorRainbow: \[RGB\] = \[(.*?)\n    \]", src, re.S)
     if not m:
         return None
-    triples = re.findall(r"RGB\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)", m.group(1))
+    triples = re.findall(
+        r"RGB\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)", m.group(1)
+    )
     if not triples:
         return None
     out = []

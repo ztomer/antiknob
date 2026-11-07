@@ -19,8 +19,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 const GATE: &str = "tools/check_swift_rust_model_parity.py";
-const HELPER: &str = "tools/_parity_extract.py";
-const HELPER_NAME: &str = "_parity_extract.py";
 
 /// The model files the gate reads, mirrored into a scratch tree.
 ///
@@ -346,13 +344,22 @@ fn a_stale_allowlist_entry_fails() {
         "ALLOWLIST: dict[str, str] = {\n    \"action-tags\": \"seeded by the calibration test\",\n}",
         1,
     );
-    // The seeded copy needs its sibling too. The gate imports
-    // `_parity_extract` from its own directory, so a copy in the scratch tree
-    // cannot resolve it unless the helper is copied alongside — which is how
-    // the two ship, so copying both reproduces the shipped arrangement rather
-    // than inventing one.
-    std::fs::copy(repo_root().join(HELPER), dir.join(HELPER_NAME))
-        .expect("copy the gate's helper module beside the seeded gate");
+    // The seeded copy needs its siblings too. The gate imports its helper
+    // modules (`tools/_*.py`: `_parity_extract`, `_parity_display`) from its own
+    // directory, so a copy in the scratch tree cannot resolve them unless they
+    // are copied alongside — which is how they ship. EVERY helper, read from the
+    // directory, so a new split cannot leave this copy short of one.
+    for entry in std::fs::read_dir(repo_root().join("tools")).expect("list tools/") {
+        let path = entry.expect("tools/ entry").path();
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default();
+        if name.starts_with('_') && name.ends_with(".py") {
+            std::fs::copy(&path, dir.join(name))
+                .expect("copy a gate helper module beside the seeded gate");
+        }
+    }
     let seeded_path = dir.join("seeded_gate.py");
     std::fs::write(&seeded_path, seeded).expect("write the seeded gate");
 

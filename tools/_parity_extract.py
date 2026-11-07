@@ -30,7 +30,7 @@ def _rust_block(src: str, header: str) -> str | None:
     if i < 0:
         return None
     rest = src[i + len(header) :]
-    m = re.search(r"^\}", rest, re.M)
+    m = re.search(r"^\}", rest, re.MULTILINE)
     return rest[: m.start()] if m else None
 
 
@@ -89,9 +89,9 @@ def rust_action_tags(src: str) -> set[str] | None:
     if body is None:
         return None
     # `#[default]` decorates a variant; strip attributes before reading names.
-    body = re.sub(r"^\s*#\[[^\]]*\]\s*$", "", body, flags=re.M)
-    names = re.findall(r"^\s{4}([A-Z][A-Za-z0-9]*)\s*\{", body, re.M)
-    names += re.findall(r"^\s{4}([A-Z][A-Za-z0-9]*)\s*,\s*$", body, re.M)
+    body = re.sub(r"^\s*#\[[^\]]*\]\s*$", "", body, flags=re.MULTILINE)
+    names = re.findall(r"^\s{4}([A-Z][A-Za-z0-9]*)\s*\{", body, re.MULTILINE)
+    names += re.findall(r"^\s{4}([A-Z][A-Za-z0-9]*)\s*,\s*$", body, re.MULTILINE)
     if not names:
         return None
     if rename == "camelCase":
@@ -105,14 +105,16 @@ def rust_action_tags(src: str) -> set[str] | None:
 
 def rust_simple_enum_values(src: str, name: str) -> set[str] | None:
     """Wire values of `pub enum <name>`, honouring `rename_all` on it."""
-    m = re.search(rf"((?:#\[serde\([^\)]*\)\]\s*)?)pub enum {name}\b", src, re.M)
+    m = re.search(
+        rf"((?:#\[serde\([^\)]*\)\]\s*)?)pub enum {name}\b", src, re.MULTILINE
+    )
     if not m:
         return None
     rename = re.search(r'rename_all\s*=\s*"(\w+)"', m.group(1) or "")
     body = _rust_block(src, f"pub enum {name}")
     if body is None:
         return None
-    names = re.findall(r"^\s{4}([A-Z][A-Za-z0-9]*)\s*,\s*$", body, re.M)
+    names = re.findall(r"^\s{4}([A-Z][A-Za-z0-9]*)\s*,\s*$", body, re.MULTILINE)
     if not names:
         return None
     mode = rename.group(1) if rename else None
@@ -145,10 +147,10 @@ def rust_action_field_names(src: str) -> dict[str, set[str]]:
         return {}
     out: dict[str, set[str]] = {}
     for variant, inner in re.findall(
-        r"^\s{4}([A-Z][A-Za-z0-9]*)\s*\{(.*?)^\s{4}\}", body, re.M | re.S
+        r"^\s{4}([A-Z][A-Za-z0-9]*)\s*\{(.*?)^\s{4}\}", body, re.MULTILINE | re.DOTALL
     ):
         names = set()
-        for fname in re.findall(r"^\s{8}([a-z_][a-z0-9_]*)\s*:", inner, re.M):
+        for fname in re.findall(r"^\s{8}([a-z_][a-z0-9_]*)\s*:", inner, re.MULTILINE):
             if fname == "serde":
                 continue
             names.add(fname)
@@ -167,8 +169,8 @@ def rust_enum_variant_count(src: str, name: str) -> int | None:
     body = _rust_block(src, f"pub enum {name}")
     if body is None:
         return None
-    body = re.sub(r"^\s*#\[[^\]]*\]\s*$", "", body, flags=re.M)
-    return len(re.findall(r"^\s{4}([A-Z][A-Za-z0-9]*)\s*(?:,|\{)", body, re.M))
+    body = re.sub(r"^\s*#\[[^\]]*\]\s*$", "", body, flags=re.MULTILINE)
+    return len(re.findall(r"^\s{4}([A-Z][A-Za-z0-9]*)\s*(?:,|\{)", body, re.MULTILINE))
 
 
 def rust_struct_wire_fields(src: str, name: str) -> tuple[set[str], set[str]] | None:
@@ -181,7 +183,9 @@ def rust_struct_wire_fields(src: str, name: str) -> tuple[set[str], set[str]] | 
     requiring the Swift model to be able to WRITE `twist_l` would be wrong —
     requiring it to be able to READ it is not.
     """
-    m = re.search(rf"((?:#\[serde\([^\)]*\)\]\s*)?)pub struct {name}\b", src, re.M)
+    m = re.search(
+        rf"((?:#\[serde\([^\)]*\)\]\s*)?)pub struct {name}\b", src, re.MULTILINE
+    )
     if not m:
         return None
     attrs = m.group(1) or ""
@@ -193,7 +197,7 @@ def rust_struct_wire_fields(src: str, name: str) -> tuple[set[str], set[str]] | 
     # Per-field `#[serde(..., alias = "...")]` sits on the FIELD, so the whole
     # body has to be scanned for aliases rather than just the container attrs.
     aliases: set[str] = set(re.findall(r'alias\s*=\s*"([^"]+)"', attrs + "\n" + body))
-    for fname in re.findall(r"^\s{4}pub ([a-z_][a-z0-9_]*)\s*:", body, re.M):
+    for fname in re.findall(r"^\s{4}pub ([a-z_][a-z0-9_]*)\s*:", body, re.MULTILINE):
         if rename and rename.group(1) == "camelCase":
             parts = fname.split("_")
             written.add(parts[0] + "".join(p.title() for p in parts[1:]))
@@ -205,7 +209,7 @@ def rust_struct_wire_fields(src: str, name: str) -> tuple[set[str], set[str]] | 
 
 
 def rust_led_modes(src: str) -> list[str] | None:
-    m = re.search(r"LED_MODE_NAMES:\s*\[&str;\s*\d+\]\s*=\s*\[(.*?)\]", src, re.S)
+    m = re.search(r"LED_MODE_NAMES:\s*\[&str;\s*\d+\]\s*=\s*\[(.*?)\]", src, re.DOTALL)
     if not m:
         return None
     return re.findall(r'"([^"]+)"', m.group(1))
@@ -214,7 +218,9 @@ def rust_led_modes(src: str) -> list[str] | None:
 def rust_vendor_rainbow(src: str) -> list[str] | None:
     """The vendor palette as decimal `r,g,b`, so it compares to Swift's floats."""
     m = re.search(
-        r"VENDOR_RAINBOW:\s*\[\(u8,\s*u8,\s*u8\);\s*\d+\]\s*=\s*\[(.*?)\n\]", src, re.S
+        r"VENDOR_RAINBOW:\s*\[\(u8,\s*u8,\s*u8\);\s*\d+\]\s*=\s*\[(.*?)\n\]",
+        src,
+        re.DOTALL,
     )
     if not m:
         return None
@@ -229,7 +235,7 @@ def rust_vendor_rainbow(src: str) -> list[str] | None:
 
 def rust_gestures(src: str) -> list[str] | None:
     """`Gesture::ALL` — slot order, which is what makes it worth comparing."""
-    m = re.search(r"pub const ALL: \[Gesture;\s*\d+\]\s*=\s*\[(.*?)\];", src, re.S)
+    m = re.search(r"pub const ALL: \[Gesture;\s*\d+\]\s*=\s*\[(.*?)\];", src, re.DOTALL)
     if not m:
         return None
     names = re.findall(r"Gesture::([A-Za-z]+)", m.group(1))
@@ -244,7 +250,7 @@ def swift_enum_cases(src: str, name: str) -> list[str] | None:
     if body is None:
         return None
     cases = re.findall(
-        r"^\s*case\s+([A-Za-z][A-Za-z0-9]*)", _strip_comments(body), re.M
+        r"^\s*case\s+([A-Za-z][A-Za-z0-9]*)", _strip_comments(body), re.MULTILINE
     )
     return cases or None
 
@@ -333,7 +339,7 @@ def swift_encoded_keys_per_case(src: str, type_name: str) -> dict[str, set[str]]
     for case, inner in re.findall(
         r"case\s+\.([a-zA-Z][A-Za-z0-9]*)[^:\n]*:\s*(.*?)(?=\n\s{8}case\s+\.|\s*$)",
         body,
-        re.S,
+        re.DOTALL,
     ):
         keys = set(re.findall(r"forKey:\s*\.([A-Za-z_][A-Za-z0-9_]*)", inner))
         if keys:
@@ -371,7 +377,7 @@ def swift_coding_key_names(src: str, type_name: str) -> set[str] | None:
         return None
     keys: set[str] = set()
     for block in re.findall(
-        r"enum CodingKeys: String, CodingKey \{(.*?)\n\s{4}\}", body, re.S
+        r"enum CodingKeys: String, CodingKey \{(.*?)\n\s{4}\}", body, re.DOTALL
     ):
         for group in re.findall(r"\bcase\s+([^\n]+)", _strip_comments(block)):
             for name in group.split(","):
@@ -382,7 +388,7 @@ def swift_coding_key_names(src: str, type_name: str) -> set[str] | None:
 
 
 def swift_led_modes(src: str) -> dict[str, int] | None:
-    m = re.search(r"static let all: \[LedMode\] = \[(.*?)\n    \]", src, re.S)
+    m = re.search(r"static let all: \[LedMode\] = \[(.*?)\n    \]", src, re.DOTALL)
     if not m:
         return None
     ids = re.findall(r'id:\s*"([^"]+)"', m.group(1))
@@ -393,7 +399,9 @@ def swift_led_modes(src: str) -> dict[str, int] | None:
 
 
 def swift_vendor_rainbow(src: str) -> list[str] | None:
-    m = re.search(r"static let vendorRainbow: \[RGB\] = \[(.*?)\n    \]", src, re.S)
+    m = re.search(
+        r"static let vendorRainbow: \[RGB\] = \[(.*?)\n    \]", src, re.DOTALL
+    )
     if not m:
         return None
     triples = re.findall(
@@ -408,7 +416,10 @@ def swift_vendor_rainbow(src: str) -> list[str] | None:
 
 
 def swift_gestures(src: str) -> list[str] | None:
-    m = re.search(r"\benum Gesture\b[^{]*\{(.*?)\n\}", src, re.S)
+    m = re.search(r"\benum Gesture\b[^{]*\{(.*?)\n\}", src, re.DOTALL)
     if not m:
         return None
-    return re.findall(r"^\s*case\s+([a-zA-Z][A-Za-z0-9]*)", m.group(1), re.M) or None
+    return (
+        re.findall(r"^\s*case\s+([a-zA-Z][A-Za-z0-9]*)", m.group(1), re.MULTILINE)
+        or None
+    )

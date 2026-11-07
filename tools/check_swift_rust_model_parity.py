@@ -59,6 +59,7 @@ decides whether this is a ratchet or a rug. It is proven, not asserted:
 mutated copies of both sources and against a seeded stale entry, and requires a
 non-zero exit for each.
 """
+
 from __future__ import annotations
 
 import os
@@ -66,33 +67,27 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _parity_extract import (  # noqa: E402
+from _parity_display import check_display
+from _parity_extract import (
     RENAME_ALL_FIELDS_SENTINEL,
     read,
-    rust_simple_enum_values,
     rust_action_field_names,
     rust_action_tags,
-    rust_gestures,
-    rust_led_modes,
+    rust_simple_enum_values,
     rust_struct_wire_fields,
-    rust_vendor_rainbow,
     swift_coding_key_names,
     swift_encoded_action_types,
     swift_encoded_keys,
     swift_encoded_keys_per_case,
     swift_enum_cases,
-    swift_gestures,
-    swift_led_modes,
     swift_unified_map,
-    swift_vendor_rainbow,
 )
 
 REPO = Path(
     # A seam, and the only one: tests run this script against a COPY of the
     # model files with one thing deliberately broken, which is the only way to
     # show a gate can go red. Defaults to the repo this file lives in.
-    os.environ.get("ANTIKNOB_PARITY_ROOT")
-    or Path(__file__).resolve().parent.parent
+    os.environ.get("ANTIKNOB_PARITY_ROOT") or Path(__file__).resolve().parent.parent
 )
 GOH = Path(
     __import__("os").environ.get("GOH_DIR")
@@ -118,13 +113,6 @@ def _err(msg: str) -> None:
 
 def _info(msg: str) -> None:
     print(f"→ [swift-rust-parity] {msg}", file=sys.stderr)
-
-
-# ── the ratchet ──────────────────────────────────────────────────────────────
-#
-# (finding id, what it says, why it is still here / which change removes it).
-# EMPTY is the completion criterion: the same command that reported four drifts
-# reports none, and any new one fails the gate.
 
 
 # ── the ratchet ──────────────────────────────────────────────────────────────
@@ -176,7 +164,9 @@ def main() -> int:
     def check(fid: str, ok: bool | None, detail: str) -> None:
         """Record a finding unless it passes. `ok is None` means EXTRACT FAILED."""
         if ok is None:
-            findings.append((fid, detail + " — EXTRACTOR FOUND NOTHING, which is a gate failure"))
+            findings.append(
+                (fid, detail + " — EXTRACTOR FOUND NOTHING, which is a gate failure")
+            )
         elif not ok:
             findings.append((fid, detail))
 
@@ -196,27 +186,42 @@ def main() -> int:
     # Swift `openURL` is one case whose tag is `openUrl`; the Rust variant is
     # `OpenUrl`. Map case name -> tag so the two compare per-variant.
     case_to_tag = {
-        "none": "none", "scroll": "scroll", "keyChord": "keyChord",
-        "sequence": "sequence", "aux": "aux", "mouseClick": "mouseClick",
-        "launchApp": "launchApp", "openURL": "openUrl", "openPath": "openPath",
-        "quitApp": "quitApp", "hotkeySwitch": "hotkeySwitch",
+        "none": "none",
+        "scroll": "scroll",
+        "keyChord": "keyChord",
+        "sequence": "sequence",
+        "aux": "aux",
+        "mouseClick": "mouseClick",
+        "launchApp": "launchApp",
+        "openURL": "openUrl",
+        "openPath": "openPath",
+        "quitApp": "quitApp",
+        "hotkeySwitch": "hotkeySwitch",
     }
     if RENAME_ALL_FIELDS_SENTINEL in rust_fields:
-        findings.append((
-            "action-fields",
-            "HostAction now sets `rename_all_fields`, which this extractor does not model, "
-            "so every field name it reports is wrong in the same direction. Re-read "
-            "tools/_parity_extract.py before trusting this arm.",
-        ))
+        findings.append(
+            (
+                "action-fields",
+                (
+                    "HostAction now sets `rename_all_fields`, which this extractor does not model, "
+                    "so every field name it reports is wrong in the same direction. Re-read "
+                    "tools/_parity_extract.py before trusting this arm."
+                ),
+            )
+        )
     for case, keys in sorted(swift_fields.items()):
         if case == RENAME_ALL_FIELDS_SENTINEL:
             continue
         tag = case_to_tag.get(case)
         if tag is None:
             findings.append(
-                ("action-fields",
-                 f"Swift case `{case}` is not in case_to_tag, so this gate cannot compare it; "
-                 "add it rather than letting the case go unchecked")
+                (
+                    "action-fields",
+                    (
+                        f"Swift case `{case}` is not in case_to_tag, so this gate cannot compare it; "
+                        "add it rather than letting the case go unchecked"
+                    ),
+                )
             )
             continue
         want = rust_fields.get(tag)
@@ -226,17 +231,25 @@ def main() -> int:
             extra = keys - {"type"}
             if extra:
                 findings.append(
-                    ("action-fields",
-                     f"the daemon's `HostAction::{tag}` carries no fields, but the app writes "
-                     f"{sorted(extra)} for `{case}`")
+                    (
+                        "action-fields",
+                        (
+                            f"the daemon's `HostAction::{tag}` carries no fields, but the app writes "
+                            f"{sorted(extra)} for `{case}`"
+                        ),
+                    )
                 )
             continue
         extra = keys - want - {"type"}
         if extra:
             findings.append(
-                ("action-fields",
-                 f"`{tag}`: the app encodes field(s) {sorted(extra)} the daemon's variant does "
-                 f"not have (it has {sorted(want)}); serde will refuse the file or drop them")
+                (
+                    "action-fields",
+                    (
+                        f"`{tag}`: the app encodes field(s) {sorted(extra)} the daemon's variant does "
+                        f"not have (it has {sorted(want)}); serde will refuse the file or drop them"
+                    ),
+                )
             )
 
     # 3. SeqStep: the delay arm.
@@ -244,7 +257,9 @@ def main() -> int:
     swift_step = swift_encoded_keys(models, "SeqStep")
     check(
         "seqstep-keys",
-        None if rust_step is None or swift_step is None else bool(swift_step <= rust_step[0]),
+        None
+        if rust_step is None or swift_step is None
+        else bool(swift_step <= rust_step[0]),
         f"SeqStep: the app writes {sorted(swift_step or set())}, the daemon's field set is "
         f"{sorted((rust_step or (set(), set()))[0])}; anything outside that set is silently "
         f"dropped on read, which is what made every delay vanish",
@@ -315,7 +330,9 @@ def main() -> int:
         swift_variant_emits = swift_encoded_keys(layer_variant, "LayerVariant")
         check(
             "variant-keys-emitted",
-            None if swift_variant_emits is None else bool(swift_variant_emits <= rust_variant[1]),
+            None
+            if swift_variant_emits is None
+            else bool(swift_variant_emits <= rust_variant[1]),
             f"the app writes LayerVariant key(s) "
             f"{sorted((swift_variant_emits or set()) - rust_variant[1])} the daemon has no field "
             f"for; the value is discarded on read",
@@ -348,7 +365,8 @@ def main() -> int:
         swift_config_emits = swift_encoded_keys(models, "Config")
         check(
             "config-keys-emitted",
-            None if rust_config is None or swift_config_emits is None
+            None
+            if rust_config is None or swift_config_emits is None
             else bool(swift_config_emits <= rust_config[1]),
             f"the app writes Config key(s) "
             f"{sorted((swift_config_emits or set()) - rust_config[1])} the daemon has no field "
@@ -379,70 +397,27 @@ def main() -> int:
     swift_mouse = swift_enum_cases(models, "MouseButton")
     check(
         "mouse-keys",
-        None if rust_mouse is None or swift_mouse is None else set(swift_mouse or []) == rust_mouse,
+        None
+        if rust_mouse is None or swift_mouse is None
+        else set(swift_mouse or []) == rust_mouse,
         f"MouseButton differs: daemon-only={sorted((rust_mouse or set()) - set(swift_mouse or []))} "
         f"app-only={sorted(set(swift_mouse or []) - (rust_mouse or set()))}",
     )
 
-    # 9. LED modes: name AND number, both directions. `LedMode.all` mirrors
-    #    LED_MODE_NAMES; a mode added on one side only is a mode the other
-    #    side cannot name or draw.
-    rust_led = rust_led_modes(firmware)
-    swift_led = swift_led_modes(led)
-    if rust_led is None or swift_led is None:
-        check("led-modes", None, "could not extract the LED mode table from either side")
-    else:
-        if list(swift_led) != rust_led:
-            findings.append(
-                ("led-modes",
-                 f"LED mode ids differ in order: daemon={rust_led} app={list(swift_led)}")
-            )
-        for i, name in enumerate(rust_led):
-            if swift_led.get(name) != i:
-                findings.append(
-                    ("led-modes",
-                     f"LED mode `{name}` is number {i} on the daemon and "
-                     f"{swift_led.get(name)} in the app")
-                )
-
-    # 10. The vendor rainbow, in the vendor's order. The preview renders it,
-    #    so a reordered palette is a wrong picture, not a missing one.
-    rust_rainbow = rust_vendor_rainbow(firmware)
-    swift_rainbow = swift_vendor_rainbow(led)
-    check(
-        "vendor-rainbow",
-        None if rust_rainbow is None or swift_rainbow is None else rust_rainbow == swift_rainbow,
-        f"the vendor rainbow differs: daemon={rust_rainbow} app={swift_rainbow}",
-    )
-
-    # 11. Gestures: five, both sides. The daemon's ORDER is slot order, so it
-    #     is compared as an ordered list too.
-    rust_g = rust_gestures(gesture_rs)
-    swift_g = swift_gestures(gesture_sw)
-    # The daemon names them `TwistL`, the app `twistL`. Folded, because the
-    # question is whether the same five gestures are modelled, not whether two
-    # languages agree on capitalisation.
-    check(
-        "gestures-set",
-        None if rust_g is None or swift_g is None
-        else {n.lower() for n in rust_g} == {n.lower() for n in swift_g},
-        f"gesture sets differ: daemon={sorted(rust_g or [])} app={sorted(swift_g or [])}",
-    )
-    # Swift's declaration order is the file's, not slot order, so compare
-    # against the daemon's order rather than expecting the app to match it.
-    check(
-        "gestures-count",
-        None if rust_g is None or swift_g is None else len(rust_g) == len(swift_g),
-        f"the daemon drives {len(rust_g or [])} gestures, the app offers {len(swift_g or [])}",
-    )
+    # 9-11. LED modes, the vendor rainbow and the gestures (tools/_parity_display.py).
+    check_display(firmware, led, gesture_rs, gesture_sw, check, findings)
 
     # ── report ───────────────────────────────────────────────────────────────
     live = {fid: detail for fid, detail in findings}
     stale = sorted(set(ALLOWLIST) - set(live))
     if stale:
-        _err(f"{len(stale)} stale allowlist entr(ies) — the code was fixed but the exemption stayed")
+        _err(
+            f"{len(stale)} stale allowlist entr(ies) — the code was fixed but the exemption stayed"
+        )
         for fid in stale:
-            _info(f"`{fid}` no longer occurs ({ALLOWLIST[fid]}); delete it from ALLOWLIST")
+            _info(
+                f"`{fid}` no longer occurs ({ALLOWLIST[fid]}); delete it from ALLOWLIST"
+            )
         return 1
 
     unallowlisted = {fid: d for fid, d in live.items() if fid not in ALLOWLIST}
@@ -454,9 +429,13 @@ def main() -> int:
             _info(f"{fid}: {detail}")
         _info("")
         _info("The daemon is ground truth — it is what reads host.json and drives the")
-        _info("hardware. Fix the SWIFT side (ui/Sources/AntiknobUI/Core/), then re-run.")
+        _info(
+            "hardware. Fix the SWIFT side (ui/Sources/AntiknobUI/Core/), then re-run."
+        )
         _info("If a disagreement is genuinely intended, add it to ALLOWLIST with the")
-        _info("reason; an entry that stops matching will then FAIL until you delete it.")
+        _info(
+            "reason; an entry that stops matching will then FAIL until you delete it."
+        )
         return 1
 
     if ALLOWLIST:

@@ -29,6 +29,9 @@ case "${1:-}" in
     # manifest edit with the lockfile left untouched.
     "$GOH/gates/rust_gate.sh"  .
     #   "$GOH/gates/py_gate.sh"    .
+    # Ruff check + format + noqa parity over EVERY tracked .py (tools/ helpers have no pytest
+    # suite, so py_gate.sh never reads them; a ruff bump's new verdicts would go unread).
+    "$GOH/gates/py_staged.sh" --all .
     # The Swift half is its own SPM package under ui/, with its own .gatesrc.
     "$GOH/gates/swift_gate.sh" ./ui
     # Layer 3: genuinely local checks (cargo test + cargo audit).

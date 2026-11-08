@@ -4,6 +4,7 @@
 use super::super::gesture::Gesture;
 use super::super::ChordSpec;
 use super::*;
+use crate::host::hold_stats::HoldSample;
 
 fn tap() -> TapEngine {
     TapEngine::new(HostConfig::default_config())
@@ -115,10 +116,10 @@ type Ev = (u16, bool, u64);
 fn downstream(t: &mut TapEngine, input: &[Ev]) -> Vec<(u16, bool)> {
     let mut seen = Vec::new();
     for &(code, pressed, at) in input {
-        for h in t.expire_held(at) {
+        for h in t.expire_held(at * 1000) {
             seen.push((h.code, true));
         }
-        match t.decide(code, pressed, 0, at).verdict {
+        match t.decide(code, pressed, 0, at * 1000).verdict {
             Verdict::Pass => seen.push((code, pressed)),
             Verdict::Swallow | Verdict::Hold => {}
             Verdict::Replay(held) => {
@@ -128,7 +129,7 @@ fn downstream(t: &mut TapEngine, input: &[Ev]) -> Vec<(u16, bool)> {
         }
     }
     let end = input.last().map_or(0, |e| e.2) + 10_000;
-    seen.extend(t.expire_held(end).iter().map(|h| (h.code, true)));
+    seen.extend(t.expire_held(end * 1000).iter().map(|h| (h.code, true)));
     seen
 }
 
@@ -230,16 +231,86 @@ fn a_persons_keystrokes_arrive_whole_and_in_order() {
 #[test]
 fn a_held_press_expires_only_after_the_hold() {
     let mut t = tap();
-    assert_eq!(t.decide(59, true, 0x4_0001, 100).verdict, Verdict::Hold);
-    assert_eq!(t.expire_held(100 + crate::policy::MOD_HOLD_MS - 1), vec![]);
+    let hold_us = crate::policy::MOD_HOLD_MS * 1000;
+    assert_eq!(t.decide(59, true, 0x4_0001, 100_000).verdict, Verdict::Hold);
+    assert_eq!(t.expire_held(100_000 + hold_us - 1), vec![]);
     assert_eq!(
-        t.expire_held(100 + crate::policy::MOD_HOLD_MS),
+        t.expire_held(100_000 + hold_us),
         vec![Held {
             code: 59,
             flags: 0x4_0001,
-            at_ms: 100
+            at_us: 100_000
         }]
     );
     // Replayed once: the release then passes on its own.
-    assert_eq!(t.decide(59, false, 0, 900).verdict, Verdict::Pass);
+    assert_eq!(t.decide(59, false, 0, 900_000).verdict, Verdict::Pass);
+}
+
+// ---- AK.HOLDMEASURE: the instrument ---------------------------------
+
+/// The hold instrument's whole contract in one chord: the gap is measured
+/// from the FIRST modifier press (not the last, not the F-key's own
+/// predecessor) to the F-key, in microseconds, tagged with the slot's
+/// ordinal -- never the keycode.
+#[test]
+fn a_completed_slot_chord_records_the_gap_from_its_first_modifier() {
+    let mut t = tap();
+    t.decide(59, true, 0x4_0001, 1_000_000);
+    t.decide(58, true, 0x4_0001, 1_000_300);
+    t.decide(56, true, 0x4_0001, 1_000_900);
+    assert_eq!(t.take_hold_samples(), vec![]);
+    // F18 (79) is TwistR, third in `Gesture::ALL`.
+    assert_eq!(t.decide(79, true, 0, 1_002_345).verdict, Verdict::Swallow);
+    assert_eq!(
+        t.take_hold_samples(),
+        vec![HoldSample::Gap {
+            slot: 2,
+            gap_us: 2_345
+        }]
+    );
+    // Drained: a second call has nothing.
+    assert_eq!(t.take_hold_samples(), vec![]);
+}
+
+#[test]
+fn an_expired_hold_is_counted_once() {
+    let mut t = tap();
+    t.decide(59, true, 0x4_0001, 100_000);
+    t.expire_held(100_000 + crate::policy::MOD_HOLD_MS * 1000);
+    assert_eq!(t.take_hold_samples(), vec![HoldSample::Expired]);
+    // Nothing held now, so a later tick adds nothing.
+    t.expire_held(900_000);
+    assert_eq!(t.take_hold_samples(), vec![]);
+}
+
+/// A key a person typed is never sampled: a held modifier followed by an
+/// ordinary key replays and records nothing, not even an empty gap.
+#[test]
+fn an_ordinary_key_after_a_held_modifier_records_nothing() {
+    let mut t = tap();
+    t.decide(59, true, 0x4_0001, 0);
+    assert!(matches!(
+        t.decide(8, true, 0, 5_000).verdict,
+        Verdict::Replay(_)
+    ));
+    assert_eq!(t.take_hold_samples(), vec![]);
+}
+
+/// A consumed key that is not one of the five slot chords (a recorded layer
+/// hotkey made of the same modifiers) is not the knob's chord, so it is not
+/// a sample of the knob's timing.
+#[test]
+fn a_consumed_key_that_is_not_a_slot_chord_records_nothing() {
+    let mut cfg = HostConfig::default_config();
+    cfg.layer_hotkey = Some(ChordSpec {
+        key: 97,
+        mods: vec!["ctrl".to_string(), "opt".to_string(), "shift".to_string()],
+        label: "F6".to_string(),
+    });
+    let mut t = TapEngine::new(cfg);
+    t.decide(59, true, 0x4_0001, 0);
+    t.decide(58, true, 0x4_0001, 100);
+    t.decide(56, true, 0x4_0001, 200);
+    assert_eq!(t.decide(97, true, 0, 900).verdict, Verdict::Swallow);
+    assert_eq!(t.take_hold_samples(), vec![]);
 }

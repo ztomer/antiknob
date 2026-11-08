@@ -361,18 +361,25 @@ pub(crate) fn run_active(
         }
     });
 
+    // The hold instrument (AK.HOLDMEASURE). The tap callback must never touch
+    // the disk -- a slow callback is how the system disables a tap -- so it
+    // only sends; this thread owns the file.
+    let sample_tx = crate::hold_recorder::spawn();
+
     // A held slot-chord modifier press that no key completed goes back into
     // the stream when its hold runs out (AK.LEAK; `TapEngine::decide`).
     // Posted with the lock released, so the tap callback is never blocked
     // behind a post that re-enters it.
     let hold_tap = Arc::clone(&tap);
+    let hold_samples = sample_tx.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_millis(MOD_HOLD_TICK_MS));
-        let now_ms = epoch.elapsed().as_millis() as u64;
-        let due = hold_tap
+        let now_us = epoch.elapsed().as_micros() as u64;
+        let (due, samples) = hold_tap
             .lock()
-            .map(|mut t| t.expire_held(now_ms))
+            .map(|mut t| (t.expire_held(now_us), t.take_hold_samples()))
             .unwrap_or_default();
+        crate::hold_recorder::send_all(&hold_samples, samples);
         if !due.is_empty() {
             if verbose {
                 println!(
@@ -403,9 +410,10 @@ pub(crate) fn run_active(
             // nothing in the one mode that needed it, and its silence read
             // as a dead tap rather than as a missing instrument.
             let ev_health = Arc::clone(&grab_health);
+            let ev_samples = sample_tx.clone();
             let res = keytap::grab(move |ev: KeyEvent, flags: u64| -> Verdict {
                 let KeyEvent { code, pressed } = ev;
-                let now_ms = epoch.elapsed().as_millis() as u64;
+                let now_us = epoch.elapsed().as_micros() as u64;
                 if let Ok(mut h) = ev_health.lock() {
                     h.events_seen += 1;
                 }
@@ -418,7 +426,8 @@ pub(crate) fn run_active(
                 // mods not seen" -- the two failures that look identical
                 // from outside.
                 let mods_now = t.held_mods();
-                let step = t.decide(code, pressed, flags, now_ms);
+                let step = t.decide(code, pressed, flags, now_us);
+                crate::hold_recorder::send_all(&ev_samples, t.take_hold_samples());
                 if !step.out.is_empty() {
                     handle_events(step.out, true, t.config());
                 }

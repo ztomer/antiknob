@@ -432,3 +432,25 @@ pub fn run_list_apps() -> Result<()> {
     );
     Ok(())
 }
+
+/// Print the hold instrument's distribution (AK.HOLDMEASURE).
+pub fn run_hold_gaps() -> Result<()> {
+    let path = antiknob::host::hold_stats::default_path()?;
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            goh_tui::outln!(
+                "{WARN} No samples yet: {} does not exist. The daemon writes it as slot chords are used.",
+                path.display()
+            );
+            return Ok(());
+        }
+        Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
+    };
+    goh_tui::outln!("{START} Hold gaps from {}", path.display());
+    print!(
+        "{}",
+        antiknob::host::hold_stats::render(&antiknob::host::hold_stats::summarize(&text))
+    );
+    Ok(())
+}

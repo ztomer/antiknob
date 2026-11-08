@@ -154,6 +154,12 @@ antiknob status --json
 # name is refused, and the vocabulary is not macOS key names.
 antiknob show-keys
 
+# How long the grab tap's slot-chord modifier hold really needs to be: the
+# daemon records the gap from a chord's first modifier to its F-key (slot
+# ordinal and microseconds only, never what was typed) and this prints the
+# distribution: count, p50, p95, p99, max, expired holds.
+antiknob hold-gaps
+
 # Flash a layout
 antiknob validate config.yaml
 antiknob upload config.yaml

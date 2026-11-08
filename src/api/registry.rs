@@ -50,6 +50,17 @@ pub const COMMANDS: &[CommandSpec] = &[
         returns: &[],
     },
     CommandSpec {
+        name: "hold_gaps",
+        about: "Print the distribution of gaps between a slot chord's first modifier press and \
+                its F-key, and how many holds expired, as the daemon recorded them.",
+        params: &[],
+        cli_as: Some("hold-gaps"),
+        cli: Reach::Yes,
+        mcp: Reach::No("reads the daemon's local instrument file; it is a measurement aid for the owner, not a control"),
+        effect: Effect::Read,
+        returns: &[],
+    },
+    CommandSpec {
         name: "upload_keymap",
         about: "Flash a keymap to the device. A gesture may bind one action (\"volumeup\"), a \
                 sequence ([\"cmd-c\", \"cmd-v\"]) or a timed one ({steps: [...], delay_ms: 120}). \

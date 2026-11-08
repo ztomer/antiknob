@@ -170,6 +170,7 @@ fn main() -> Result<()> {
         "listen" => diag::run_listen(num::<u64>(m, "timeout_secs")?, strings(m, "device"))?,
         "import_presets" => cmds::run_import_presets(opt_path(m, "out"), flag(m, "force"))?,
         "list_apps" => cmds::run_list_apps()?,
+        "hold_gaps" => cmds::run_hold_gaps()?,
         "read_slots" => {
             if flag(m, "full") {
                 diag::run_read_full()?
@@ -284,6 +285,7 @@ mod tests {
             "listen",
             "import_presets",
             "list_apps",
+            "hold_gaps",
             "read_slots",
             "probe_gestures",
             "led_probe",

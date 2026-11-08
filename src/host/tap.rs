@@ -8,6 +8,7 @@
 //! fully unit-testable without Accessibility grants or hardware.
 
 use super::engine::{Engine, EngineEvent};
+use super::hold_stats::HoldSample;
 use super::HostConfig;
 use std::collections::{BTreeSet, HashSet};
 
@@ -49,7 +50,8 @@ pub struct Held {
     pub code: u16,
     /// The event's CGEventFlags, replayed verbatim.
     pub flags: u64,
-    pub at_ms: u64,
+    /// When it was pressed, microseconds on the daemon's one clock.
+    pub at_us: u64,
 }
 
 /// What the grab tap does with one event (`TapEngine::decide`).
@@ -97,6 +99,8 @@ pub struct TapEngine {
     /// Modifier codes whose held press a consumed chord absorbed: their
     /// releases are swallowed, so no application sees half a keystroke.
     consumed_mods: HashSet<u16>,
+    /// Hold measurements waiting for the recorder (`take_hold_samples`).
+    samples: Vec<HoldSample>,
 }
 
 impl TapEngine {
@@ -117,6 +121,7 @@ impl TapEngine {
             consumed: HashSet::new(),
             held: Vec::new(),
             consumed_mods: HashSet::new(),
+            samples: Vec::new(),
         }
     }
 
@@ -216,7 +221,10 @@ impl TapEngine {
     /// HELD rather than passed. A consumed key then absorbs the held presses
     /// (and their releases are swallowed); anything else replays them first.
     /// `expire_held` replays them when no key follows in `MOD_HOLD_MS`.
-    pub fn decide(&mut self, code: u16, pressed: bool, flags: u64, now_ms: u64) -> Step {
+    ///
+    /// `now_us` is microseconds on the daemon's one clock: the hold
+    /// instrument (`hold_stats`) needs finer than the engine's milliseconds.
+    pub fn decide(&mut self, code: u16, pressed: bool, flags: u64, now_us: u64) -> Step {
         if let Some(name) = mod_for_code(code) {
             if pressed {
                 // A press means any earlier release was seen or lost; never
@@ -229,7 +237,7 @@ impl TapEngine {
                     self.held.push(Held {
                         code,
                         flags,
-                        at_ms: now_ms,
+                        at_us: now_us,
                     });
                     return Step::bare(Verdict::Hold);
                 }
@@ -242,9 +250,16 @@ impl TapEngine {
             return self.pass(vec![]);
         }
         if pressed {
-            let out = self.key(code, true, now_ms);
+            let slot = self.slot_ordinal(code);
+            let out = self.key(code, true, now_us / 1000);
             if out.is_empty() {
                 return self.pass(out);
+            }
+            if let (Some(slot), Some(first)) = (slot, self.held.first()) {
+                self.samples.push(HoldSample::Gap {
+                    slot,
+                    gap_us: now_us.saturating_sub(first.at_us),
+                });
             }
             self.consumed_mods
                 .extend(self.held.drain(..).map(|h| h.code));
@@ -261,13 +276,33 @@ impl TapEngine {
 
     /// The held presses to replay now, because `MOD_HOLD_MS` passed with no
     /// key to complete a chord. Empty while nothing is due.
-    pub fn expire_held(&mut self, now_ms: u64) -> Vec<Held> {
+    pub fn expire_held(&mut self, now_us: u64) -> Vec<Held> {
         match self.held.first() {
-            Some(h) if now_ms.saturating_sub(h.at_ms) >= crate::policy::MOD_HOLD_MS => {
+            Some(h) if now_us.saturating_sub(h.at_us) >= crate::policy::MOD_HOLD_MS * 1000 => {
+                self.samples.push(HoldSample::Expired);
                 std::mem::take(&mut self.held)
             }
             _ => vec![],
         }
+    }
+
+    /// Hold measurements since the last call: one `Gap` per slot chord the
+    /// hold absorbed, one `Expired` per hold that ran out. Drained by the
+    /// daemon and handed to its recorder thread, never written from here.
+    pub fn take_hold_samples(&mut self) -> Vec<HoldSample> {
+        std::mem::take(&mut self.samples)
+    }
+
+    /// Which of the five slot chords `code` is, given the modifiers now
+    /// held: its position in `Gesture::ALL`. `None` for any other key, so
+    /// the instrument never samples something a person typed.
+    fn slot_ordinal(&self, code: u16) -> Option<u8> {
+        let mods: Vec<&str> = self.mods.iter().map(String::as_str).collect();
+        let gesture = super::gesture::gesture_for_chord(code, &mods)?;
+        let at = super::gesture::Gesture::ALL
+            .iter()
+            .position(|g| *g == gesture)?;
+        u8::try_from(at).ok()
     }
 
     /// Pass, unless presses are held: then they go first, in order.

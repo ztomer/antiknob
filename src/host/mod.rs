@@ -17,6 +17,7 @@ pub mod frontmost;
 pub mod gesture;
 pub mod gesture_probe;
 pub mod grants;
+pub mod hold_stats;
 pub mod led_sync;
 pub mod login_item;
 pub mod migrate;

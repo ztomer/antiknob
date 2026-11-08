@@ -21,6 +21,7 @@ use clap::Parser;
 use goh_tui::{OK, START, WARN};
 use std::path::{Path, PathBuf};
 
+mod hold_recorder;
 mod keytap;
 mod permissions;
 mod run;

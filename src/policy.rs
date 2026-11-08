@@ -57,6 +57,14 @@ pub const MOD_HOLD_MS: u64 = 60;
 /// `LOOP_TICK_MS` because a held modifier is a person's keystroke waiting.
 pub const MOD_HOLD_TICK_MS: u64 = 5;
 
+/// File the hold instrument appends to (AK.HOLDMEASURE), beside the socket
+/// in the daemon state dir. See `host::hold_stats`.
+pub const HOLD_LOG_FILE: &str = "hold-gaps.log";
+
+/// Cap on `HOLD_LOG_FILE`, in bytes. Past it the oldest half is dropped. A
+/// record is a dozen bytes, so this keeps several thousand chords.
+pub const HOLD_LOG_CAP_BYTES: u64 = 65_536;
+
 /// Connect retries for one-shot client calls: the daemon may be mid-start
 /// when the first attempt lands. This many tries, this far apart, then the
 /// "could not connect" error below.

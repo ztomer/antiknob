@@ -185,15 +185,17 @@ sitting. Exit: each item below has a recorded measurement in VENDOR_UI_MAP
   the vendor app (`Left Swipe` vs `Swipe left`), packets exist; 3- and
   4-modifier combos are written with `len` one short. (d) `FC FC` layout
   select, `EF EF` firmware entry, 48 per-key RGB bytes after the LED mode.
-  *Open, each needing one owner-approved wired write:* does the knob RUN
-  the new mouse record (`bind-seq` a `click` to the press slot, press it,
-  see a click); X/Y at bytes 15/18 (write byte 15 = `0a`, watch the
-  pointer); whether zeros in the LED's 48 colour bytes change what modes
-  0-5 show (read `03 FA B0` before and after one `led` write); swipes/Like
-  as antiknob actions (done 2026-11-02, AK.SWIPE: `swipe-left|right|up|down`, `like`
-  build the vendor records; whether the knob RUNS them is untried), per-key LED
-  colours (`led <layer> <mode> keys=vendor|RRGGBB,x16`; see VENDOR_UI_MAP (e) for
-  the layout disagreement with the plain modes).
+  *Open, each needing one owner-approved wired write (owner item OW.78, the
+  knob session; none is proven on the device yet):*
+  (1) does the knob RUN the mouse record: `bind-seq` a `click`, then a
+  scroll, to the press slot, press it, see the click / scroll;
+  (2) X/Y at bytes 15/18: write byte 15 = `0a`, watch the pointer move;
+  (3) does the knob RUN a touch-gesture record: `bind-seq swipe-left` on a
+  slot (the `like` record is the same class, byte 9 differs);
+  (4) per-key LED: `led 0 rgb keys=vendor`, read `03 FA B0` back and
+  compare with what was sent;
+  (5) which layout of the LED's 48 colour bytes the knob reads (VENDOR_UI_MAP
+  (e) disagreement with the plain modes; whether zeros change modes 0-5).
 * **H.4 LED:** done 2026-11-01 (9ef462b): `SET_LED_LAYER_MAX` = 2, refused in `build_led_packet` for every write path. Watch mode 3 ("ripple", still taken from
   kriomant/ch57x-keyboard-tool#173) and whether a mode stored on device
   layers 3-15 ever renders (FIRMWARE_REVIEW #7; storage measured, render

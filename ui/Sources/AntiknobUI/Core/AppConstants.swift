@@ -49,12 +49,12 @@ enum AppConstants {
 
     /// Application metadata.
     enum AppInfo {
-        /// Application version string (e.g. "0.15.3").
+        /// Application version string (e.g. "0.15.4").
         static var version: String {
             if let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String, !ver.isEmpty {
                 return ver
             }
-            return "0.15.3"
+            return "0.15.4"
         }
 
         /// Application build number string (e.g. "45").

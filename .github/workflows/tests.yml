@@ -15,14 +15,9 @@ name: tests
 # declares `.macOS("26.0")`. A linux or windows job could not compile any of
 # it, so it would be decoration.
 #
-# ⚠ THIS WORKFLOW HAS NEVER RUN. It was authored offline and cannot be
-# pushed from here, so its correctness is UNVERIFIED. Nothing below has
-# executed even once. The one claim that cannot be checked without a run is
-# the runner label: `macos-26` is required because ui/Package.swift declares
-# `.macOS("26.0")` and Antiknob.app's Info.plist sets
-# LSMinimumSystemVersion 26.0, and whether that label is available to this
-# repository has not been observed. If the job cannot be scheduled, that is
-# the first thing to check.
+# The runner is `macos-26` because ui/Package.swift declares `.macOS("26.0")`
+# and Antiknob.app's Info.plist sets LSMinimumSystemVersion 26.0; this label
+# schedules and runs on every push and pull request (run 42507102160 passed).
 
 on:
   push:

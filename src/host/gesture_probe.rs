@@ -249,7 +249,7 @@ pub fn plan_with_control_avoiding(
 ) -> Result<ProbePlan, String> {
     if candidates.contains(&control_key) {
         return Err(format!(
-            "slot {control_key} is the control and cannot also be a candidate;              it would carry two markers and identify neither"
+            "slot {control_key} is the control and cannot also be a candidate; it would carry two markers and identify neither"
         ));
     }
     let mut all = vec![control_key];

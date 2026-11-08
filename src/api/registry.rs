@@ -473,7 +473,7 @@ mod knob_mode_reach_tests {
     use super::*;
 
     /// S.12: the note said the CLI "reports the same thing through
-    /// get_status", and `antiknob status` reports no knob mode. The device
+    /// `get_status`", and `antiknob status` reports no knob mode. The device
     /// does give the mode (the burst table read), so the CLI reaches it.
     #[test]
     fn get_knob_mode_is_reachable_from_the_cli() {

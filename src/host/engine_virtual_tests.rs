@@ -47,7 +47,7 @@ mod tests {
         }
     }
 
-    /// Drive a real TwistL slot chord through the engine and report what
+    /// Drive a real `TwistL` slot chord through the engine and report what
     /// fired -- the production path, not a shortcut into `action_for`.
     fn twist_l(engine: &mut Engine) -> Option<i32> {
         let (key, mods) = slot_chord(Gesture::TwistL);

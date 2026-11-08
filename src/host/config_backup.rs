@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 /// bad writes -- the damage that prompted this was three writes deep by
 /// the time anyone looked -- and few enough that the directory stays
 /// readable.
+#[must_use]
 pub fn slots(config_path: &Path) -> Vec<PathBuf> {
     (1..=KEEP)
         .map(|i| {
@@ -56,6 +57,10 @@ pub fn rotate(config_path: &Path) {
 /// Written to a temporary file and renamed, so a process that dies mid-write
 /// leaves the old file intact rather than a truncated one. `fs::write`
 /// truncates first, which is a window where the config is half a file.
+///
+/// # Errors
+///
+/// Fails when the backup, the temporary file or the rename fails.
 pub fn write_with_backup(config_path: &Path, contents: &str) -> Result<()> {
     if let Some(parent) = config_path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -146,9 +151,13 @@ mod tests {
         write_with_backup(&cfg, "done").expect("write");
         let leftovers: Vec<_> = std::fs::read_dir(&dir)
             .unwrap()
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .map(|e| e.file_name().to_string_lossy().to_string())
-            .filter(|n| n.ends_with(".new"))
+            .filter(|n| {
+                std::path::Path::new(n)
+                    .extension()
+                    .is_some_and(|e| e == "new")
+            })
             .collect();
         assert!(leftovers.is_empty(), "left a temp file: {leftovers:?}");
     }

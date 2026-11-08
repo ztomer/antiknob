@@ -3,8 +3,8 @@
 //! Title shows the 1-based current layer (the vk01 SF-Symbol badge,
 //! transliterated to text); the menu lists layers with a checkmark prefix
 //! on the active one, plus Reload Config and Quit. All state lives in the
-//! shared TapEngine; this module only renders and translates menu events.
-//! Must run on the main thread (AppKit); the event tap lives on a worker
+//! shared `TapEngine`; this module only renders and translates menu events.
+//! Must run on the main thread (`AppKit`); the event tap lives on a worker
 //! thread (proven safe by probe). Construction failure (e.g. headless) is
 //! a normal `Err`, and the daemon continues without a tray.
 
@@ -83,9 +83,9 @@ const FIX_LABEL: &str = "Knob gestures off — open Accessibility settings";
 /// user has to go looking for a log; the tooltip carries the state.
 fn tooltip(title: &str, tap_ok: bool) -> String {
     if tap_ok {
-        format!("Antiknob — layer {}", title)
+        format!("Antiknob — layer {title}")
     } else {
-        format!("Antiknob — layer {} (knob gestures off)", title)
+        format!("Antiknob — layer {title} (knob gestures off)")
     }
 }
 

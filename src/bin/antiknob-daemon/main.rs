@@ -21,13 +21,15 @@ use clap::Parser;
 use goh_tui::{OK, START, WARN};
 use std::path::{Path, PathBuf};
 
+mod active;
 mod hold_recorder;
 mod keytap;
 mod permissions;
 mod run;
 mod synth;
 mod tray;
-use run::{default_config_path, load_or_default, run_active, run_observe};
+use active::run_active;
+use run::{default_config_path, load_or_default, run_observe};
 
 #[derive(Parser)]
 #[command(
@@ -44,6 +46,25 @@ struct Cli {
     #[arg(long, default_value = "0")]
     timeout_secs: u64,
 
+    /// Custom path for the Unix domain socket
+    #[arg(long)]
+    socket_path: Option<PathBuf>,
+
+    #[command(flatten)]
+    run: RunFlags,
+
+    #[command(flatten)]
+    serve: ServeFlags,
+
+    #[command(flatten)]
+    login_item: LoginItemFlags,
+}
+
+/// How the run loop behaves. Separate structs keep each flag group small
+/// (pedantic `struct_excessive_bools`); clap flattens them back into one
+/// command line.
+#[derive(clap::Args)]
+struct RunFlags {
     /// Swallow slot chords and synthesize their actions (default: observe only)
     #[arg(long)]
     active: bool,
@@ -56,7 +77,11 @@ struct Cli {
     /// Run without the menu-bar icon (headless use)
     #[arg(long)]
     no_tray: bool,
+}
 
+/// What the daemon serves besides the tap.
+#[derive(clap::Args)]
+struct ServeFlags {
     /// Run as an MCP (Model Context Protocol) server over stdio
     #[arg(long)]
     mcp: bool,
@@ -66,19 +91,19 @@ struct Cli {
     #[arg(long, requires = "mcp")]
     allow_destructive: bool,
 
-    /// Custom path for the Unix domain socket
-    #[arg(long)]
-    socket_path: Option<PathBuf>,
-
     /// Disable Unix domain socket listener
     #[arg(long)]
     no_socket: bool,
+}
 
-    /// Install the per-user LaunchAgent (start at login) and load it now
+/// Managing the per-user `LaunchAgent`.
+#[derive(clap::Args)]
+struct LoginItemFlags {
+    /// Install the per-user `LaunchAgent` (start at login) and load it now
     #[arg(long)]
     install_login_item: bool,
 
-    /// Unload and remove the per-user LaunchAgent
+    /// Unload and remove the per-user `LaunchAgent`
     #[arg(long)]
     uninstall_login_item: bool,
 }
@@ -105,8 +130,7 @@ fn agent_is_loaded(target: &str) -> bool {
     std::process::Command::new("launchctl")
         .args(["print", target])
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+        .is_ok_and(|o| o.status.success())
 }
 
 /// Unload the agent and wait for launchd to actually let go.
@@ -183,24 +207,24 @@ fn main() -> Result<()> {
         None => default_config_path()?,
     };
 
-    if cli.mcp {
+    if cli.serve.mcp {
         let tap_health =
             std::sync::Arc::new(std::sync::Mutex::new(antiknob::api::TapHealth::default()));
         let ctx = antiknob::api::ApiContext::with_health(config_path, None, tap_health);
         return antiknob::api::run_mcp_server(
             ctx,
             antiknob::api::McpOptions {
-                allow_destructive: cli.allow_destructive,
+                allow_destructive: cli.serve.allow_destructive,
             },
         );
     }
 
-    if cli.uninstall_login_item {
+    if cli.login_item.uninstall_login_item {
         uninstall_login_item()?;
         return Ok(());
     }
     let cfg = load_or_default(&config_path)?;
-    if cli.install_login_item {
+    if cli.login_item.install_login_item {
         install_login_item(&config_path)?;
         return Ok(());
     }
@@ -216,7 +240,9 @@ fn main() -> Result<()> {
     let tap_health =
         std::sync::Arc::new(std::sync::Mutex::new(antiknob::api::TapHealth::default()));
 
-    let _socket_server = if !cli.no_socket {
+    let _socket_server = if cli.serve.no_socket {
+        None
+    } else {
         let sock_path = match cli.socket_path {
             Some(p) => p,
             None => antiknob::api::default_socket_path()?,
@@ -243,29 +269,26 @@ fn main() -> Result<()> {
                 None
             }
         }
-    } else {
-        None
     };
 
-    if cli.active {
+    if cli.run.active {
         goh_tui::outln!("{START} ACTIVE mode: slot chords are swallowed and synthesized.");
         run_active(
-            tap,
-            tap_health,
+            &tap,
+            &tap_health,
             cli.timeout_secs,
             &config_path,
-            !cli.no_tray,
-            cli.verbose,
-        );
-    } else {
-        goh_tui::outln!("{START} OBSERVE mode: chords pass through, actions are only logged.");
-        run_observe(
-            tap,
-            tap_health,
-            cli.timeout_secs,
-            &config_path,
-            !cli.no_tray,
-            cli.verbose,
+            !cli.run.no_tray,
+            cli.run.verbose,
         );
     }
+    goh_tui::outln!("{START} OBSERVE mode: chords pass through, actions are only logged.");
+    run_observe(
+        &tap,
+        &tap_health,
+        cli.timeout_secs,
+        &config_path,
+        !cli.run.no_tray,
+        cli.run.verbose,
+    );
 }

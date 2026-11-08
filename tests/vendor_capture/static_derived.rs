@@ -1,6 +1,6 @@
 //! Records read out of ANTICATER.app's own packet builders, NOT off the wire.
 //!
-//! `tests/fixtures/vendor_static.json` holds what the vendor's x86_64 binary
+//! `tests/fixtures/vendor_static.json` holds what the vendor's `x86_64` binary
 //! writes into its record table (`PHY2_KEY_Value`), which `Widget::HID_write`
 //! sends unchanged after the report id. Each entry names the function and
 //! address it was read from. It is a second, weaker source than a capture and

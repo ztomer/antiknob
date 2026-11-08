@@ -67,6 +67,7 @@ pub enum Arrangement {
 }
 
 /// Work out the arrangement from the recorded SET and the firmware's count.
+#[must_use]
 pub fn arrangement(bound: &[u8], device_layers: u8) -> Arrangement {
     let all: Vec<u8> = (0..device_layers).collect();
     let mut bound: Vec<u8> = bound.to_vec();
@@ -103,6 +104,7 @@ impl Arrangement {
     ///
     /// `None` for `AllBound` too, which is why it must not be used to decide
     /// whether the daemon can hear the knob -- see below.
+    #[must_use]
     pub fn host_translated(&self) -> Option<u8> {
         match self {
             Self::Bound {
@@ -120,6 +122,7 @@ impl Arrangement {
     /// Matched on the variant, NOT on `host_translated().is_some()`. That
     /// spelling was the defect: `AllBound` has no single layer, so a knob
     /// flashed on all three reported that the daemon could not hear it.
+    #[must_use]
     pub fn daemon_can_hear_the_knob(&self) -> bool {
         matches!(
             self,
@@ -139,6 +142,7 @@ impl Arrangement {
     /// literal backticks under a button that does exactly that. One string
     /// cannot carry both calls to action, so it carries neither and each
     /// surface adds its own.
+    #[must_use]
     pub fn describe(&self) -> String {
         match self {
             Self::Bound {
@@ -218,6 +222,10 @@ fn one_based(layers: &[u8]) -> String {
 /// the record is better than reporting a successful flash as an error. A
 /// config that exists but cannot be PARSED is a different matter and is not
 /// silently overwritten -- see `HostConfig::try_load_json`.
+///
+/// # Errors
+///
+/// Fails when the config exists but cannot be parsed, or the record cannot be written.
 pub fn record_bound_layers(path: &Path, layers: &[u8]) -> Result<Vec<u8>> {
     let mut cfg = match std::fs::read_to_string(path) {
         Ok(text) => super::HostConfig::try_load_json(&text).ok_or_else(|| {
@@ -231,7 +239,7 @@ pub fn record_bound_layers(path: &Path, layers: &[u8]) -> Result<Vec<u8>> {
     let mut recorded: Vec<u8> = layers.to_vec();
     recorded.sort_unstable();
     recorded.dedup();
-    cfg.bound_device_layers = recorded.clone();
+    cfg.bound_device_layers.clone_from(&recorded);
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }

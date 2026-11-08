@@ -10,6 +10,7 @@
 use super::DeviceMatch;
 use crate::firmware::{TransportType, VENDOR_USAGE_PAGE};
 
+#[must_use]
 pub fn primary_transport(matches: &[DeviceMatch]) -> Option<TransportType> {
     primary_device(matches).map(|d| d.transport)
 }
@@ -29,6 +30,7 @@ pub fn primary_transport(matches: &[DeviceMatch]) -> Option<TransportType> {
 /// Same predicate as `open_device_on`, in the same order, including its
 /// fallback for backends that do not report a usage page.
 /// `the_primary_is_the_interface_commands_are_sent_to` pins the pairing.
+#[must_use]
 pub fn primary_device(matches: &[DeviceMatch]) -> Option<&DeviceMatch> {
     matches
         .iter()
@@ -103,7 +105,7 @@ mod tests {
 
     /// When the knob is unplugged from USB, no vendor endpoint is present.
     /// The 2.4GHz wireless receiver must be picked over any non-knob interface,
-    /// and primary_transport must report Wireless24G so the UI shows 2.4GHz
+    /// and `primary_transport` must report `Wireless24G` so the UI shows 2.4GHz
     /// rather than claiming a disconnected cable is still wired.
     #[test]
     fn wireless_receiver_is_primary_when_no_vendor_endpoint() {

@@ -67,6 +67,7 @@ const ALWAYS_EXCLUDED: [u16; 3] = [0x00E9, 0x00EA, 0x00E2];
 ///
 /// Media records carry a 16-bit usage little-endian at bytes 9-10; keyboard
 /// and mouse records emit no consumer usage and are skipped.
+#[must_use]
 pub fn usages_in_use(table: &[Vec<u8>]) -> Vec<u16> {
     let mut out = Vec::new();
     for record in table {
@@ -84,6 +85,7 @@ pub fn usages_in_use(table: &[Vec<u8>]) -> Vec<u16> {
 ///
 /// Order is stable so a plan is reproducible: a probe whose marker
 /// assignment shifted between runs would make two captures incomparable.
+#[must_use]
 pub fn usable_markers(in_use: &[u16]) -> Vec<(&'static str, u16)> {
     MARKER_POOL
         .into_iter()
@@ -104,6 +106,11 @@ pub struct ProbeSlot {
 /// Fails rather than truncating when there are more candidates than
 /// markers: a plan that silently probed only the first six slots would
 /// report "gesture not found" for slots it never wrote to.
+///
+/// # Errors
+///
+/// Fails with a message when there are no candidates, a candidate is listed
+/// twice, or there are more candidates than markers.
 pub fn plan(candidates: &[u8]) -> Result<Vec<ProbeSlot>, String> {
     plan_avoiding(candidates, &[])
 }
@@ -113,6 +120,12 @@ pub fn plan(candidates: &[u8]) -> Result<Vec<ProbeSlot>, String> {
 /// A marker the device shares with a live binding is not a marker: pressing
 /// that button during the capture window reads exactly like the probed slot
 /// firing, and the run reports a gesture that does not exist.
+///
+/// # Errors
+///
+/// Fails with a message when there are no candidates, a candidate is listed
+/// twice, or there are more candidates than markers the device does not
+/// already emit.
 pub fn plan_avoiding(candidates: &[u8], in_use: &[u16]) -> Result<Vec<ProbeSlot>, String> {
     if candidates.is_empty() {
         return Err("no candidate slots to probe".to_string());
@@ -145,6 +158,10 @@ pub fn plan_avoiding(candidates: &[u8], in_use: &[u16]) -> Result<Vec<ProbeSlot>
 }
 
 /// The packets that arm the probe on one device layer.
+///
+/// # Errors
+///
+/// Fails with a message when a marker does not encode.
 pub fn probe_packets(plan: &[ProbeSlot], layer: u8) -> Result<Vec<Vec<u8>>, String> {
     plan.iter()
         .map(|s| {
@@ -156,6 +173,7 @@ pub fn probe_packets(plan: &[ProbeSlot], layer: u8) -> Result<Vec<Vec<u8>>, Stri
 }
 
 /// Which slot emitted a captured consumer usage, if any.
+#[must_use]
 pub fn slot_for_usage(plan: &[ProbeSlot], usage: u16) -> Option<u8> {
     plan.iter()
         .find(|s| s.marker_usage == usage)
@@ -179,6 +197,7 @@ pub struct ProbePlan {
 
 impl ProbePlan {
     /// Every slot the run writes to, control first.
+    #[must_use]
     pub fn all(&self) -> Vec<ProbeSlot> {
         let mut out = vec![self.control.clone()];
         out.extend(self.candidates.iter().cloned());
@@ -204,11 +223,25 @@ pub enum Verdict {
 /// is one smaller than the marker set. That is the correct trade: five
 /// candidates with a calibrated instrument answer the question, and six with
 /// an uncalibrated one do not.
+///
+/// # Errors
+///
+/// Fails with a message when the plan cannot be built.
 pub fn plan_with_control(control_key: u8, candidates: &[u8]) -> Result<ProbePlan, String> {
     plan_with_control_avoiding(control_key, candidates, &[])
 }
 
 /// `plan_with_control`, avoiding every usage the device already emits.
+///
+/// # Errors
+///
+/// Fails with a message when a candidate is also the control, or when
+/// `plan_avoiding` refuses the combined list.
+///
+/// # Panics
+///
+/// Never in practice: the combined list always holds the control, so
+/// `plan_avoiding` has refused an empty one before the split.
 pub fn plan_with_control_avoiding(
     control_key: u8,
     candidates: &[u8],
@@ -230,6 +263,7 @@ pub fn plan_with_control_avoiding(
 }
 
 /// Read the capture. The control decides whether anything may be concluded.
+#[must_use]
 pub fn verdict(plan: &ProbePlan, seen: &[u16]) -> Verdict {
     if !seen.contains(&plan.control.marker_usage) {
         return Verdict::Inconclusive;
@@ -289,7 +323,7 @@ mod tests {
                 let mut r = vec![0u8; 13];
                 r[0] = 0x03;
                 r[1] = 0xFA;
-                r[2] = (i + 1) as u8;
+                r[2] = u8::try_from(i + 1).unwrap();
                 r[3] = 1;
                 r[4] = 2; // media
                 r[9] = (*usage & 0xFF) as u8;

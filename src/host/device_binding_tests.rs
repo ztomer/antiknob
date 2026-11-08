@@ -59,7 +59,7 @@ fn the_bound_layer_is_never_also_listed_as_standalone() {
                     !standalone.contains(&layer),
                     "layer {layer} is both host-translated and standalone"
                 );
-                assert_eq!(standalone.len() as u8, DEVICE_LAYERS - 1);
+                assert_eq!(u8::try_from(standalone.len()).unwrap(), DEVICE_LAYERS - 1);
             }
             other => panic!("layer {layer} should be bound, got {other:?}"),
         }

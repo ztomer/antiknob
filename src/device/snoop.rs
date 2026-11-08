@@ -18,19 +18,24 @@ pub struct DeviceFilter {
 }
 
 impl DeviceFilter {
+    #[must_use]
     pub fn matches(&self, vendor_id: u16, product_id: u16) -> bool {
         self.vendor_id == vendor_id && self.product_id == product_id
     }
 }
 
 /// Parse `514c:8850` (or `0x514c:0x8850`) into a filter.
+///
+/// # Errors
+///
+/// Fails with a message when the spec is not `VID:PID` in hex.
 pub fn parse_device_filter(spec: &str) -> Result<DeviceFilter, String> {
     let (v, p) = spec
         .split_once(':')
-        .ok_or_else(|| format!("expected VID:PID, got `{}`", spec))?;
+        .ok_or_else(|| format!("expected VID:PID, got `{spec}`"))?;
     let hex = |s: &str| {
         let t = s.trim().trim_start_matches("0x").trim_start_matches("0X");
-        u16::from_str_radix(t, 16).map_err(|_| format!("`{}` is not a 16-bit hex id", s))
+        u16::from_str_radix(t, 16).map_err(|_| format!("`{s}` is not a 16-bit hex id"))
     };
     Ok(DeviceFilter {
         vendor_id: hex(v)?,
@@ -40,6 +45,7 @@ pub fn parse_device_filter(spec: &str) -> Result<DeviceFilter, String> {
 
 /// True when no filter was given (watch everything supported) or one of
 /// them names this device.
+#[must_use]
 pub fn wanted(filters: &[DeviceFilter], vendor_id: u16, product_id: u16) -> bool {
     filters.is_empty() || filters.iter().any(|f| f.matches(vendor_id, product_id))
 }
@@ -48,6 +54,7 @@ pub fn wanted(filters: &[DeviceFilter], vendor_id: u16, product_id: u16) -> bool
 ///
 /// An unknown pair keeps its hex rather than being dropped: a device that
 /// grows a collection we have no name for should still be visible.
+#[must_use]
 pub fn collection_name(usage_page: u16, usage: u16) -> String {
     match (usage_page, usage) {
         (0x0001, 0x0001) => "pointer".to_string(),
@@ -61,6 +68,7 @@ pub fn collection_name(usage_page: u16, usage: u16) -> String {
 }
 
 /// The collection set as one readable phrase.
+#[must_use]
 pub fn collections_label(usages: &[(u16, u16)]) -> String {
     let mut names: Vec<String> = usages
         .iter()
@@ -93,7 +101,7 @@ fn consumer_name(usage: u16) -> Option<&'static str> {
         .map(|(_, n)| *n)
 }
 
-/// Split a report into (report_id, body).
+/// Split a report into (`report_id`, body).
 ///
 /// hidapi hands back the report ID as the first byte when the device uses
 /// numbered reports, and not at all when it does not -- and nothing in the
@@ -133,11 +141,12 @@ fn modifier_names(mods: u8) -> Vec<&'static str> {
 ///
 /// `usages` is every top-level collection the OPENED DEVICE declares, not
 /// the one collection its handle happened to be enumerated under. One
-/// IOHIDDevice carries all of them down a single handle, so a knob whose
+/// `IOHIDDevice` carries all of them down a single handle, so a knob whose
 /// first-listed collection is the keyboard still delivers consumer reports
 /// there -- decoding by the handle's own usage would read `05 e9 00` as a
 /// malformed keyboard report. Try only layouts the device actually
 /// declares, and only the one whose report length fits.
+#[must_use]
 pub fn decode_input(usages: &[(u16, u16)], buf: &[u8]) -> String {
     // Most specific first: a 3-byte consumer report and a 3-byte mouse
     // report are the same length, and only the consumer page carries a
@@ -177,8 +186,8 @@ fn decode_as(usage_page: u16, usage: u16, buf: &[u8]) -> String {
                 return "<-- consumer release".to_string();
             }
             match consumer_name(code) {
-                Some(name) => format!("<-- consumer {:#06x} ({})", code, name),
-                None => format!("<-- consumer {:#06x}", code),
+                Some(name) => format!("<-- consumer {code:#06x} ({name})"),
+                None => format!("<-- consumer {code:#06x}"),
             }
         }
         // Keyboard boot protocol: mods, reserved, 6 keycodes.
@@ -190,7 +199,7 @@ fn decode_as(usage_page: u16, usage: u16, buf: &[u8]) -> String {
             let keys: Vec<String> = body[2..8]
                 .iter()
                 .filter(|&&k| k != 0)
-                .map(|k| format!("{:02x}", k))
+                .map(|k| format!("{k:02x}"))
                 .collect();
             format!(
                 "<-- keyboard mods=[{}] keys=[{}]",
@@ -213,9 +222,9 @@ fn decode_as(usage_page: u16, usage: u16, buf: &[u8]) -> String {
             format!(
                 "<-- mouse buttons=[{}] dx={} dy={} wheel={}",
                 names.join("+"),
-                body[1] as i8,
-                body[2] as i8,
-                body.get(3).map_or(0, |w| *w as i8)
+                i8::from_ne_bytes([body[1]]),
+                i8::from_ne_bytes([body[2]]),
+                body.get(3).map_or(0, |w| i8::from_ne_bytes([*w]))
             )
         }
         (crate::firmware::VENDOR_USAGE_PAGE, _)

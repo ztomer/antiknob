@@ -1,7 +1,7 @@
 //! Login-item support for the daemon (Phase 5).
 //!
 //! The daemon is a plain binary, not an app bundle, so the correct macOS
-//! mechanism is a per-user LaunchAgent plist, not SMAppService (which
+//! mechanism is a per-user `LaunchAgent` plist, not `SMAppService` (which
 //! requires a bundle identity). All paths derive from an explicit base
 //! directory so tests run against temp dirs, never the real home.
 //! Launching itself (`launchctl bootstrap/bootout`) stays in the daemon
@@ -9,18 +9,20 @@
 
 use std::path::{Path, PathBuf};
 
-/// LaunchAgent label for the daemon. Defined once in the policy map: the
+/// `LaunchAgent` label for the daemon. Defined once in the policy map: the
 /// installer, the uninstaller, and the target strings must all name the
 /// same label, and three spellings of it is how a label stops matching
 /// itself.
 pub use crate::policy::LOGIN_AGENT_LABEL as AGENT_LABEL;
 
 /// `~/Library/LaunchAgents/<label>.plist` under the given home dir.
+#[must_use]
 pub fn agent_plist_path(home: &Path) -> PathBuf {
-    home.join(format!("Library/LaunchAgents/{}.plist", AGENT_LABEL))
+    home.join(format!("Library/LaunchAgents/{AGENT_LABEL}.plist"))
 }
 
 /// Default log file the agent writes stdout/stderr to.
+#[must_use]
 pub fn default_log_path(home: &Path) -> PathBuf {
     home.join("Library/Logs/antiknob-daemon.log")
 }
@@ -33,6 +35,7 @@ pub fn default_log_path(home: &Path) -> PathBuf {
 /// the deliberate one behind the menu bar's Quit -- so Quit did not quit,
 /// `kill` did not kill, and the process looked wedged when it was being
 /// resurrected. Restarting a crash is the job; overriding the user is not.
+#[must_use]
 pub fn render_agent_plist(executable: &Path, config: &Path, log_path: &Path) -> String {
     format!(
         concat!(
@@ -75,6 +78,10 @@ pub fn render_agent_plist(executable: &Path, config: &Path, log_path: &Path) -> 
 
 /// Write the agent plist (creating parent dirs). Overwrites any previous
 /// install of the same label: install is idempotent.
+///
+/// # Errors
+///
+/// Fails when the plist or its directory cannot be written.
 pub fn install(home: &Path, executable: &Path, config: &Path) -> anyhow::Result<PathBuf> {
     let plist_path = agent_plist_path(home);
     if let Some(dir) = plist_path.parent() {
@@ -97,6 +104,7 @@ pub fn install(home: &Path, executable: &Path, config: &Path) -> anyhow::Result<
 /// `<root>/bin/antiknob-daemon` and as
 /// `<root>/AntiknobDaemon.app/Contents/MacOS/AntiknobDaemon`. Pure, so the
 /// mapping is testable without either file existing.
+#[must_use]
 pub fn bundled_twin(exe: &Path) -> Option<PathBuf> {
     let dir = exe.parent()?;
     if dir.file_name()? != "bin" || exe.file_name()? != "antiknob-daemon" {
@@ -118,6 +126,7 @@ pub fn bundled_twin(exe: &Path) -> Option<PathBuf> {
 /// binary can never be granted by adding the app, which is the only thing
 /// the user can add: they grant Antiknob, the daemon stays deaf, and nothing
 /// says why. Start the bundle whenever it is installed.
+#[must_use]
 pub fn preferred_executable(exe: &Path) -> PathBuf {
     match bundled_twin(exe) {
         Some(bundled) if bundled.is_file() => bundled,
@@ -126,6 +135,10 @@ pub fn preferred_executable(exe: &Path) -> PathBuf {
 }
 
 /// Remove the agent plist. Returns true when a previous install existed.
+///
+/// # Errors
+///
+/// Fails when the plist cannot be removed.
 pub fn uninstall(home: &Path) -> anyhow::Result<bool> {
     let plist_path = agent_plist_path(home);
     if !plist_path.exists() {
@@ -167,7 +180,7 @@ mod tests {
             dict.get("KeepAlive")
                 .and_then(|v| v.as_dictionary())
                 .and_then(|d| d.get("SuccessfulExit"))
-                .and_then(|v| v.as_boolean()),
+                .and_then(plist::Value::as_boolean),
             Some(false)
         );
     }

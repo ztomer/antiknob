@@ -18,6 +18,7 @@ use anyhow::{anyhow, Result};
 /// holds" without building (and sending) a packet to find out. The two
 /// matches name the same modes; `mode_number_names_its_index` pins the
 /// canonical half, and the alias cases below pin the rest.
+#[must_use]
 pub fn led_mode_number(spec: &str) -> Option<u8> {
     let first = spec
         .trim()
@@ -40,6 +41,7 @@ pub fn led_mode_number(spec: &str) -> Option<u8> {
 /// holds it. `None` when the spec carries a per-key palette: the stored
 /// mode says nothing about the stored colours, so a matching mode must not
 /// suppress the write that changes them.
+#[must_use]
 pub fn skippable_mode_number(spec: &str) -> Option<u8> {
     if spec_keys(spec).is_some() {
         None
@@ -64,7 +66,7 @@ const KEYS_PREFIX: &str = "keys=";
 /// comma-separated, each with an optional leading `#`.
 ///
 /// Strict on purpose: the static reading pins 16 triplets and nothing else
-/// (VENDOR_UI_MAP, "STATIC READING"). A short list that repeats to fill, as
+/// (`VENDOR_UI_MAP`, "STATIC READING"). A short list that repeats to fill, as
 /// `parse_palette` does for named colours, would invent a layout the vendor
 /// never writes, so fewer or more than sixteen is refused, not padded.
 fn parse_key_palette(list: &str) -> Result<Vec<(u8, u8, u8)>> {
@@ -111,6 +113,10 @@ fn build_key_led_packet(layer: u8, mode: u8, palette: &[(u8, u8, u8)]) -> Vec<u8
     packet
 }
 
+/// # Errors
+///
+/// Fails when the layer is past the firmware's layers, or the mode is empty,
+/// unknown or malformed.
 pub fn build_led_packet(layer: u8, mode: &str) -> Result<Vec<u8>> {
     // The firmware holds 3 layers and nothing switches the active one, so a
     // mode stored past them can never render (PLAN H.4, webcam 2026-11-01).
@@ -207,10 +213,9 @@ pub fn build_led_packet(layer: u8, mode: &str) -> Result<Vec<u8>> {
         }
         other => {
             return Err(anyhow!(
-                "Unknown LED mode '{}'. Available: off, red, green, ripple, rainbow, rgb \
+                "Unknown LED mode '{other}'. Available: off, red, green, ripple, rainbow, rgb \
                  (mode0..mode5). Each mode carries its own colour on this device, so \
-                 colour arguments are sent but not honoured.",
-                other
+                 colour arguments are sent but not honoured."
             ))
         }
     }
@@ -235,6 +240,10 @@ pub fn build_led_packet(layer: u8, mode: &str) -> Result<Vec<u8>> {
 /// A bare colour fills every entry, as before. `rainbow` reproduces the
 /// vendor's. A comma-separated list sets entries in order and repeats to
 /// fill, so `red,blue` alternates.
+///
+/// # Errors
+///
+/// Fails when a colour in the spec does not parse.
 pub fn parse_palette(spec: &str) -> Result<Vec<(u8, u8, u8)>> {
     let spec = spec.trim();
     if spec.eq_ignore_ascii_case("rainbow") {
@@ -300,6 +309,7 @@ fn fill_palette_entries(packet: &mut [u8], entries: &[(u8, u8, u8)]) {
 /// back, and changes nothing -- which is exactly the symptom that cost this
 /// session several wrong conclusions. The vendor app sends it on connect.
 /// Documented in kriomant/ch57x-keyboard-tool#173.
+#[must_use]
 pub fn led_init_packet() -> Vec<u8> {
     let mut p = vec![0u8; REPORT_LEN];
     p[0] = REPORT_ID;
@@ -320,8 +330,7 @@ fn parse_color(s: &str) -> Result<(u8, u8, u8)> {
         "blue" => Ok((0, 0, 255)),
         "purple" | "magenta" => Ok((255, 0, 255)),
         other => Err(anyhow!(
-            "Unknown color '{}'. Supported: white, red, orange, yellow, green, cyan, blue, purple",
-            other
+            "Unknown color '{other}'. Supported: white, red, orange, yellow, green, cyan, blue, purple"
         )),
     }
 }

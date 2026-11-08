@@ -52,6 +52,7 @@ pub enum TransportType {
 }
 
 impl TransportType {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Usb => "usb",
@@ -60,6 +61,7 @@ impl TransportType {
         }
     }
 
+    #[must_use]
     pub fn display_name(&self) -> &'static str {
         match self {
             Self::Usb => "USB (Wired)",
@@ -248,6 +250,7 @@ pub const FIRMWARE_UPDATE_CMD: u8 = 0xEF;
 
 /// Is this payload the firmware-update entry packet, with or without the
 /// leading report id?
+#[must_use]
 pub fn is_firmware_update(payload: &[u8]) -> bool {
     let bare = match payload {
         [REPORT_ID, rest @ ..] => rest,
@@ -257,6 +260,10 @@ pub fn is_firmware_update(payload: &[u8]) -> bool {
 }
 
 /// The one gate every HID write passes: refuses the firmware-update entry.
+///
+/// # Errors
+///
+/// Fails when the payload is the firmware-update packet.
 pub fn ensure_sendable(payload: &[u8]) -> anyhow::Result<()> {
     anyhow::ensure!(
         !is_firmware_update(payload),
@@ -285,7 +292,7 @@ pub const SLOT_TABLE_QUERY_CMD: u8 = 0xFA;
 pub const SLOT_DEFAULT_GROUP: u8 = 0x0F;
 
 /// How long a slot-table query waits for its dump.
-pub const SLOT_QUERY_TIMEOUT_MS: u64 = 500;
+pub const SLOT_QUERY_TIMEOUT_MS: i32 = 500;
 
 // ---------------------------------------------------------------------------
 // Backlight (`0xFE` writes behind a `0xFB` init, `0xFA 0xB0` reads).
@@ -348,7 +355,7 @@ pub const PALETTE_OFFSET: usize = 8;
 /// Where the vendor's per-key colours start: 16 RGB triplets (48 bytes)
 /// straight after the mode byte, no base colour in front. Read from
 /// `Widget::HID_write` @0x10003dea0, which copies `_KeyBoard_KeyLed` to
-/// record byte 4 + 1 (VENDOR_UI_MAP, "STATIC READING"). This is NOT the
+/// record byte 4 + 1 (`VENDOR_UI_MAP`, "STATIC READING"). This is NOT the
 /// `BASE_COLOR_OFFSET` / `PALETTE_OFFSET` layout above, which came from an
 /// upstream issue about the 16-key variant; the two disagree and only this
 /// one is read from the vendor's own code.
@@ -389,7 +396,7 @@ pub const LED_MAX_SKIPPED_REPORTS: usize = 8;
 pub const LED_INIT_SETTLE_MS: u64 = 20;
 
 /// How long an LED mode query waits for its reply (`read_led_mode`).
-pub const LED_READ_TIMEOUT_MS: u64 = 500;
+pub const LED_READ_TIMEOUT_MS: i32 = 500;
 
 /// Minimum gap between the START of two LED jobs in one process
 /// (`led_sync` pacer). The renderer's freeze strikes on bursts.

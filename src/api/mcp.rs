@@ -24,6 +24,7 @@ use rmcp::model::{
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, ServerHandler, ServiceExt};
 use serde_json::{json, Value};
+use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 
 /// What a started server offers.
@@ -45,6 +46,7 @@ pub struct AntiknobMcp {
 }
 
 impl AntiknobMcp {
+    #[must_use]
     pub fn new(ctx: ApiContext, options: McpOptions) -> Self {
         Self {
             ctx: Arc::new(Mutex::new(ctx)),
@@ -59,6 +61,7 @@ impl AntiknobMcp {
     /// The tools this server lists: the registry's MCP surface, minus the
     /// destructive ones unless opted in, each with annotations and an
     /// output schema.
+    #[must_use]
     pub fn tools(&self) -> Vec<Tool> {
         all_tools()
             .into_iter()
@@ -147,25 +150,25 @@ impl ServerHandler for AntiknobMcp {
             .with_server_info(Implementation::new("antiknob", env!("CARGO_PKG_VERSION")))
     }
 
-    async fn list_tools(
+    fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
-    ) -> Result<ListToolsResult, ErrorData> {
-        Ok(ListToolsResult {
+    ) -> impl Future<Output = Result<ListToolsResult, ErrorData>> + Send {
+        std::future::ready(Ok(ListToolsResult {
             tools: self.tools(),
             ..ListToolsResult::default()
-        })
+        }))
     }
 
     // A device call blocks this thread on purpose: one client on a local
     // pipe, and the knob takes one HID conversation at a time anyway.
-    async fn call_tool(
+    fn call_tool(
         &self,
         request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> Result<CallToolResponse, ErrorData> {
-        Ok(self.call(&request.name, request.arguments).into())
+    ) -> impl Future<Output = Result<CallToolResponse, ErrorData>> + Send {
+        std::future::ready(Ok(self.call(&request.name, request.arguments).into()))
     }
 }
 
@@ -173,6 +176,10 @@ impl ServerHandler for AntiknobMcp {
 ///
 /// The one place async lives: a current-thread runtime built for the length
 /// of the session, so the rest of antiknob stays synchronous.
+///
+/// # Errors
+///
+/// Fails when the async runtime cannot be built or the stdio transport ends in an error.
 pub fn run_mcp_server(ctx: ApiContext, options: McpOptions) -> Result<()> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()

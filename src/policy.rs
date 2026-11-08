@@ -19,7 +19,7 @@
 // ---------------------------------------------------------------------------
 
 /// Largest JSON-RPC request line accepted, bounding memory per connection
-/// against an unbounded-read DoS.
+/// against an unbounded-read `DoS`.
 pub const MAX_REQUEST_SIZE: usize = 65_536;
 
 /// Concurrent client connections before the server refuses with
@@ -125,11 +125,11 @@ pub const BACKUP_KEEP_COUNT: usize = 5;
 /// Read timeout while sweeping raw payloads (`raw --read`), in
 /// milliseconds. A query that answers nothing is a normal outcome when
 /// sweeping, so the timeout ends the burst rather than failing.
-pub const RAW_READ_TIMEOUT_MS: u64 = 250;
+pub const RAW_READ_TIMEOUT_MS: i32 = 250;
 
 /// Poll interval while draining input reports during a gesture capture,
 /// in milliseconds.
-pub const CAPTURE_POLL_MS: u64 = 20;
+pub const CAPTURE_POLL_MS: i32 = 20;
 
 /// Restore attempts for probe-armed slots before printing the put-it-back
 /// commands. Failure after every attempt is reported with the exact

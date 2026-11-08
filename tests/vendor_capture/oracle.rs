@@ -54,9 +54,9 @@
 //! * `VENDOR_UI_MAP.md:137`'s elided frame (`03 fd 05 01 01 00 01 00 00 04
 //!   00 32 00 00 32 ...`) — elided with `...` in the source, so there is no
 //!   complete frame to decode.
-//! * Gesture-to-key-id for the **0x1189 CH57x** devices. The EXPERIMENT 1
+//! * Gesture-to-key-id for the **0x1189 `CH57x`** devices. The EXPERIMENT 1
 //!   capture is a VK01. The mapping is applied across every supported VID/PID
-//!   in `SUPPORTED_DEVICES`, and no capture of a CH57x exists in this repo.
+//!   in `SUPPORTED_DEVICES`, and no capture of a `CH57x` exists in this repo.
 //! * **Byte 5 of a chained record.** The factory frame
 //!   (`chained-record-from-the-users-own-knob`) shows `01` where this repo writes
 //!   `00`, and `VENDOR_UI_MAP.md` still lists "is byte 5 an index" as open.

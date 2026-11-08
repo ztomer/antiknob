@@ -151,9 +151,9 @@ fn main() -> Result<()> {
             opt_num::<u8>(m, "layer")?,
             flag(m, "knob_only"),
         )?,
-        "set_led" => cmds::run_led(num::<u8>(m, "layer")?, strings(m, "mode"))?,
+        "set_led" => cmds::run_led(num::<u8>(m, "layer")?, &strings(m, "mode"))?,
         "get_led" => cmds::run_led_read(num::<u8>(m, "layer")?, flag(m, "raw"))?,
-        "show_keys" => cmds::run_show_keys()?,
+        "show_keys" => cmds::run_show_keys(),
         "bind_slots" => binding::run_bind_slots(
             opt_path(m, "config"),
             opt_num::<usize>(m, "buttons")?,
@@ -165,20 +165,20 @@ fn main() -> Result<()> {
             num::<u8>(m, "layer")?,
             flag(m, "dry_run"),
             num::<u16>(m, "delay_ms")?,
-            strings(m, "actions"),
+            &strings(m, "actions"),
         )?,
-        "listen" => diag::run_listen(num::<u64>(m, "timeout_secs")?, strings(m, "device"))?,
+        "listen" => diag::run_listen(num::<u64>(m, "timeout_secs")?, &strings(m, "device"))?,
         "import_presets" => cmds::run_import_presets(opt_path(m, "out"), flag(m, "force"))?,
-        "list_apps" => cmds::run_list_apps()?,
+        "list_apps" => cmds::run_list_apps(),
         "hold_gaps" => cmds::run_hold_gaps()?,
         "read_slots" => {
             if flag(m, "full") {
-                diag::run_read_full()?
+                diag::run_read_full()?;
             } else {
                 diag::run_read_slots(
                     cmds::layout_slots_per_layer(opt_path(m, "config"))?,
                     flag(m, "wide"),
-                )?
+                )?;
             }
         }
         "probe_gestures" => {
@@ -188,7 +188,12 @@ fn main() -> Result<()> {
             let capture_secs = num::<u64>(m, "capture_secs")?;
             let devices = strings(m, "device");
             if flag(m, "map") {
-                return probe::run_map((1..=6).collect(), layer, capture_secs, devices);
+                return probe::run_map(
+                    &(1..=6).collect::<Vec<u8>>(),
+                    layer,
+                    capture_secs,
+                    &devices,
+                );
             }
             // The knob's CCW slot follows the buttons, so it is the first
             // slot past them -- the same arithmetic `key_id_for_knob` does.
@@ -201,7 +206,7 @@ fn main() -> Result<()> {
                 )
                 .context("knob slot out of range")?,
             };
-            probe::run(control, candidates, layer, capture_secs, devices)?
+            probe::run(control, &candidates, layer, capture_secs, &devices)?;
         }
         "led_probe" => diag::run_led_probe(
             num::<u8>(m, "layer")?,
@@ -209,7 +214,7 @@ fn main() -> Result<()> {
             &opt_str(m, "color").unwrap_or_else(|| "red".into()),
         )?,
         "send_raw" => diag::run_raw(
-            strings(m, "bytes"),
+            &strings(m, "bytes"),
             flag(m, "read"),
             num::<usize>(m, "reads")?,
         )?,

@@ -19,7 +19,7 @@ pub fn run_status(json: bool) -> Result<()> {
     if json {
         let out = serde_json::json!({
             "connected": connected,
-            "transport": primary.map(|t| t.as_str()).unwrap_or("disconnected"),
+            "transport": primary.map_or("disconnected", |t| t.as_str()),
             "power": power,
             "devices": devices,
             "tap_active": daemon["tap_active"],
@@ -44,7 +44,7 @@ pub fn run_status(json: bool) -> Result<()> {
         );
         println!("        Path: {}", d.path);
         if let Some(ref sn) = d.serial_number {
-            println!("        Serial Number: {}", sn);
+            println!("        Serial Number: {sn}");
         }
     }
     if let Some(t) = primary {
@@ -242,7 +242,7 @@ fn report_flash_verdict(verdicts: &[(device::verify::SlotAddr, device::verify::S
                 verdicts.len(),
                 confirmed
             );
-            println!("        {}", problem);
+            println!("        {problem}");
             // Only a MISMATCH means the write went somewhere the firmware
             // does not read. A slot the dump simply never showed says
             // nothing about the write, and sending the user to check their
@@ -255,7 +255,7 @@ fn report_flash_verdict(verdicts: &[(device::verify::SlotAddr, device::verify::S
         }
     }
 }
-pub fn run_led(layer: u8, mode: Vec<String>) -> Result<()> {
+pub fn run_led(layer: u8, mode: &[String]) -> Result<()> {
     let mode_str = mode.join(" ");
     goh_tui::outln!(
         "{START} Setting LED mode for layer {}: '{}'...",
@@ -312,7 +312,7 @@ pub fn run_led_read(layer: u8, raw: bool) -> Result<()> {
             payload[2] = layer;
             let mut buf = [0u8; firmware::REPORT_LEN];
             match device::send_report(dev, &payload).and_then(|()| {
-                dev.read_timeout(&mut buf, firmware::LED_READ_TIMEOUT_MS as i32)
+                dev.read_timeout(&mut buf, firmware::LED_READ_TIMEOUT_MS)
                     .map_err(anyhow::Error::from)
             }) {
                 Ok(n) => Some(buf[..n].to_vec()),
@@ -336,12 +336,12 @@ pub fn run_led_read(layer: u8, raw: bool) -> Result<()> {
         Err(e) => goh_tui::outln!("{WARN} LED read failed: {}", e),
     }
     if let Some(bytes) = dump {
-        let hex: Vec<String> = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+        let hex: Vec<String> = bytes.iter().map(|b| format!("{b:02x}")).collect();
         println!("        raw ({}B): {}", bytes.len(), hex.join(" "));
     }
     Ok(())
 }
-pub fn run_show_keys() -> Result<()> {
+pub fn run_show_keys() {
     // Rendered from `vocabulary`, the same tables the parser reads and the
     // MCP `show_keys` tool returns. This used to be a hand-written list and
     // it had already drifted: `fastforward`, `rewind` and `eject` parsed for
@@ -372,7 +372,6 @@ pub fn run_show_keys() -> Result<()> {
             .collect(),
     );
     println!("Chords join a modifier and a key with '-' or '+', e.g. cmd-c.");
-    Ok(())
 }
 /// How many buttons the target device has, from the layout rather than a
 /// constant. `--buttons` wins when given; otherwise the config file is the
@@ -390,35 +389,32 @@ pub fn run_import_presets(out: Option<PathBuf>, force: bool) -> Result<()> {
     }
     goh_tui::outln!("{START} Companion device LED specs (apply with: antiknob led <layer> ...):");
     for (i, (name, spec)) in leds.iter().enumerate() {
-        println!("        layer {} ({}): {}", i, name, spec);
+        println!("        layer {i} ({name}): {spec}");
     }
     let json = cfg.to_json_pretty();
-    match out {
-        Some(path) => {
-            if path.exists() && !force {
-                goh_tui::outln!(
-                    "{ERR} {} exists; refusing to overwrite without --force.",
-                    path.display()
-                );
-                return Ok(());
-            }
-            std::fs::write(&path, &json)?;
-            goh_tui::outln!("{OK} Wrote host config to {}.", path.display());
+    if let Some(path) = out {
+        if path.exists() && !force {
+            goh_tui::outln!(
+                "{ERR} {} exists; refusing to overwrite without --force.",
+                path.display()
+            );
+            return Ok(());
         }
-        None => {
-            println!("--- host.json ---");
-            println!("{}", json);
-        }
+        std::fs::write(&path, &json)?;
+        goh_tui::outln!("{OK} Wrote host config to {}.", path.display());
+    } else {
+        println!("--- host.json ---");
+        println!("{json}");
     }
     Ok(())
 }
-pub fn run_list_apps() -> Result<()> {
+pub fn run_list_apps() {
     let dirs = apps::default_app_dirs();
     goh_tui::outln!("{START} Scanning {:?} ...", dirs);
     let found = apps::scan_app_dirs(&dirs);
     if found.is_empty() {
         goh_tui::outln!("{WARN} No .app bundles found.");
-        return Ok(());
+        return;
     }
     for app in &found {
         match &app.bundle_id {
@@ -430,7 +426,6 @@ pub fn run_list_apps() -> Result<()> {
         "{OK} {} app(s). Use bundle IDs in launchApp/quitApp actions.",
         found.len()
     );
-    Ok(())
 }
 
 /// Print the hold instrument's distribution (AK.HOLDMEASURE).

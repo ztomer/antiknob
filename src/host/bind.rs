@@ -40,6 +40,7 @@ const SLOT_SPECS: [(KnobEvent, &str); GESTURES_PER_KNOB] = [
 ///
 /// Exists so no caller can restate the chords as prose that drifts from the
 /// packets. Two lines, to keep the CLI's width.
+#[must_use]
 pub fn chord_summary_lines() -> Vec<String> {
     let named: Vec<String> = SLOT_SPECS
         .iter()
@@ -64,6 +65,7 @@ pub fn chord_summary_lines() -> Vec<String> {
 /// The `(modifier bitmask, keycode)` of every chord the plan flashes,
 /// derived from `SLOT_SPECS` so the classifier that must recognise what
 /// `bind-slots` wrote reads the same table the flasher writes from.
+#[must_use]
 pub fn slot_chords() -> Vec<(u8, u8)> {
     SLOT_SPECS
         .iter()
@@ -98,6 +100,10 @@ pub struct SlotBinding {
 /// key-ID space. Passing the wrong count writes real packets into slots the
 /// firmware never reads, and nothing anywhere reports a failure -- see
 /// `protocol::key_id_for_knob`.
+///
+/// # Errors
+///
+/// Fails when the button count puts a binding outside the key-ID space.
 pub fn slot_binding_plan(button_count: usize, layers: &[u8]) -> Result<Vec<SlotBinding>> {
     let mut plan = Vec::new();
     for &layer in layers {
@@ -116,6 +122,10 @@ pub fn slot_binding_plan(button_count: usize, layers: &[u8]) -> Result<Vec<SlotB
 
 /// Serialize the plan to raw 64-byte HID packets (byte-for-byte identical
 /// to what `flash_slot_bindings` sends).
+///
+/// # Errors
+///
+/// Fails when the plan cannot be built.
 pub fn binding_packets(button_count: usize, layers: &[u8]) -> Result<Vec<Vec<u8>>> {
     slot_binding_plan(button_count, layers)?
         .iter()
@@ -129,7 +139,11 @@ pub fn binding_packets(button_count: usize, layers: &[u8]) -> Result<Vec<Vec<u8>
 /// This returned a count of packets SENT and its callers printed it as
 /// "Flashed 15 slot binding(s)": nothing looked at the slots afterwards, so
 /// a flash the firmware dropped read exactly like one it kept. HID thread
-/// only (same IOHIDManager thread-affinity contract as `crate::device`).
+/// only (same `IOHIDManager` thread-affinity contract as `crate::device`).
+///
+/// # Errors
+///
+/// Fails when a packet cannot be sent or a slot did not read back as written.
 pub fn flash_slot_bindings(
     dev: &HidDevice,
     button_count: usize,
@@ -230,8 +244,7 @@ mod tests {
             let cg = HID_TO_CG
                 .iter()
                 .find(|(hid, _)| *hid == code)
-                .map(|(_, cg)| *cg)
-                .unwrap_or_else(|| panic!("{chord} is not one of F16..F20"));
+                .map_or_else(|| panic!("{chord} is not one of F16..F20"), |(_, cg)| *cg);
             assert_eq!(cg, want_cg, "{chord} flashes a key the decoder ignores");
             assert_eq!(want_mods, ["ctrl", "alt", "shift"]);
             // USB HID modifier bits: LeftCtrl 0x01, LeftShift 0x02,

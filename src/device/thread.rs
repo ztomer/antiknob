@@ -1,21 +1,21 @@
 //! The process-wide HID executor.
 //!
-//! Thread-affinity contract (macOS). hidapi's IOHIDManager backend schedules
-//! its device sources onto the CFRunLoop of whichever thread first ran
-//! hid_init. A later call from a *different* thread makes IOKit re-apply
+//! Thread-affinity contract (macOS). hidapi's `IOHIDManager` backend schedules
+//! its device sources onto the `CFRunLoop` of whichever thread first ran
+//! `hid_init`. A later call from a *different* thread makes `IOKit` re-apply
 //! device matching against that stored runloop from the wrong thread, and
-//! CoreFoundation traps inside CFRunLoopAddSource (EXC_BREAKPOINT / SIGTRAP,
+//! CoreFoundation traps inside `CFRunLoopAddSource` (`EXC_BREAKPOINT` / SIGTRAP,
 //! observed 2026-09-06 and again 2026-09-07 from the daemon's socket accept
 //! thread). Calling it re-entrantly from a thread that is *currently*
 //! dispatching its own runloop aborts instead (SIGABRT, observed in the GUI).
 //!
 //! Both crashes are the same class: "hidapi touched from more than one
 //! thread, or from inside a live event loop". The fix is structural rather
-//! than disciplinary -- ONE dedicated worker thread owns the HidApi for the
+//! than disciplinary -- ONE dedicated worker thread owns the `HidApi` for the
 //! process's lifetime and every hidapi call is marshalled onto it through
 //! `with_hid` / `with_device`. That thread runs no event loop of its own, so
-//! neither crash is representable, and the HidApi is created once instead of
-//! per call (hid_init/hid_exit churn was itself corrupting the manager).
+//! neither crash is representable, and the `HidApi` is created once instead of
+//! per call (`hid_init/hid_exit` churn was itself corrupting the manager).
 //!
 //! Consequence: nothing outside `src/device/` may reach the `hidapi` crate.
 //! Handles are obtained only inside a `with_hid` / `with_device` job. Pinned
@@ -92,14 +92,14 @@ fn hid_tx() -> &'static Sender<HidJob> {
                             // the job against it is how a dead handle gets
                             // presented as a live device.
                             Err(e) => {
-                                let msg = format!("Failed to re-enumerate HID devices: {}", e);
+                                let msg = format!("Failed to re-enumerate HID devices: {e}");
                                 job(Err(&msg));
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    let msg = format!("Failed to initialize HIDAPI: {}", e);
+                    let msg = format!("Failed to initialize HIDAPI: {e}");
                     for job in rx {
                         job(Err(&msg));
                     }
@@ -115,6 +115,10 @@ fn hid_tx() -> &'static Sender<HidJob> {
 /// This is the ONLY way to reach hidapi. Jobs run one at a time in arrival
 /// order, so no additional locking is needed. Never call `with_hid` (or
 /// `with_device`) from inside a job -- that self-deadlocks.
+///
+/// # Errors
+///
+/// Fails when the HID thread is gone or the job itself fails.
 pub fn with_hid<T, F>(job: F) -> Result<T>
 where
     F: FnOnce(&HidApi) -> Result<T> + Send + 'static,
@@ -124,7 +128,7 @@ where
     let boxed: HidJob = Box::new(move |api| {
         let outcome = match api {
             Ok(api) => job(api),
-            Err(e) => Err(anyhow!("{}", e)),
+            Err(e) => Err(anyhow!("{e}")),
         };
         // A closed receiver just means the caller went away; not our problem.
         let _ = reply_tx.send(outcome);
@@ -140,6 +144,10 @@ where
 
 /// Opens the knob's vendor interface on the HID thread and runs `job`
 /// against it. The handle never leaves that thread.
+///
+/// # Errors
+///
+/// Fails when the knob is not attached, cannot be opened, or the job itself fails.
 pub fn with_device<T, F>(job: F) -> Result<T>
 where
     F: FnOnce(&HidDevice) -> Result<T> + Send + 'static,

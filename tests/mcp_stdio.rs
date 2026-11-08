@@ -108,7 +108,9 @@ impl Session {
 
     /// Send a request and return its response.
     fn call(&mut self, id: u64, method: &str, params: Value) -> Value {
-        self.send(&json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }));
+        let mut request = json!({ "jsonrpc": "2.0", "id": id, "method": method });
+        request["params"] = params;
+        self.send(&request);
         self.recv()
     }
 
@@ -125,11 +127,9 @@ impl Session {
     }
 
     fn tool(&mut self, id: u64, name: &str, arguments: Value) -> Value {
-        self.call(
-            id,
-            "tools/call",
-            json!({ "name": name, "arguments": arguments }),
-        )
+        let mut params = json!({ "name": name });
+        params["arguments"] = arguments;
+        self.call(id, "tools/call", params)
     }
 }
 

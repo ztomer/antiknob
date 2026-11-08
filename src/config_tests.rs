@@ -285,7 +285,7 @@ fn a_gesture_can_type_a_sequence_of_keystrokes() {
     let b = Binding::Sequence(
         ["h", "e", "l", "l", "o"]
             .iter()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .collect(),
     );
     b.validate().expect("valid");

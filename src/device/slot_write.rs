@@ -27,6 +27,7 @@ pub struct SlotWrite {
 
 impl SlotWrite {
     /// How many written records read back exactly as sent.
+    #[must_use]
     pub fn confirmed(&self) -> usize {
         self.verdicts
             .iter()
@@ -35,6 +36,7 @@ impl SlotWrite {
     }
 
     /// Any slot that read back as something else.
+    #[must_use]
     pub fn any_mismatched(&self) -> bool {
         self.verdicts
             .iter()
@@ -42,6 +44,10 @@ impl SlotWrite {
     }
 
     /// `Ok` only when every written record read back as sent.
+    ///
+    /// # Errors
+    ///
+    /// Fails when any written record did not read back as sent.
     pub fn ensure_confirmed(&self) -> Result<()> {
         match summarize(&self.verdicts) {
             None => Ok(()),
@@ -64,6 +70,10 @@ impl SlotWrite {
 /// Returns the verdicts rather than failing on a mismatch, so a caller that
 /// must clean up (the gesture probe restoring its markers) still can; call
 /// `ensure_confirmed` to turn them into an error.
+///
+/// # Errors
+///
+/// Fails when a packet cannot be sent; a record that reads back differently is a verdict, not an error.
 pub fn write_slots(dev: &HidDevice, packets: &[Vec<u8>]) -> Result<SlotWrite> {
     let wipes = crate::fd::wipes_for(packets);
     for wipe in &wipes {

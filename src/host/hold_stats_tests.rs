@@ -98,12 +98,12 @@ fn render_names_the_hold_the_numbers_are_read_against() {
 
 #[test]
 fn append_creates_a_private_file_and_adds_lines() {
+    use std::os::unix::fs::PermissionsExt as _;
     let path = scratch("create");
     let _ = std::fs::remove_file(&path);
     append(&path, HoldSample::Expired, 4096).unwrap();
     append(&path, HoldSample::Gap { slot: 1, gap_us: 9 }, 4096).unwrap();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "X\nG 1 9\n");
-    use std::os::unix::fs::PermissionsExt as _;
     assert_eq!(
         std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
         0o600

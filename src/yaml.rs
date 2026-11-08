@@ -3,7 +3,7 @@
 //! The layout file and the keymap the GUI uploads are YAML. They were read
 //! with `serde_yaml_ng`, which links `unsafe-libyaml` -- unmaintained,
 //! RUSTSEC-2024-0449, refused by the audit gate. `saphyr` is pure Rust and
-//! maintained (the `yaml-rust2` line; media_server moved to it for the same
+//! maintained (the `yaml-rust2` line; `media_server` moved to it for the same
 //! advisory) but ships no serde support, so this is that support, kept to
 //! what `serde_yaml_ng` did for this crate's types:
 //!

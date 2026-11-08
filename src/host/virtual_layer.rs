@@ -37,6 +37,7 @@ pub struct LayerVariant {
 }
 
 impl LayerVariant {
+    #[must_use]
     pub fn action(&self, gesture: Gesture) -> &HostAction {
         match gesture {
             Gesture::TwistL => &self.twist_l,
@@ -47,6 +48,7 @@ impl LayerVariant {
         }
     }
 
+    #[must_use]
     pub fn claims(&self, bundle_id: &str) -> bool {
         self.apps.iter().any(|a| a == bundle_id)
     }
@@ -80,6 +82,7 @@ pub enum Resolution {
 }
 
 impl Resolution {
+    #[must_use]
     pub fn variant_name(&self) -> Option<&str> {
         match self {
             Resolution::Override(n) | Resolution::MatchedApp(n) => Some(n),
@@ -104,6 +107,7 @@ impl Resolution {
 /// order. That is arbitrary but it is *stable*, and the alternative --
 /// rejecting the config -- would break a live setup over an ambiguity the
 /// user may not care about.
+#[must_use]
 pub fn resolve(variants: &[LayerVariant], ctx: &SwitchContext) -> Resolution {
     if let Some(name) = &ctx.override_name {
         if variants.iter().any(|v| &v.name == name) {
@@ -123,6 +127,7 @@ pub fn resolve(variants: &[LayerVariant], ctx: &SwitchContext) -> Resolution {
 ///
 /// Falls back to the layer's own binding whenever the variant does not
 /// apply, so a virtual layer is never *less* capable than a fixed one.
+#[must_use]
 pub fn action_for<'a>(
     layer: &'a HostLayer,
     variants: &'a [LayerVariant],

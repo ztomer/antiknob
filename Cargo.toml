@@ -77,3 +77,13 @@ path = "src/bin/antiknob-daemon/main.rs"
 [lib]
 name = "antiknob"
 path = "src/lib.rs"
+
+# clippy::pedantic, adopted 2026-11-08 (AK.PEDANTIC) at DENY, not warn: a new
+# finding turns `cargo clippy` red on its own, with or without the gate's
+# `-D warnings`. Adopted by fixing, never by baselining or suppressing
+# (`#[allow]` and `#[expect]` are refused by goh's no_allow). 406 findings
+# stood at adoption: lib 315, antiknob-daemon 42, antiknob 29, tests 20.
+# NOT included, deliberately: `unwrap_used` / `expect_used` / `panic` are
+# `restriction`, a correctness campaign of their own, not a lint sweep.
+[lints.clippy]
+pedantic = { level = "deny", priority = -1 }

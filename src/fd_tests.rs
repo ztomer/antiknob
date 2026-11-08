@@ -298,7 +298,7 @@ fn a_readback_of_what_was_written_matches() {
 
 /// Byte 5 is STORED, not device-owned: measured 2026-11-01 on the knob,
 /// `03 fd 14 01 01 <b5> 01 00 00 17` sent with b5 = 02, 00, 04, 01 read back
-/// with exactly that byte each time (VENDOR_UI_MAP, "Byte 5 is stored as
+/// with exactly that byte each time (`VENDOR_UI_MAP`, "Byte 5 is stored as
 /// written"). A slot holding a different byte 5 holds a different record,
 /// so the comparison must see it.
 #[test]

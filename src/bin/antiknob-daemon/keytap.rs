@@ -1,4 +1,4 @@
-//! The global keyboard tap, straight onto CGEventTap.
+//! The global keyboard tap, straight onto `CGEventTap`.
 //!
 //! This replaced `rdev`, which reached the same API through `cocoa 0.22` and
 //! `block 0.1.6` -- an unmaintained crate carrying a `static of uninhabited
@@ -7,7 +7,7 @@
 //!
 //! The port is small because the daemon never wanted rdev's abstraction: both
 //! call sites immediately converted `rdev::Key` back into a CG keycode
-//! through a hand-written mirror table. A CGEventTap reports CG keycodes
+//! through a hand-written mirror table. A `CGEventTap` reports CG keycodes
 //! natively, so that table is gone rather than ported.
 //!
 //! Two things this does better than the crate it replaces:
@@ -113,7 +113,7 @@ pub fn listen(mut on_key: impl FnMut(KeyEvent) + Send + 'static) -> Result<(), S
 }
 
 /// Watch the keyboard and consume, hold or replay what the callback says.
-/// The callback is also given the event's raw CGEventFlags, which a held
+/// The callback is also given the event's raw `CGEventFlags`, which a held
 /// modifier press needs to be replayed verbatim.
 pub fn grab(on_key: impl FnMut(KeyEvent, u64) -> Verdict + Send + 'static) -> Result<(), String> {
     run_tap(CGEventTapOptions::Default, on_key)

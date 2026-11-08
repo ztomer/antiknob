@@ -22,12 +22,12 @@ fn parse_hex_bytes(parts: &[String]) -> Result<Vec<u8>> {
                 .strip_prefix("0x")
                 .or_else(|| s.strip_prefix("0X"))
                 .unwrap_or(s);
-            u8::from_str_radix(s, 16).map_err(|_| anyhow::anyhow!("Bad hex byte '{}'", s))
+            u8::from_str_radix(s, 16).map_err(|_| anyhow::anyhow!("Bad hex byte '{s}'"))
         })
         .collect()
 }
 
-pub fn run_listen(timeout_secs: u64, devices: Vec<String>) -> Result<()> {
+pub fn run_listen(timeout_secs: u64, devices: &[String]) -> Result<()> {
     use std::time::Instant;
     let filters = devices
         .iter()
@@ -71,7 +71,7 @@ pub fn run_listen(timeout_secs: u64, devices: Vec<String>) -> Result<()> {
                     Ok(n) => {
                         if buf[..n].iter().any(|&b| b != 0) {
                             let hex: Vec<String> =
-                                buf[..n].iter().map(|b| format!("{:02x}", b)).collect();
+                                buf[..n].iter().map(|b| format!("{b:02x}")).collect();
                             let note = device::snoop::decode_input(&iface.usages, &buf[..n]);
                             println!(
                                 "        [{}] +{}B: {}   {}",
@@ -151,7 +151,7 @@ pub fn run_read_slots(slots_per_layer: u8, wide: bool) -> Result<()> {
             for counter in 1u8..=counters {
                 match device::read_slot(dev, group, counter) {
                     Ok(bytes) => {
-                        let hex: Vec<String> = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+                        let hex: Vec<String> = bytes.iter().map(|b| format!("{b:02x}")).collect();
                         println!(
                             "        group=0x{:02x} counter={} ({}B): {}",
                             group,
@@ -161,10 +161,7 @@ pub fn run_read_slots(slots_per_layer: u8, wide: bool) -> Result<()> {
                         );
                     }
                     Err(e) => {
-                        println!(
-                            "        group=0x{:02x} counter={}: READ FAILED: {}",
-                            group, counter, e
-                        );
+                        println!("        group=0x{group:02x} counter={counter}: READ FAILED: {e}");
                     }
                 }
                 sleep(Duration::from_millis(antiknob::firmware::SLOT_WALK_GAP_MS));
@@ -175,8 +172,8 @@ pub fn run_read_slots(slots_per_layer: u8, wide: bool) -> Result<()> {
     goh_tui::outln!("{OK} Slot dump complete (device state unchanged).");
     Ok(())
 }
-pub fn run_raw(bytes: Vec<String>, read: bool, reads: usize) -> Result<()> {
-    let payload = parse_hex_bytes(&bytes)?;
+pub fn run_raw(bytes: &[String], read: bool, reads: usize) -> Result<()> {
+    let payload = parse_hex_bytes(bytes)?;
     let sent = payload.len();
     goh_tui::outln!("{START} Opening Anticater device via native IOHIDManager (no sudo)...");
     let reply = device::with_device(move |dev| {
@@ -192,7 +189,7 @@ pub fn run_raw(bytes: Vec<String>, read: bool, reads: usize) -> Result<()> {
         let mut out = Vec::new();
         let mut buf = [0u8; antiknob::firmware::REPORT_LEN];
         for _ in 0..reads {
-            match dev.read_timeout(&mut buf, antiknob::policy::RAW_READ_TIMEOUT_MS as i32) {
+            match dev.read_timeout(&mut buf, antiknob::policy::RAW_READ_TIMEOUT_MS) {
                 Ok(n) if n > 0 => out.push(buf[..n].to_vec()),
                 _ => break,
             }
@@ -267,7 +264,7 @@ pub fn run_led_probe(layer: u8, dwell_secs: u64, color: &str) -> Result<()> {
         .and_then(|p| device::with_device(move |dev| device::write_led(dev, &p)));
     match restored {
         Ok(device::LedVerdict::Confirmed { .. }) => {
-            goh_tui::outln!("{OK} Restored layer {layer} to mode {before}.")
+            goh_tui::outln!("{OK} Restored layer {layer} to mode {before}.");
         }
         Ok(v) => goh_tui::outln!(
             "{WARN} Restore of layer {layer} not confirmed: {}\n\

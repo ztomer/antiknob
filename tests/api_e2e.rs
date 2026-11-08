@@ -201,7 +201,7 @@ fn test_json_rpc_error_handling() {
 
     // 3. Oversized SendRaw is rejected by input validation
     let oversized_raw = Command::SendRaw {
-        bytes: (0..70).map(|i| format!("{:02x}", i)).collect(),
+        bytes: (0..70).map(|i| format!("{i:02x}")).collect(),
     };
     let err = call_daemon_socket(&sock_path, &oversized_raw).unwrap_err();
     assert!(err.to_string().contains("exceeds 64-byte limit"));

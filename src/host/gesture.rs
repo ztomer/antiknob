@@ -53,6 +53,7 @@ pub struct ChordSpec {
 /// Ground truth shared with vk01-anticater: slot chord per gesture.
 /// CG keycodes: F16=106, F17=64, F18=79, F19=80, F20=90. Required mods:
 /// control + alternate. Must NOT be user-editable.
+#[must_use]
 pub fn slot_chord(gesture: Gesture) -> (u16, [&'static str; 3]) {
     match gesture {
         Gesture::TwistL => (106, SLOT_MODS),
@@ -84,12 +85,14 @@ const SLOT_MODS: [&str; 3] = ["ctrl", "alt", "shift"];
 /// slot chord carries. The grab tap holds these back until it knows whether a
 /// slot chord follows, because the modifier half of a chord is as visible to
 /// other applications as the key half (AK.LEAK).
+#[must_use]
 pub fn is_slot_mod(name: &str) -> bool {
     SLOT_MODS.contains(&name)
 }
 
 /// True when an incoming chord is exactly one of the five bound slot
 /// chords (keycode plus ctrl+alt, no more, no less).
+#[must_use]
 pub fn is_slot_chord(key: u16, mods: &[&str]) -> bool {
     let mut sorted: Vec<&str> = mods.to_vec();
     sorted.sort_unstable();
@@ -109,6 +112,7 @@ fn matches_slot(key: u16, sorted_mods: &[&str]) -> bool {
 }
 
 /// Which gesture a slot chord represents, if any.
+#[must_use]
 pub fn gesture_for_chord(key: u16, mods: &[&str]) -> Option<Gesture> {
     if !is_slot_chord(key, mods) {
         return None;

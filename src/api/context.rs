@@ -40,6 +40,7 @@ pub struct ApiContext {
 }
 
 impl ApiContext {
+    #[must_use]
     pub fn new(config_path: PathBuf, tap_engine: Option<Arc<Mutex<TapEngine>>>) -> Self {
         Self {
             config_path,

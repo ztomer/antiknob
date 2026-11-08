@@ -95,6 +95,7 @@ pub struct PowerStatus {
 }
 
 impl PowerStatus {
+    #[must_use]
     pub fn current(devices: &[crate::device::DeviceMatch]) -> Self {
         if let Some(transport) = crate::device::primary_transport(devices) {
             match transport {
@@ -245,8 +246,11 @@ pub enum Command {
 /// each one. The old table came from the `1189:884x` family and named mode 4
 /// "press" -- it is the rainbow, which is the multicoloured effect this
 /// device ships in.
+#[must_use]
 pub fn led_mode_name(mode: u8) -> &'static str {
-    use crate::firmware::*;
+    use crate::firmware::{
+        LED_MODE_GREEN, LED_MODE_OFF, LED_MODE_RAINBOW, LED_MODE_RED, LED_MODE_RGB, LED_MODE_RIPPLE,
+    };
     match mode {
         LED_MODE_OFF => "off",
         // Modes 1 and 2 are fixed colours on this device, not the effects

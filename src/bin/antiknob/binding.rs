@@ -151,7 +151,7 @@ pub fn run_bind_seq(
     layer: u8,
     dry_run: bool,
     delay_ms: u16,
-    actions: Vec<String>,
+    actions: &[String],
 ) -> Result<()> {
     if layer >= DEVICE_LAYERS {
         anyhow::bail!(
@@ -160,7 +160,7 @@ pub fn run_bind_seq(
             DEVICE_LAYERS - 1
         );
     }
-    let mut parsed = fd::parse_sequence(&actions)?;
+    let mut parsed = fd::parse_sequence(actions)?;
     // The delay belongs to every step after the first: a wait before the
     // opening keystroke only slows the gesture down. The vendor's own
     // default is 50 ms between steps, which is what the 0x32 bytes filling
@@ -214,9 +214,7 @@ pub fn run_bind_seq(
     println!("        read back: {} ...", hex.join(" "));
     if readback.is_empty() {
         anyhow::bail!(
-            "no record for key {} layer {} came back from the full table; the write is UNCONFIRMED",
-            key,
-            layer
+            "no record for key {key} layer {layer} came back from the full table; the write is UNCONFIRMED"
         );
     }
     if written

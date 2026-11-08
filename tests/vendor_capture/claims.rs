@@ -102,9 +102,8 @@ fn the_captured_gesture_slots_are_the_ones_the_function_computes() {
         let got = key_id_for_knob(buttons, 0, event).unwrap_or_else(|e| panic!("{id}: {e}"));
         assert_eq!(
             got, want,
-            "{id}: key_id_for_knob puts {:?} on key {got}, and the vendor app's capture \
-             puts it on key {want}",
-            event
+            "{id}: key_id_for_knob puts {event:?} on key {got}, and the vendor app's capture \
+             puts it on key {want}"
         );
         assert_eq!(
             got, r.key_id,
@@ -153,9 +152,8 @@ fn byte_six_is_a_byte_count_not_an_entry_count() {
         assert_eq!(
             non_zero,
             vec![0xE2],
-            "{id}: exactly one action reached the device (Mute, 0x00E2) out of {} declared — \
-             this is the chaining failure, and if a second value byte appears it is gone",
-            actions
+            "{id}: exactly one action reached the device (Mute, 0x00E2) out of {actions} declared — \
+             this is the chaining failure, and if a second value byte appears it is gone"
         );
     }
 }
@@ -245,7 +243,7 @@ fn a_keyboard_sequence_chains_into_one_record() {
         .map(|i| {
             Step::now(Action::Key {
                 modifiers: 0,
-                code: 0x04 + i as u8,
+                code: 0x04 + u8::try_from(i).unwrap(),
             })
         })
         .collect();

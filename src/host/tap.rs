@@ -26,12 +26,14 @@ const MOD_CODES: [(u16, &str); 9] = [
 ];
 
 /// Modifier name held for a CG keycode, if the code is a modifier.
+#[must_use]
 pub fn mod_for_code(code: u16) -> Option<&'static str> {
     MOD_CODES.iter().find(|(c, _)| *c == code).map(|(_, m)| *m)
 }
 
 /// Canonicalize a modifier name the way vk01-anticater does:
 /// opt/option/alt, cmd/command/win, ctrl/control, fn/function.
+#[must_use]
 pub fn canonical_mod(name: &str) -> &str {
     match name.to_ascii_lowercase().as_str() {
         "opt" | "option" | "alt" => "alt",
@@ -48,7 +50,7 @@ pub fn canonical_mod(name: &str) -> &str {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Held {
     pub code: u16,
-    /// The event's CGEventFlags, replayed verbatim.
+    /// The event's `CGEventFlags`, replayed verbatim.
     pub flags: u64,
     /// When it was pressed, microseconds on the daemon's one clock.
     pub at_us: u64,
@@ -113,6 +115,7 @@ impl TapEngine {
         me
     }
 
+    #[must_use]
     pub fn new(cfg: HostConfig) -> Self {
         Self {
             engine: Engine::new(cfg),
@@ -130,20 +133,24 @@ impl TapEngine {
         self.engine.apply_config(cfg);
     }
 
+    #[must_use]
     pub fn layer_idx(&self) -> usize {
         self.engine.layer_idx()
     }
 
+    #[must_use]
     pub fn config(&self) -> &HostConfig {
         self.engine.config()
     }
 
     /// Currently held modifiers, sorted. Powers verbose tap logging.
+    #[must_use]
     pub fn held_mods(&self) -> Vec<String> {
         self.mods.iter().cloned().collect()
     }
 
     /// Which variant is live on the current layer, and why.
+    #[must_use]
     pub fn resolution(&self) -> crate::host::virtual_layer::Resolution {
         self.engine.resolution()
     }
@@ -153,10 +160,12 @@ impl TapEngine {
         self.engine.set_variant_override(name);
     }
 
+    #[must_use]
     pub fn variant_override(&self) -> Option<&str> {
         self.engine.variant_override()
     }
 
+    #[must_use]
     pub fn layer_names(&self) -> Vec<String> {
         self.engine.layer_names()
     }

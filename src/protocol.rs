@@ -20,6 +20,7 @@ impl KnobEvent {
         KnobEvent::HoldTwistR,
     ];
 
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::RotateCCW => "ccw",
@@ -64,6 +65,9 @@ pub enum Action {
 }
 
 impl Action {
+    /// # Errors
+    ///
+    /// Fails when the string is not a known action name or chord.
     pub fn parse(s: &str) -> Result<Self> {
         let s = s.trim();
 
@@ -102,16 +106,19 @@ impl Action {
         let mut modifiers = 0u8;
         let parts: Vec<&str> = s.split(['+', '-']).collect();
 
-        for part in &parts[..parts.len() - 1] {
+        let Some((key_part, modifier_parts)) = parts.split_last() else {
+            return Err(anyhow!("Empty action name"));
+        };
+        for part in modifier_parts {
             match crate::vocabulary::modifier_mask(&part.to_ascii_lowercase()) {
                 Some(mask) => modifiers |= mask,
-                None => return Err(anyhow!("Unknown modifier '{}' in '{}'", part, s)),
+                None => return Err(anyhow!("Unknown modifier '{part}' in '{s}'")),
             }
         }
 
-        let key_str = parts.last().unwrap().to_ascii_lowercase();
-        let code = parse_keycode(&key_str)
-            .ok_or_else(|| anyhow!("Unknown key '{}' in '{}'", key_str, s))?;
+        let key_str = key_part.to_ascii_lowercase();
+        let code =
+            parse_keycode(&key_str).ok_or_else(|| anyhow!("Unknown key '{key_str}' in '{s}'"))?;
 
         Ok(Action::Key { modifiers, code })
     }
@@ -145,6 +152,12 @@ impl Action {
     /// statically; `tests/fixtures/vendor_static.json`). It used to be the
     /// last kind left on `0xFE` -- a command the vendor binary never sends
     /// for a slot record at all: its only `0xFE` packet is the LED write.
+    ///
+    /// # Panics
+    ///
+    /// Never for an action `Action::parse` produced: each fits one slot
+    /// record, which is the only way `build_packet` refuses a single step.
+    #[must_use]
     pub fn to_packet(&self, key_id: u8, layer: u8) -> Vec<u8> {
         crate::fd::build_packet(
             key_id,
@@ -155,16 +168,14 @@ impl Action {
     }
 }
 
+/// # Errors
+///
+/// Fails when the index does not fit the device's key-ID space.
 pub fn key_id_for_button(button_index: usize) -> Result<u8> {
     button_index
         .checked_add(1)
         .and_then(|id| u8::try_from(id).ok())
-        .ok_or_else(|| {
-            anyhow!(
-                "button index {} is past the addressable slots",
-                button_index
-            )
-        })
+        .ok_or_else(|| anyhow!("button index {button_index} is past the addressable slots"))
 }
 
 /// Slot key ID for one knob gesture.
@@ -203,6 +214,10 @@ pub fn key_id_for_button(button_index: usize) -> Result<u8> {
 ///
 /// Since keys 2-6 are all gestures, this device has AT MOST ONE button.
 /// A layout that declares more pushes every gesture off by that many.
+///
+/// # Errors
+///
+/// Fails when the button count or knob index puts the key outside the key-ID space.
 pub fn key_id_for_knob(button_count: usize, knob_index: usize, event: KnobEvent) -> Result<u8> {
     let offset = match event {
         KnobEvent::RotateCCW => 0,
@@ -222,18 +237,12 @@ pub fn key_id_for_knob(button_count: usize, knob_index: usize, event: KnobEvent)
     match base {
         Some(id) => u8::try_from(id).map_err(|_| {
             anyhow!(
-                "knob slot for {:?} sits past the addressable slots \
-                 (buttons {}, knob {}, event offset {})",
-                event,
-                button_count,
-                knob_index,
-                offset
+                "knob slot for {event:?} sits past the addressable slots \
+                 (buttons {button_count}, knob {knob_index}, event offset {offset})"
             )
         }),
         None => Err(anyhow!(
-            "knob slot arithmetic overflowed (buttons {}, knob {})",
-            button_count,
-            knob_index
+            "knob slot arithmetic overflowed (buttons {button_count}, knob {knob_index})"
         )),
     }
 }
@@ -306,7 +315,7 @@ mod tests {
                 action,
                 Action::Key {
                     modifiers: 0,
-                    code: 0x68 + i as u8
+                    code: 0x68 + u8::try_from(i).unwrap()
                 },
                 "keycode for {name}"
             );
@@ -448,10 +457,7 @@ mod tests {
                 key_id_for_knob(buttons, 0, KnobEvent::RotateCCW).expect("small counts address");
             assert!(
                 last_button.is_none_or(|b| b < first_knob),
-                "{} buttons: last button {:?} collides with knob {}",
-                buttons,
-                last_button,
-                first_knob
+                "{buttons} buttons: last button {last_button:?} collides with knob {first_knob}"
             );
         }
     }

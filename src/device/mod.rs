@@ -50,11 +50,19 @@ fn default_iface_no() -> i32 {
 }
 
 /// Enumerates every attached Anticater/CH57x interface, across transports.
+///
+/// # Errors
+///
+/// Fails when the HID thread or the enumeration fails.
 pub fn list_devices() -> Result<Vec<DeviceMatch>> {
     with_hid(list_devices_on)
 }
 
 /// Enumeration proper. Runs on the HID thread; see `with_hid`.
+///
+/// # Errors
+///
+/// Fails when the enumeration fails.
 pub fn list_devices_on(api: &HidApi) -> Result<Vec<DeviceMatch>> {
     let mut matches = Vec::new();
 
@@ -70,7 +78,7 @@ pub fn list_devices_on(api: &HidApi) -> Result<Vec<DeviceMatch>> {
                 vendor_id: vid,
                 product_id: pid,
                 name,
-                serial_number: dev.serial_number().map(|s| s.to_string()),
+                serial_number: dev.serial_number().map(std::string::ToString::to_string),
                 path: dev.path().to_string_lossy().to_string(),
                 usage_page: dev.usage_page(),
                 usage: dev.usage(),
@@ -134,6 +142,10 @@ fn open_device_on(api: &HidApi) -> Result<HidDevice> {
 /// Oversize payloads are REFUSED, never clamped: a truncated packet is a
 /// well-formed packet to the wrong slot, which is exactly the defect class
 /// this repo is built around.
+///
+/// # Errors
+///
+/// Fails when the payload is refused (oversize or the firmware-update packet) or the HID write fails.
 pub fn send_report(dev: &HidDevice, payload: &[u8]) -> Result<()> {
     let payload = if !payload.is_empty() && payload[0] == REPORT_ID {
         &payload[1..]
@@ -150,7 +162,7 @@ pub fn send_report(dev: &HidDevice, payload: &[u8]) -> Result<()> {
     crate::firmware::ensure_sendable(payload)?;
     let mut buf = [0u8; REPORT_LEN + 1];
     buf[0] = REPORT_ID;
-    buf[1..1 + payload.len()].copy_from_slice(payload);
+    buf[1..=payload.len()].copy_from_slice(payload);
 
     dev.write(&buf)
         .context("Failed to write HID report to device")?;
@@ -176,15 +188,19 @@ pub struct SnoopIface {
 ///
 /// One handle per PHYSICAL device, not per usage. hidapi enumerates a macOS
 /// device once per top-level collection, but `open_device` opens the whole
-/// IOHIDDevice, so opening all five entries for the VK01 made every report
+/// `IOHIDDevice`, so opening all five entries for the VK01 made every report
 /// arrive five times -- once per handle, each labelled with a different
 /// usage page, as though five interfaces had spoken. A capture that turns
 /// one twist into five lines, four of them attributed to interfaces that
 /// said nothing, is not a diagnostic. Deduplicate on the device path, which
-/// is what identifies the IOHIDDevice being opened.
+/// is what identifies the `IOHIDDevice` being opened.
 ///
 /// `filters` narrows to the given `VID:PID` pairs; empty watches every
 /// supported device.
+///
+/// # Errors
+///
+/// Fails when a matching interface cannot be opened.
 pub fn open_all_interfaces_on(
     api: &HidApi,
     filters: &[snoop::DeviceFilter],
@@ -222,7 +238,7 @@ pub fn open_all_interfaces_on(
         match dev.open_device(api) {
             Ok(handle) => {
                 if let Err(e) = handle.set_blocking_mode(false) {
-                    eprintln!("note: nonblocking failed for {}: {}", label, e);
+                    eprintln!("note: nonblocking failed for {label}: {e}");
                     continue;
                 }
                 out.push(SnoopIface {
@@ -233,7 +249,7 @@ pub fn open_all_interfaces_on(
                 });
             }
             Err(e) => {
-                eprintln!("note: cannot snoop {}: {}", label, e);
+                eprintln!("note: cannot snoop {label}: {e}");
             }
         }
     }
@@ -253,6 +269,7 @@ pub fn open_all_interfaces_on(
 /// 108 reads that still missed a slot, because counters were capped at 3 for
 /// no reason beyond the original `read-slots` loop having been written that
 /// way. This is 18 reads and complete.
+#[must_use]
 pub fn slot_table_addresses(slots_per_layer: u8, layers: u8) -> Vec<(u8, u8)> {
     (1..=slots_per_layer.saturating_mul(layers))
         .map(|counter| (slots_per_layer, counter))
@@ -263,6 +280,10 @@ pub fn slot_table_addresses(slots_per_layer: u8, layers: u8) -> Vec<(u8, u8)> {
 /// tail (`[FD FE FF]` + sleep): without it the firmware may ignore
 /// flashed packets. Call once after a batch of key writes, never for
 /// LED-only updates (uncharted; LED path untouched).
+///
+/// # Errors
+///
+/// Fails when the HID write fails.
 pub fn send_commit(dev: &HidDevice) -> Result<()> {
     let mut payload = [0u8; REPORT_LEN];
     payload[..SLOT_COMMIT_PREFIX.len()].copy_from_slice(&SLOT_COMMIT_PREFIX);

@@ -175,6 +175,7 @@ pub const TOUCH_NAMES: &[(&str, u8)] = &[
 ];
 
 /// Look up a touch-gesture name.
+#[must_use]
 pub fn touch_gesture(name: &str) -> Option<u8> {
     TOUCH_NAMES
         .iter()
@@ -183,11 +184,13 @@ pub fn touch_gesture(name: &str) -> Option<u8> {
 }
 
 /// Look up a key name.
+#[must_use]
 pub fn keycode(name: &str) -> Option<u8> {
     KEY_NAMES.iter().find(|(n, _)| *n == name).map(|(_, c)| *c)
 }
 
 /// Look up a media name.
+#[must_use]
 pub fn media_usage(name: &str) -> Option<u16> {
     MEDIA_NAMES
         .iter()
@@ -196,6 +199,7 @@ pub fn media_usage(name: &str) -> Option<u16> {
 }
 
 /// Look up a modifier name.
+#[must_use]
 pub fn modifier_mask(name: &str) -> Option<u8> {
     MODIFIER_NAMES
         .iter()

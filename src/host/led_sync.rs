@@ -76,8 +76,9 @@ fn wait_before(last_start: Option<Instant>, now: Instant) -> Duration {
     match last_start {
         Some(t) => t
             .checked_add(MIN_LED_JOB_INTERVAL)
-            .map(|deadline| deadline.saturating_duration_since(now))
-            .unwrap_or(Duration::ZERO),
+            .map_or(Duration::ZERO, |deadline| {
+                deadline.saturating_duration_since(now)
+            }),
         None => Duration::ZERO,
     }
 }
@@ -120,6 +121,7 @@ pub(crate) fn pace_led() {
 /// wrongly skipped palette would be a light the config no longer describes.
 /// On this VK01 the palette is ignored anyway; the strictness is for the
 /// 16-key variant sharing the product id, which honours per-key RGB.
+#[must_use]
 pub fn pending_writes(writes: Vec<(u8, String)>, stored: &[(u8, u8)]) -> Vec<(u8, String)> {
     writes
         .into_iter()
@@ -149,6 +151,7 @@ pub fn pending_writes(writes: Vec<(u8, String)>, stored: &[(u8, u8)]) -> Vec<(u8
 ///   * the layer names no mode, which means "leave it alone";
 ///   * the index is out of range, which a caller can produce during a
 ///     config reload and must not be turned into a write to layer 0.
+#[must_use]
 pub fn led_writes_for(cfg: &HostConfig, layer_idx: usize) -> Vec<(u8, String)> {
     let Some(mode) = cfg.layers.get(layer_idx).and_then(|l| l.led.as_deref()) else {
         return Vec::new();
@@ -172,7 +175,7 @@ pub fn led_writes_for(cfg: &HostConfig, layer_idx: usize) -> Vec<(u8, String)> {
 /// Apply that write, OFF the calling thread.
 ///
 /// Detached deliberately. Both callers are latency-critical: one is the
-/// CGEventTap callback, and macOS disables a tap whose callback runs long.
+/// `CGEventTap` callback, and macOS disables a tap whose callback runs long.
 /// An LED write is two HID reports with a 20 ms settle between them, plus
 /// however long the HID thread's queue already is -- easily 100 ms, on the
 /// thread that is supposed to be forwarding the user's keystrokes.
@@ -192,6 +195,10 @@ pub fn led_writes_for(cfg: &HostConfig, layer_idx: usize) -> Vec<(u8, String)> {
 /// Failures are dropped on purpose: the knob may be unplugged, and a switch
 /// whose light did not follow is still a switch that happened. The layer
 /// change must not fail because the light did not.
+///
+/// # Panics
+///
+/// When the pacing mutex was poisoned by a panic on another thread.
 pub fn sync_led(cfg: &HostConfig, layer_idx: usize) {
     let writes = led_writes_for(cfg, layer_idx);
     if writes.is_empty() {
@@ -380,7 +387,7 @@ mod tests {
     #[test]
     fn wait_covers_the_remainder() {
         let now = Instant::now();
-        let started_400ms_ago = now - Duration::from_millis(400);
+        let started_400ms_ago = now.checked_sub(Duration::from_millis(400)).unwrap();
         let wait = wait_before(Some(started_400ms_ago), now);
         assert!(
             wait >= Duration::from_millis(90) && wait <= Duration::from_millis(110),
@@ -392,7 +399,9 @@ mod tests {
     fn wait_never_goes_negative() {
         let now = Instant::now();
         // Long past the interval: no wait.
-        let old = now - MIN_LED_JOB_INTERVAL - Duration::from_secs(1);
+        let old = now
+            .checked_sub(MIN_LED_JOB_INTERVAL + Duration::from_secs(1))
+            .unwrap();
         assert_eq!(wait_before(Some(old), now), Duration::ZERO);
         // A reservation ahead of now (another job's booked start): the next
         // job starts one interval after it, which is the case the pacer

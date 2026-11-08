@@ -30,6 +30,10 @@ use std::path::PathBuf;
 
 /// Default host config location, shared by the daemon, the CLI importer,
 /// and the GUI exporter so all three agree on one file.
+///
+/// # Errors
+///
+/// Fails when `HOME` is unset.
 pub fn default_config_path() -> Result<PathBuf, std::env::VarError> {
     Ok(
         PathBuf::from(std::env::var("HOME")?)
@@ -157,6 +161,7 @@ pub struct HostLayer {
 
 impl HostLayer {
     /// A layer bound to nothing, named.
+    #[must_use]
     pub fn empty(name: &str) -> Self {
         Self {
             name: name.to_string(),
@@ -173,10 +178,12 @@ impl HostLayer {
     }
 
     /// True when this layer's bindings depend on context.
+    #[must_use]
     pub fn is_virtual(&self) -> bool {
         !self.variants.is_empty()
     }
 
+    #[must_use]
     pub fn action(&self, gesture: Gesture) -> &HostAction {
         match gesture {
             Gesture::TwistL => &self.twist_l,
@@ -240,6 +247,7 @@ fn default_scroll_lines() -> i32 {
 
 impl HostConfig {
     /// Defaults replicate the vk01 proof-of-concept layers.
+    #[must_use]
     pub fn default_config() -> Self {
         Self {
             layers: vec![
@@ -303,6 +311,7 @@ impl HostConfig {
 
     /// Strict load for watchers: `None` means "keep the last-good config"
     /// (e.g. a half-written file mid-save), never silent defaults.
+    #[must_use]
     pub fn try_load_json(text: &str) -> Option<Self> {
         let value = migrate_bound_layer_key(serde_json::from_str(text).ok()?);
         match serde_json::from_value::<HostConfig>(value) {
@@ -315,6 +324,7 @@ impl HostConfig {
         }
     }
 
+    #[must_use]
     pub fn to_json_pretty(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_default()
     }
@@ -350,6 +360,7 @@ fn migrate_bound_layer_key(mut value: serde_json::Value) -> serde_json::Value {
 
 /// One-line human description of a host action for UI surfaces (GUI Host
 /// tab, logs). Labels are display-only throughout the schema.
+#[must_use]
 pub fn describe_host_action(action: &HostAction) -> String {
     match action {
         HostAction::None => "None".to_string(),
@@ -362,21 +373,21 @@ pub fn describe_host_action(action: &HostAction) -> String {
             } else {
                 format!("{}+", mods.join("+"))
             };
-            format!("Key {}{}", prefix, label)
+            format!("Key {prefix}{label}")
         }
         HostAction::Sequence { steps } => format!("Sequence ({} steps)", steps.len()),
-        HostAction::Aux { key } => format!("Media {:?}", key),
-        HostAction::MouseClick { button } => format!("Click {:?}", button),
-        HostAction::LaunchApp { bundle_id } => format!("Launch {}", bundle_id),
-        HostAction::OpenUrl { url } => format!("Open {}", url),
-        HostAction::OpenPath { path } => format!("Open {}", path),
+        HostAction::Aux { key } => format!("Media {key:?}"),
+        HostAction::MouseClick { button } => format!("Click {button:?}"),
+        HostAction::LaunchApp { bundle_id } => format!("Launch {bundle_id}"),
+        HostAction::OpenUrl { url } => format!("Open {url}"),
+        HostAction::OpenPath { path } => format!("Open {path}"),
         HostAction::QuitApp { bundle_id, force } => {
-            format!("Quit {} (force={})", bundle_id, force)
+            format!("Quit {bundle_id} (force={force})")
         }
         HostAction::HotkeySwitch { first, second } => format!(
             "Hotkey switch ({} / {})",
-            first.as_ref().map(|c| c.label.as_str()).unwrap_or("-"),
-            second.as_ref().map(|c| c.label.as_str()).unwrap_or("-"),
+            first.as_ref().map_or("-", |c| c.label.as_str()),
+            second.as_ref().map_or("-", |c| c.label.as_str()),
         ),
     }
 }

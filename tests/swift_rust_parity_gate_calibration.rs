@@ -355,7 +355,11 @@ fn a_stale_allowlist_entry_fails() {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or_default();
-        if name.starts_with('_') && name.ends_with(".py") {
+        if name.starts_with('_')
+            && std::path::Path::new(name)
+                .extension()
+                .is_some_and(|e| e == "py")
+        {
             std::fs::copy(&path, dir.join(name))
                 .expect("copy a gate helper module beside the seeded gate");
         }

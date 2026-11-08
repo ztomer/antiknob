@@ -43,6 +43,10 @@ fn led_mode_of(report: &[u8]) -> Option<u8> {
 /// for a success. A caller doing write-then-verify would have concluded the
 /// firmware ignores writes, which is exactly the wrong conclusion this
 /// device has already caused once.
+///
+/// # Errors
+///
+/// Fails when the HID transfer fails or the device answers with something that is not an LED reply.
 pub fn read_led_mode(dev: &HidDevice, layer: u8) -> Result<u8> {
     let mut payload = [0u8; REPORT_LEN];
     payload[0] = LED_QUERY_CMD;
@@ -53,19 +57,16 @@ pub fn read_led_mode(dev: &HidDevice, layer: u8) -> Result<u8> {
     for _ in 0..LED_MAX_SKIPPED_REPORTS {
         let mut buf = [0u8; REPORT_LEN];
         let n = dev
-            .read_timeout(&mut buf, LED_READ_TIMEOUT_MS as i32)
+            .read_timeout(&mut buf, LED_READ_TIMEOUT_MS)
             .context("Timed out reading LED state from device")?;
         if n < 3 {
-            anyhow::bail!("Short LED reply ({} bytes)", n);
+            anyhow::bail!("Short LED reply ({n} bytes)");
         }
         if let Some(mode) = led_mode_of(&buf[..n]) {
             return Ok(mode);
         }
     }
-    anyhow::bail!(
-        "No LED reply from the device after {} report(s)",
-        LED_MAX_SKIPPED_REPORTS
-    )
+    anyhow::bail!("No LED reply from the device after {LED_MAX_SKIPPED_REPORTS} report(s)")
 }
 
 /// Send an LED packet, preceded by the init this firmware requires.
@@ -102,6 +103,7 @@ pub enum LedVerdict {
 
 impl LedVerdict {
     /// One line for a person: what the device holds, never "OK".
+    #[must_use]
     pub fn describe(&self) -> String {
         match self {
             Self::Confirmed { layer, mode } => {
@@ -124,6 +126,10 @@ impl LedVerdict {
     /// naming what the layer holds otherwise. An unconfirmed write is a
     /// failure (PLAN S.11), on every surface that reports one: `antiknob
     /// led`, MCP `set_led`, `upload` and the keymap flash all decide it here.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the write was not confirmed, naming what the layer holds instead.
     pub fn confirmed(&self) -> Result<u8> {
         match self {
             Self::Confirmed { mode, .. } => Ok(*mode),
@@ -132,6 +138,7 @@ impl LedVerdict {
     }
 
     /// The mode the layer holds, when the read-back answered.
+    #[must_use]
     pub fn stored(&self) -> Option<u8> {
         match self {
             Self::Confirmed { mode, .. } => Some(*mode),
@@ -146,6 +153,7 @@ const LED_PACKET_LAYER: usize = 3;
 const LED_PACKET_MODE: usize = 4;
 
 /// Compare what was sent with what the layer read back. Pure.
+#[must_use]
 pub fn led_verdict(packet: &[u8], read: &Result<u8>) -> LedVerdict {
     let layer = packet.get(LED_PACKET_LAYER).copied().unwrap_or(0);
     let sent = packet.get(LED_PACKET_MODE).copied().unwrap_or(0);
@@ -167,6 +175,10 @@ pub fn led_verdict(packet: &[u8], read: &Result<u8>) -> LedVerdict {
 /// THE LED writer: init, write, then read the layer's mode back on the same
 /// handle and compare. `send_led` is private so no path can write an LED
 /// mode and report nothing about it (`tests/led_write_confirmed.rs`).
+///
+/// # Errors
+///
+/// Fails when the packet is too short or the HID transfer fails.
 pub fn write_led(dev: &HidDevice, packet: &[u8]) -> Result<LedVerdict> {
     if packet.len() <= LED_PACKET_MODE {
         anyhow::bail!("LED packet too short ({} bytes)", packet.len());
@@ -179,6 +191,10 @@ pub fn write_led(dev: &HidDevice, packet: &[u8]) -> Result<LedVerdict> {
 /// Fail on any LED write that did not read back as sent, naming each one.
 /// Shared by `upload` and the daemon's keymap flash, so the two cannot
 /// disagree about what an unconfirmed LED write is.
+///
+/// # Errors
+///
+/// Fails when any LED write did not read back as sent, naming each one.
 pub fn ensure_leds_confirmed(leds: &[LedVerdict]) -> Result<()> {
     let bad: Vec<String> = leds
         .iter()

@@ -66,6 +66,7 @@ use anyhow::{anyhow, Result};
 ///
 /// Measured one at a time: `Ctrl+` is `F1`, `Shift+` `F2`, `Alt+` `F3`,
 /// `Win+` and `command` both `F4`, then `F5..F8` for the right-hand four.
+#[must_use]
 pub fn modifier_entry(bit: u8) -> u8 {
     FD_MOD_ENTRY_BASE + bit
 }
@@ -109,6 +110,7 @@ pub struct Step {
 }
 
 impl Step {
+    #[must_use]
     pub fn now(action: Action) -> Self {
         Self {
             action,
@@ -224,6 +226,10 @@ fn mouse_packet(key_id: u8, layer: u8, steps: &[Step]) -> Result<Vec<u8>> {
 ///
 /// `layer` is 0-based here and 1-based on the wire, matching
 /// `Action::to_packet` so callers never have to remember which is which.
+///
+/// # Errors
+///
+/// Fails when the steps cannot be encoded: an empty or mixed sequence, or one longer than the packet holds.
 pub fn build_packet(key_id: u8, layer: u8, steps: &[Step]) -> Result<Vec<u8>> {
     let kind = plan_kind(steps)?;
     if kind == Kind::Mouse {
@@ -255,7 +261,10 @@ pub fn build_packet(key_id: u8, layer: u8, steps: &[Step]) -> Result<Vec<u8>> {
         ));
     }
 
-    if entries.len() > FD_MAX_ENTRIES {
+    let entry_count = u8::try_from(entries.len())
+        .ok()
+        .filter(|n| usize::from(*n) <= FD_MAX_ENTRIES);
+    let Some(entry_count) = entry_count else {
         return Err(anyhow!(
             "this sequence needs {} entries but one slot holds {}; a truncated \
              sequence would flash as a success and run the wrong thing. Note a \
@@ -263,7 +272,7 @@ pub fn build_packet(key_id: u8, layer: u8, steps: &[Step]) -> Result<Vec<u8>> {
             entries.len(),
             FD_MAX_ENTRIES
         ));
-    }
+    };
 
     let mut packet = vec![0u8; REPORT_LEN];
     packet[0] = REPORT_ID;
@@ -275,7 +284,7 @@ pub fn build_packet(key_id: u8, layer: u8, steps: &[Step]) -> Result<Vec<u8>> {
     // writes `01` when appending and `04` for `Like`; this writer never
     // appends, so it writes `00`, which is what its records read back with.
     packet[5] = 0;
-    packet[6] = entries.len() as u8;
+    packet[6] = entry_count;
 
     for (i, (delay, value)) in entries.iter().enumerate() {
         let at = FD_HEADER_LEN + i * FD_ENTRY_LEN;
@@ -295,6 +304,7 @@ pub fn build_packet(key_id: u8, layer: u8, steps: &[Step]) -> Result<Vec<u8>> {
 /// reads, so the residue is inert -- but a slot dump then shows bytes that
 /// mean nothing, which is exactly the sort of thing this repo has misread
 /// before.
+#[must_use]
 pub fn wipe_packet(key_id: u8, layer: u8) -> Vec<u8> {
     let mut packet = vec![0u8; REPORT_LEN];
     packet[0] = REPORT_ID;
@@ -302,7 +312,7 @@ pub fn wipe_packet(key_id: u8, layer: u8) -> Vec<u8> {
     packet[2] = key_id;
     packet[3] = layer + 1;
     packet[4] = Kind::Keyboard as u8;
-    packet[6] = FD_MAX_ENTRIES as u8 - 1;
+    packet[6] = u8::try_from(FD_MAX_ENTRIES - 1).unwrap_or(u8::MAX);
     packet
 }
 
@@ -314,6 +324,7 @@ pub fn wipe_packet(key_id: u8, layer: u8) -> Vec<u8> {
 /// `0xFD` -- leaving a short binding written over a long one with the old
 /// tail stranded in the slot. Addressing is the one thing all commands
 /// agree on, so it goes through `record_addr`.
+#[must_use]
 pub fn wipes_for(packets: &[Vec<u8>]) -> Vec<Vec<u8>> {
     packets
         .iter()
@@ -338,13 +349,14 @@ fn significant_len(record: &[u8]) -> Option<usize> {
 ///
 /// The WHOLE record is compared, every byte but byte 1 (the command: `0xFD`
 /// or `0xFE` out, `0xFA` back). Byte 5 was once skipped as "device-owned"
-/// and is stored as written (VENDOR_UI_MAP, "Byte 5 is stored as written").
+/// and is stored as written (`VENDOR_UI_MAP`, "Byte 5 is stored as written").
 /// The tail past `len` was skipped as inert, and it is where a media write
-/// leaves the previous record's entries (VENDOR_UI_MAP, "A write does NOT
+/// leaves the previous record's entries (`VENDOR_UI_MAP`, "A write does NOT
 /// clear entries past `len`"): a slot that kept a stale tail is a slot
 /// holding something other than what was sent, and a comparison that stops
 /// at `len` calls it confirmed. Any command's record goes through here, so
 /// one rule decides what "read back as written" means.
+#[must_use]
 pub fn record_matches(sent: &[u8], readback: &[u8]) -> bool {
     if sent.len() != REPORT_LEN || readback.len() != REPORT_LEN {
         return false;
@@ -363,11 +375,12 @@ pub fn record_matches(sent: &[u8], readback: &[u8]) -> bool {
 /// 7 -- and that is the `0xFD` layout, so a restore is the record replayed
 /// with `0xFD` and every other byte unchanged. The gesture probe's restore
 /// used `0xFE`, the command whose single-action records the firmware stores
-/// and has been seen not to RUN (VENDOR_UI_MAP, "The `0xFE` single-action
+/// and has been seen not to RUN (`VENDOR_UI_MAP`, "The `0xFE` single-action
 /// record was never executable"). The read-back cannot tell the two apart:
 /// measured 2026-11-01, the same record written with either command reads
 /// back byte for byte the same. So the command is decided here, once, by
 /// what the firmware runs, and no read-back is asked to settle it.
+#[must_use]
 pub fn restore_packet(record: &[u8]) -> Vec<u8> {
     let mut p = record.to_vec();
     p.resize(REPORT_LEN, 0);
@@ -393,6 +406,7 @@ pub struct Chain {
 /// are delays and values, so any reader that took them from there saw a
 /// chord as noise. `len` (byte 6) counts the entries, and a record whose
 /// count runs past the report is not a record.
+#[must_use]
 pub fn decode_chain(record: &[u8]) -> Option<Chain> {
     let addr = crate::device::verify::record_addr(record)?;
     let end = significant_len(record)?;
@@ -413,6 +427,7 @@ pub fn decode_chain(record: &[u8]) -> Option<Chain> {
 /// A chord as `(modifier bitmask, keycode)`, read out of a keyboard
 /// chain's values: modifier markers `F1..F8` then the key, the inverse of
 /// the chord encoding in `value_bytes`. `None` for anything else.
+#[must_use]
 pub fn chord_of(values: &[u8]) -> Option<(u8, u8)> {
     let (code, markers) = values.split_last()?;
     let mut mods = 0u8;
@@ -424,6 +439,10 @@ pub fn chord_of(values: &[u8]) -> Option<(u8, u8)> {
 }
 
 /// Parse a list of action names into steps, all with no delay.
+///
+/// # Errors
+///
+/// Fails when a name does not parse as an action.
 pub fn parse_sequence(specs: &[String]) -> Result<Vec<Step>> {
     specs
         .iter()

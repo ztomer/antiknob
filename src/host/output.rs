@@ -42,6 +42,7 @@ pub enum OutOp {
 
 /// Flag bits for canonical modifier names; unknown names are ignored
 /// (vk01-anticater logs and ignores them at the engine boundary too).
+#[must_use]
 pub fn flags_for_mods(mods: &[String]) -> u64 {
     let mut flags = 0u64;
     for m in mods {
@@ -74,6 +75,7 @@ fn key_press(code: u16, flags: u64) -> Vec<OutOp> {
 
 /// Translate one resolved action to primitive ops. Key chords post
 /// down+up back-to-back; sequence delays are waits BEFORE their step.
+#[must_use]
 pub fn plan(action: &FiredAction) -> Vec<OutOp> {
     match action {
         FiredAction::Scroll { lines } => vec![OutOp::Scroll { lines: *lines }],
@@ -126,7 +128,7 @@ mod tests {
         let flags = flags_for_mods(
             &["cmd", "shift", "alt", "ctrl", "fn", "bogus"]
                 .iter()
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
                 .collect::<Vec<_>>(),
         );
         assert_eq!(

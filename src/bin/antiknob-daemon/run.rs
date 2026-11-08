@@ -8,13 +8,12 @@ use antiknob::host::engine::{EngineEvent, FiredAction};
 use antiknob::host::output::plan;
 use antiknob::host::tap::TapEngine;
 use antiknob::host::HostConfig;
-use antiknob::policy::{LOOP_TICK_MS, MOD_HOLD_TICK_MS, TAP_REBUILD_DELAY_SECS};
+use antiknob::policy::{LOOP_TICK_MS, TAP_REBUILD_DELAY_SECS};
 use goh_tui::{OK, START, WARN};
 
 use super::synth::synthesize;
 use super::tray::{TrayAction, TrayUi};
 use crate::keytap::{self, KeyEvent};
-use antiknob::host::tap::Verdict;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, RecvTimeoutError};
@@ -24,6 +23,16 @@ use std::time::{Duration, Instant};
 enum DaemonMsg {
     Input(KeyEvent),
     TapDead(String),
+}
+
+/// Milliseconds since `since`, saturating instead of truncating.
+pub(super) fn elapsed_ms(since: Instant) -> u64 {
+    u64::try_from(since.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+/// Microseconds since `since`, saturating instead of truncating.
+pub(super) fn elapsed_us(since: Instant) -> u64 {
+    u64::try_from(since.elapsed().as_micros()).unwrap_or(u64::MAX)
 }
 
 pub(crate) fn default_config_path() -> Result<PathBuf> {
@@ -45,22 +54,22 @@ pub(crate) fn load_or_default(path: &Path) -> Result<HostConfig> {
 }
 
 /// Whether the keyboard tap is currently up, for the menu bar to show.
-fn tap_is_up(health: &Arc<Mutex<TapHealth>>) -> bool {
-    health.lock().map(|h| h.active).unwrap_or(false)
+pub(super) fn tap_is_up(health: &Arc<Mutex<TapHealth>>) -> bool {
+    health.lock().is_ok_and(|h| h.active)
 }
 
 fn describe_fire(action: &FiredAction) -> String {
     match action {
-        FiredAction::Scroll { lines } => format!("scroll {:+} lines", lines),
-        FiredAction::KeyChord { key, mods } => format!("keystroke key={} mods={:?}", key, mods),
+        FiredAction::Scroll { lines } => format!("scroll {lines:+} lines"),
+        FiredAction::KeyChord { key, mods } => format!("keystroke key={key} mods={mods:?}"),
         FiredAction::Sequence(steps) => format!("sequence ({} steps)", steps.len()),
-        FiredAction::Aux(key) => format!("media/brightness {:?}", key),
-        FiredAction::MouseClick { button } => format!("mouse click {:?}", button),
-        FiredAction::LaunchApp { bundle_id } => format!("launch {}", bundle_id),
-        FiredAction::OpenUrl { url } => format!("open url {}", url),
-        FiredAction::OpenPath { path } => format!("open path {}", path),
+        FiredAction::Aux(key) => format!("media/brightness {key:?}"),
+        FiredAction::MouseClick { button } => format!("mouse click {button:?}"),
+        FiredAction::LaunchApp { bundle_id } => format!("launch {bundle_id}"),
+        FiredAction::OpenUrl { url } => format!("open url {url}"),
+        FiredAction::OpenPath { path } => format!("open path {path}"),
         FiredAction::QuitApp { bundle_id, force } => {
-            format!("quit {} (force={})", bundle_id, force)
+            format!("quit {bundle_id} (force={force})")
         }
     }
 }
@@ -71,9 +80,9 @@ fn describe_fire(action: &FiredAction) -> String {
 /// knob's backlight follows the active HOST layer, and the firmware has no
 /// idea host layers exist, so the daemon writes the new layer's mode on
 /// every switch. `led_sync` decides whether there is anything to write and
-/// does it off this thread -- one of these call sites is the CGEventTap
+/// does it off this thread -- one of these call sites is the `CGEventTap`
 /// callback, and macOS disables a tap whose callback runs long.
-fn handle_events(out: Vec<EngineEvent>, active: bool, cfg: &HostConfig) {
+pub(super) fn handle_events(out: Vec<EngineEvent>, active: bool, cfg: &HostConfig) {
     for ev in out {
         match ev {
             EngineEvent::Fire(action) => {
@@ -104,7 +113,7 @@ fn handle_events(out: Vec<EngineEvent>, active: bool, cfg: &HostConfig) {
 /// macOS raise its own Accessibility prompt once, which puts the daemon in
 /// the pane's list with a switch beside it instead of leaving the user to
 /// find a path.
-fn log_tap_warning(last: &mut Option<String>, reason: &str) {
+pub(super) fn log_tap_warning(last: &mut Option<String>, reason: &str) {
     if last.as_deref() == Some(reason) {
         return;
     }
@@ -118,13 +127,13 @@ fn log_tap_warning(last: &mut Option<String>, reason: &str) {
 /// Watches the host config file for external edits (hand edits, GUI
 /// export). mtime-granular; a changed-but-unparseable file keeps the
 /// last-good config with a warning instead of resetting to defaults.
-struct ConfigWatch {
+pub(super) struct ConfigWatch {
     path: PathBuf,
     last_mtime: Option<std::time::SystemTime>,
 }
 
 impl ConfigWatch {
-    fn new(path: &Path) -> Self {
+    pub(super) fn new(path: &Path) -> Self {
         Self {
             path: path.to_path_buf(),
             last_mtime: std::fs::metadata(path).and_then(|m| m.modified()).ok(),
@@ -137,16 +146,16 @@ impl ConfigWatch {
         let current = std::fs::metadata(&self.path)
             .and_then(|m| m.modified())
             .ok();
-        if current != self.last_mtime {
+        if current == self.last_mtime {
+            false
+        } else {
             self.last_mtime = current;
             true
-        } else {
-            false
         }
     }
 }
 
-fn maybe_reload(tap: &mut TapEngine, watch: &mut ConfigWatch) {
+pub(super) fn maybe_reload(tap: &mut TapEngine, watch: &mut ConfigWatch) {
     if !watch.changed() {
         return;
     }
@@ -180,15 +189,15 @@ fn force_reload(tap: &mut TapEngine, path: &Path) {
 }
 
 /// Apply one tray action. Returns true when the daemon should exit.
-fn apply_tray_action(
-    action: TrayAction,
+pub(super) fn apply_tray_action(
+    action: &TrayAction,
     tap: &mut TapEngine,
     config_path: &Path,
     active: bool,
 ) -> bool {
     match action {
         TrayAction::SwitchLayer(i) => {
-            let out = tap.set_layer(i);
+            let out = tap.set_layer(*i);
             handle_events(out, active, tap.config());
             false
         }
@@ -219,15 +228,15 @@ fn apply_tray_action(
 }
 
 pub(crate) fn run_observe(
-    tap: Arc<Mutex<TapEngine>>,
-    tap_health: Arc<Mutex<TapHealth>>,
+    tap: &Arc<Mutex<TapEngine>>,
+    tap_health: &Arc<Mutex<TapHealth>>,
     timeout_secs: u64,
     config_path: &Path,
     with_tray: bool,
     verbose: bool,
 ) -> ! {
     let (tx, rx) = channel();
-    let thread_health = Arc::clone(&tap_health);
+    let thread_health = Arc::clone(tap_health);
     std::thread::spawn(move || loop {
         if let Ok(mut h) = thread_health.lock() {
             h.active = true;
@@ -252,7 +261,7 @@ pub(crate) fn run_observe(
     let mut watch = ConfigWatch::new(config_path);
     let mut last_tap_warning: Option<String> = None;
     let mut tray = if with_tray {
-        match TrayUi::new(&tap, tap_is_up(&tap_health)) {
+        match TrayUi::new(tap, tap_is_up(tap_health)) {
             Ok(t) => Some(t),
             Err(e) => {
                 goh_tui::outln!("{WARN} Menu bar unavailable ({}); continuing headless.", e);
@@ -270,7 +279,7 @@ pub(crate) fn run_observe(
             goh_tui::outln!("{OK} Observe window closed.");
             std::process::exit(0);
         }
-        let now_ms = start.elapsed().as_millis() as u64;
+        let now_ms = elapsed_ms(start);
         match rx.recv_timeout(tick) {
             Ok(DaemonMsg::Input(ev)) => {
                 let KeyEvent { code, pressed } = ev;
@@ -305,190 +314,14 @@ pub(crate) fn run_observe(
         }
         if let Ok(mut t) = tap.lock() {
             maybe_reload(&mut t, &mut watch);
-            let out = t.poll_expiry(start.elapsed().as_millis() as u64);
+            let out = t.poll_expiry(elapsed_ms(start));
             handle_events(out, false, t.config());
         }
         if let Some(tray) = tray.as_mut() {
-            tray.refresh(&tap, tap_is_up(&tap_health));
+            tray.refresh(tap, tap_is_up(tap_health));
             if let Ok(mut t) = tap.lock() {
                 for action in tray.poll() {
-                    if apply_tray_action(action, &mut t, config_path, false) {
-                        std::process::exit(0);
-                    }
-                }
-            }
-        }
-    }
-}
-
-pub(crate) fn run_active(
-    tap: Arc<Mutex<TapEngine>>,
-    tap_health: Arc<Mutex<TapHealth>>,
-    timeout_secs: u64,
-    config_path: &Path,
-    with_tray: bool,
-    verbose: bool,
-) -> ! {
-    if timeout_secs > 0 {
-        std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_secs(timeout_secs));
-            goh_tui::outln!("{OK} Active window closed.");
-            std::process::exit(0);
-        });
-    }
-
-    // ONE clock for every timestamp the engine compares: key presses, the
-    // double-tap expiry and the modifier hold. The grab loop used to restart
-    // its own clock on every tap rebuild while the timer kept the first one,
-    // so after a rebuild a press looked ages old to the expiry check.
-    let epoch = Instant::now();
-
-    // Double-tap expiry has no event to ride on when the user stops
-    // touching the knob, so poll it on a timer. Same timer also picks up
-    // external config edits (instant apply).
-    let timer_tap = Arc::clone(&tap);
-    let watch_path: PathBuf = config_path.to_path_buf();
-    std::thread::spawn(move || {
-        let mut watch = ConfigWatch::new(&watch_path);
-        loop {
-            std::thread::sleep(Duration::from_millis(LOOP_TICK_MS));
-            let now_ms = epoch.elapsed().as_millis() as u64;
-            if let Ok(mut t) = timer_tap.lock() {
-                maybe_reload(&mut t, &mut watch);
-                let out = t.poll_expiry(now_ms);
-                handle_events(out, true, t.config());
-            }
-        }
-    });
-
-    // The hold instrument (AK.HOLDMEASURE). The tap callback must never touch
-    // the disk -- a slow callback is how the system disables a tap -- so it
-    // only sends; this thread owns the file.
-    let sample_tx = crate::hold_recorder::spawn();
-
-    // A held slot-chord modifier press that no key completed goes back into
-    // the stream when its hold runs out (AK.LEAK; `TapEngine::decide`).
-    // Posted with the lock released, so the tap callback is never blocked
-    // behind a post that re-enters it.
-    let hold_tap = Arc::clone(&tap);
-    let hold_samples = sample_tx.clone();
-    std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_millis(MOD_HOLD_TICK_MS));
-        let now_us = epoch.elapsed().as_micros() as u64;
-        let (due, samples) = hold_tap
-            .lock()
-            .map(|mut t| (t.expire_held(now_us), t.take_hold_samples()))
-            .unwrap_or_default();
-        crate::hold_recorder::send_all(&hold_samples, samples);
-        if !due.is_empty() {
-            if verbose {
-                println!(
-                    "[hold] replay {:?}",
-                    due.iter().map(|h| h.code).collect::<Vec<_>>()
-                );
-            }
-            keytap::replay_held(&due);
-        }
-    });
-
-    // The grab tap runs on a worker thread (proven safe by probe); the
-    // menu bar must live on the main thread, which runs the loop below.
-    let grab_tap = Arc::clone(&tap);
-    let grab_health = Arc::clone(&tap_health);
-    std::thread::spawn(move || {
-        let mut last_warning: Option<String> = None;
-        loop {
-            if let Ok(mut h) = grab_health.lock() {
-                h.active = true;
-                h.error = None;
-            }
-            let thread_tap = Arc::clone(&grab_tap);
-            // Counted and logged HERE, in the grab callback, because this is
-            // the mode the daemon actually runs in. `--verbose` used to log
-            // only in observe mode while its own help promised it
-            // "diagnoses silent taps" -- so the one flag for the job printed
-            // nothing in the one mode that needed it, and its silence read
-            // as a dead tap rather than as a missing instrument.
-            let ev_health = Arc::clone(&grab_health);
-            let ev_samples = sample_tx.clone();
-            let res = keytap::grab(move |ev: KeyEvent, flags: u64| -> Verdict {
-                let KeyEvent { code, pressed } = ev;
-                let now_us = epoch.elapsed().as_micros() as u64;
-                if let Ok(mut h) = ev_health.lock() {
-                    h.events_seen += 1;
-                }
-                let Ok(mut t) = thread_tap.lock() else {
-                    return Verdict::Pass;
-                };
-                // Logged AFTER the lock so the held modifiers can be shown:
-                // a slot chord is a keycode AND its mods, and a log of bare
-                // keycodes cannot distinguish "wrong key" from "right key,
-                // mods not seen" -- the two failures that look identical
-                // from outside.
-                let mods_now = t.held_mods();
-                let step = t.decide(code, pressed, flags, now_us);
-                crate::hold_recorder::send_all(&ev_samples, t.take_hold_samples());
-                if !step.out.is_empty() {
-                    handle_events(step.out, true, t.config());
-                }
-                // The verdict is the half that matters when a chord also
-                // reaches another application: "we saw it" and "we consumed
-                // it" are different claims, and only the second says whether
-                // the system still gets the keystroke. Logging the first
-                // alone sent this session chasing a phantom collision -- and
-                // logging only the KEY's verdict hid that the chord's
-                // modifiers were passing (AK.LEAK).
-                if verbose {
-                    let shown = match &step.verdict {
-                        Verdict::Pass => "pass".to_string(),
-                        Verdict::Swallow => "SWALLOW".to_string(),
-                        Verdict::Hold => "HOLD".to_string(),
-                        Verdict::Replay(h) => format!(
-                            "replay {:?} then pass",
-                            h.iter().map(|h| h.code).collect::<Vec<_>>()
-                        ),
-                    };
-                    println!(
-                        "[key] code={} {} mods={:?} -> {}",
-                        code,
-                        if pressed { "down" } else { "up" },
-                        mods_now,
-                        shown
-                    );
-                }
-                step.verdict
-            });
-            let reason = match res {
-                Err(e) => e,
-                Ok(()) => "event tap ended".to_string(),
-            };
-            if let Ok(mut h) = grab_health.lock() {
-                h.active = false;
-                h.error = Some(reason.clone());
-            }
-            log_tap_warning(&mut last_warning, &reason);
-            std::thread::sleep(Duration::from_secs(TAP_REBUILD_DELAY_SECS));
-        }
-    });
-
-    let mut tray = if with_tray {
-        match TrayUi::new(&tap, tap_is_up(&tap_health)) {
-            Ok(t) => Some(t),
-            Err(e) => {
-                goh_tui::outln!("{WARN} Menu bar unavailable ({}); continuing headless.", e);
-                None
-            }
-        }
-    } else {
-        None
-    };
-    loop {
-        std::thread::sleep(Duration::from_millis(LOOP_TICK_MS));
-        if let Some(tray) = tray.as_mut() {
-            tray.refresh(&tap, tap_is_up(&tap_health));
-            if let Ok(mut t) = tap.lock() {
-                for action in tray.poll() {
-                    if apply_tray_action(action, &mut t, config_path, true) {
+                    if apply_tray_action(&action, &mut t, config_path, false) {
                         std::process::exit(0);
                     }
                 }

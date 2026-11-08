@@ -11,6 +11,7 @@ use super::virtual_layer::{self, Resolution, SwitchContext};
 use super::{gesture_for_chord, ChordSpec, Gesture, HostAction, HostConfig};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// A fully resolved output event. Hotkey-switch and defaulted scroll lines
 /// are resolved at dispatch; the output layer never sees ambiguity.
@@ -57,6 +58,7 @@ pub struct Engine {
 }
 
 impl Engine {
+    #[must_use]
     pub fn new(cfg: HostConfig) -> Self {
         Self::with_frontmost(cfg, frontmost::system_source())
     }
@@ -81,6 +83,7 @@ impl Engine {
         self.variant_override = name;
     }
 
+    #[must_use]
     pub fn variant_override(&self) -> Option<&str> {
         self.variant_override.as_deref()
     }
@@ -98,6 +101,7 @@ impl Engine {
     }
 
     /// Which variant is live on the current layer, and why.
+    #[must_use]
     pub fn resolution(&self) -> Resolution {
         match self.cfg.layers.get(self.layer_idx) {
             Some(layer) => virtual_layer::resolve(&layer.variants, &self.context()),
@@ -129,18 +133,22 @@ impl Engine {
         self.layer_idx = self.layer_idx.min(self.cfg.layers.len().saturating_sub(1));
     }
 
+    #[must_use]
     pub fn layer_idx(&self) -> usize {
         self.layer_idx
     }
 
+    #[must_use]
     pub fn config(&self) -> &HostConfig {
         &self.cfg
     }
 
+    #[must_use]
     pub fn layer_count(&self) -> usize {
         self.cfg.layers.len()
     }
 
+    #[must_use]
     pub fn layer_names(&self) -> Vec<String> {
         self.cfg.layers.iter().map(|l| l.name.clone()).collect()
     }
@@ -154,12 +162,18 @@ impl Engine {
     }
 
     pub fn cycle_layer(&mut self, delta: isize) -> Vec<EngineEvent> {
-        let n = self.cfg.layers.len().max(1) as isize;
-        self.set_layer((self.layer_idx as isize + delta).rem_euclid(n) as usize)
+        let n = isize::try_from(self.cfg.layers.len().max(1)).unwrap_or(isize::MAX);
+        let current = isize::try_from(self.layer_idx).unwrap_or(isize::MAX);
+        let next = current.saturating_add(delta).rem_euclid(n);
+        self.set_layer(usize::try_from(next).unwrap_or(0))
     }
 
     fn tap_window_ms(&self) -> u64 {
-        (self.cfg.double_tap_window * 1000.0).max(0.0) as u64
+        // Seconds to whole milliseconds, truncating, saturating at the top; a
+        // negative or NaN window is none at all.
+        Duration::try_from_secs_f64(self.cfg.double_tap_window.max(0.0)).map_or(u64::MAX, |d| {
+            u64::try_from(d.as_millis()).unwrap_or(u64::MAX)
+        })
     }
 
     fn slot_key(&self, gesture: Gesture) -> String {

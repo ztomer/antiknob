@@ -169,7 +169,7 @@ fn test_e2e_cli_validate_bundled_config() {
             }
         }
         if let Some(ref led) = layer.led {
-            assert!(build_led_packet(layer_idx as u8, led).is_ok());
+            assert!(build_led_packet(u8::try_from(layer_idx).unwrap(), led).is_ok());
         }
     }
 }

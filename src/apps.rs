@@ -16,6 +16,7 @@ pub struct AppInfo {
 }
 
 /// Directories scanned by default (system + user applications).
+#[must_use]
 pub fn default_app_dirs() -> Vec<PathBuf> {
     let mut dirs = vec![PathBuf::from("/Applications")];
     if let Ok(home) = std::env::var("HOME") {
@@ -29,10 +30,10 @@ pub fn default_app_dirs() -> Vec<PathBuf> {
 
 /// Display name for a bundle directory (`Foo.app` to `Foo`).
 fn bundle_display_name(bundle_dir: &Path) -> String {
-    bundle_dir
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| bundle_dir.to_string_lossy().into_owned())
+    bundle_dir.file_stem().map_or_else(
+        || bundle_dir.to_string_lossy().into_owned(),
+        |s| s.to_string_lossy().into_owned(),
+    )
 }
 
 fn read_bundle_id(bundle_dir: &Path) -> Option<String> {
@@ -47,6 +48,7 @@ fn read_bundle_id(bundle_dir: &Path) -> Option<String> {
 
 /// Scan directories (non-recursive, top level only) for `.app` bundles,
 /// sorted by display name. Missing/unreadable directories are skipped.
+#[must_use]
 pub fn scan_app_dirs(dirs: &[PathBuf]) -> Vec<AppInfo> {
     let mut apps = Vec::new();
     for dir in dirs {
@@ -78,17 +80,17 @@ mod tests {
 
     fn fixture_app(root: &Path, name: &str, bundle_id: Option<&str>) -> PathBuf {
         use std::fmt::Write as _;
-        let dir = root.join(format!("{}.app/Contents", name));
+        let dir = root.join(format!("{name}.app/Contents"));
         std::fs::create_dir_all(&dir).unwrap();
         let mut xml = String::from(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\"><dict>\n",
         );
         if let Some(id) = bundle_id {
-            writeln!(xml, "<key>CFBundleIdentifier</key><string>{}</string>", id).unwrap();
+            writeln!(xml, "<key>CFBundleIdentifier</key><string>{id}</string>").unwrap();
         }
         xml.push_str("</dict></plist>\n");
         std::fs::write(dir.join("Info.plist"), xml).unwrap();
-        root.join(format!("{}.app", name))
+        root.join(format!("{name}.app"))
     }
 
     #[test]

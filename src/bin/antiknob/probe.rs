@@ -57,7 +57,7 @@ fn snapshot(slots: &[ProbeSlot], layer: u8) -> Result<Vec<Vec<u8>>> {
 /// one emitted. There is no control because there is nothing to control
 /// against -- but a run where nothing at all fires is reported as measuring
 /// nothing rather than as five silent keys.
-pub fn run_map(keys: Vec<u8>, layer: u8, capture_secs: u64, devices: Vec<String>) -> Result<()> {
+pub fn run_map(keys: &[u8], layer: u8, capture_secs: u64, devices: &[String]) -> Result<()> {
     goh_tui::outln!("{START} Reading the device's own bindings so the markers cannot collide...");
     let table = device::with_device(|dev| Ok(device::read_full_table(dev)))?;
     // Only usages OUTSIDE the keys being overwritten matter: the ones on
@@ -72,7 +72,7 @@ pub fn run_map(keys: Vec<u8>, layer: u8, capture_secs: u64, devices: Vec<String>
         .collect();
     let in_use = gesture_probe::usages_in_use(&outside);
 
-    let plan = gesture_probe::plan_avoiding(&keys, &in_use).map_err(|e| anyhow::anyhow!(e))?;
+    let plan = gesture_probe::plan_avoiding(keys, &in_use).map_err(|e| anyhow::anyhow!(e))?;
 
     goh_tui::outln!("{START} Reading the current contents of the candidate slots first...");
     let before = snapshot(&plan, layer)?;
@@ -102,7 +102,7 @@ pub fn run_map(keys: Vec<u8>, layer: u8, capture_secs: u64, devices: Vec<String>
     println!("        4. hold and twist LEFT");
     println!("        5. hold and twist RIGHT");
     println!("        Do NOT press any buttons. Capturing for {capture_secs}s...");
-    let seen = capture(capture_secs, &devices)?;
+    let seen = capture(capture_secs, devices)?;
 
     println!();
     goh_tui::outln!("{START} Results, in the order the device emitted them:");
@@ -170,10 +170,10 @@ pub fn run_map(keys: Vec<u8>, layer: u8, capture_secs: u64, devices: Vec<String>
 
 pub fn run(
     control: u8,
-    candidates: Vec<u8>,
+    candidates: &[u8],
     layer: u8,
     capture_secs: u64,
-    devices: Vec<String>,
+    devices: &[String],
 ) -> Result<()> {
     goh_tui::outln!("{START} Reading the device's own bindings so the markers cannot collide...");
     let table = device::with_device(|dev| Ok(device::read_full_table(dev)))
@@ -184,7 +184,7 @@ pub fn run(
         in_use.len()
     );
 
-    let probe = gesture_probe::plan_with_control_avoiding(control, &candidates, &in_use)
+    let probe = gesture_probe::plan_with_control_avoiding(control, candidates, &in_use)
         .map_err(|e| anyhow::anyhow!(e))?;
     let plan = probe.all();
 
@@ -236,7 +236,7 @@ pub fn run(
     println!("        FIRST the control: twist the knob counter-clockwise.");
     println!("        Then hold the knob and twist LEFT, then hold and twist RIGHT.");
     println!("        Capturing for {capture_secs}s...");
-    let seen = capture(capture_secs, &devices)?;
+    let seen = capture(capture_secs, devices)?;
 
     println!();
     goh_tui::outln!("{START} Results:");
@@ -345,7 +345,7 @@ fn capture(secs: u64, devices: &[String]) -> Result<Vec<u16>> {
             for iface in &ifaces {
                 if let Ok(n) = iface
                     .device
-                    .read_timeout(&mut buf, antiknob::policy::CAPTURE_POLL_MS as i32)
+                    .read_timeout(&mut buf, antiknob::policy::CAPTURE_POLL_MS)
                 {
                     // A consumer report is a report id plus a 16-bit usage.
                     if n == 3 && buf[1] != 0 {

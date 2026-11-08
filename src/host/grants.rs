@@ -1,6 +1,6 @@
 //! Naming the switch a user has to flip, given what macOS grants.
 //!
-//! A CGEventTap that will not create is almost always a missing TCC grant,
+//! A `CGEventTap` that will not create is almost always a missing TCC grant,
 //! and the daemon used to say so by naming both candidate grants and neither
 //! item: "grant Accessibility (and Input Monitoring) to this binary". That
 //! is a sentence with no noun in it -- System Settings has two panes and a
@@ -39,15 +39,16 @@ pub struct GrantItem {
 /// app's name and its icon, and its `+` button will not accept the
 /// executable buried under `Contents/MacOS`. Walk up to the bundle whenever
 /// there is one, and fall back to the bare executable when there is not.
+#[must_use]
 pub fn grant_item(exe: &Path) -> GrantItem {
     let bundle = exe
         .ancestors()
         .find(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("app")));
     let path = bundle.unwrap_or(exe);
-    let name = path
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| path.display().to_string());
+    let name = path.file_stem().map_or_else(
+        || path.display().to_string(),
+        |s| s.to_string_lossy().into_owned(),
+    );
     GrantItem {
         name,
         path: path.to_path_buf(),
@@ -55,6 +56,7 @@ pub fn grant_item(exe: &Path) -> GrantItem {
 }
 
 /// The one line to print when the tap will not create.
+#[must_use]
 pub fn tap_failure_line(grants: Grants, item: &GrantItem) -> String {
     let panes = match (grants.accessibility, grants.input_monitoring) {
         (false, false) => "Accessibility and Input Monitoring",

@@ -42,6 +42,7 @@ pub struct Param {
 }
 
 impl Param {
+    #[must_use]
     pub const fn flag(name: &'static str, about: &'static str) -> Self {
         Self {
             name,
@@ -54,6 +55,7 @@ impl Param {
         }
     }
 
+    #[must_use]
     pub const fn opt(name: &'static str, kind: Kind, about: &'static str) -> Self {
         Self {
             name,
@@ -66,6 +68,7 @@ impl Param {
         }
     }
 
+    #[must_use]
     pub const fn req(name: &'static str, kind: Kind, about: &'static str) -> Self {
         Self {
             required: true,
@@ -73,21 +76,25 @@ impl Param {
         }
     }
 
+    #[must_use]
     pub const fn positional(mut self) -> Self {
         self.positional = true;
         self
     }
 
+    #[must_use]
     pub const fn default(mut self, value: &'static str) -> Self {
         self.default = Some(value);
         self
     }
 
+    #[must_use]
     pub const fn only(mut self, on: On) -> Self {
         self.on = on;
         self
     }
 
+    #[must_use]
     pub fn on_surface(&self, mcp: bool) -> bool {
         match self.on {
             On::Both => true,
@@ -106,6 +113,7 @@ pub enum Reach {
 }
 
 impl Reach {
+    #[must_use]
     pub fn is_yes(&self) -> bool {
         matches!(self, Self::Yes)
     }
@@ -134,7 +142,7 @@ pub type Ret = (&'static str, &'static str);
 
 #[derive(Debug, Clone, Copy)]
 pub struct CommandSpec {
-    /// Canonical snake_case name. The CLI renders it kebab-case, MCP uses
+    /// Canonical `snake_case` name. The CLI renders it kebab-case, MCP uses
     /// it as the tool name, so the two cannot be spelled differently.
     pub name: &'static str,
     pub about: &'static str,

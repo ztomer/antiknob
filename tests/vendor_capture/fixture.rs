@@ -58,7 +58,8 @@ pub fn fixture() -> Vec<Capture> {
                 .as_str()
                 .unwrap_or_else(|| panic!("{} has no kind", c["id"]))
                 .to_string(),
-            doc_line: c["doc_line"].as_u64().expect("doc_line") as usize,
+            doc_line: usize::try_from(c["doc_line"].as_u64().expect("doc_line"))
+                .expect("doc_line fits"),
             hex: c["hex"].as_str().expect("hex").to_string(),
             establishes: c["establishes"].as_str().expect("establishes").to_string(),
             bytes: hex(c["hex"].as_str().expect("hex")),

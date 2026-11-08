@@ -36,6 +36,7 @@ pub enum Binding {
 
 impl Binding {
     /// The action names, in order.
+    #[must_use]
     pub fn names(&self) -> Vec<String> {
         match self {
             Self::One(s) => vec![s.clone()],
@@ -49,10 +50,12 @@ impl Binding {
     /// A one-element list or an explicit `delay_ms` still counts: the user
     /// asked for the sequence form, and silently downgrading it would make
     /// `steps: [x]` and `x` behave differently from how they read.
+    #[must_use]
     pub fn is_sequence(&self) -> bool {
         !matches!(self, Self::One(_))
     }
 
+    #[must_use]
     pub fn delay_ms(&self) -> u16 {
         match self {
             Self::Timed { delay_ms, .. } => *delay_ms,
@@ -62,6 +65,10 @@ impl Binding {
 
     /// The steps this binding flashes, with the delay on every step after
     /// the first -- waiting before the opening keystroke only adds lag.
+    ///
+    /// # Errors
+    ///
+    /// Fails when an action name does not parse.
     pub fn steps(&self) -> Result<Vec<crate::fd::Step>> {
         let mut steps = crate::fd::parse_sequence(&self.names())?;
         for step in steps.iter_mut().skip(1) {
@@ -76,6 +83,10 @@ impl Binding {
     /// media and mouse alike. A sequence goes out as `0xFD`, the only
     /// command with a field for more than one action. One helper so the CLI
     /// and the daemon cannot disagree about which command a binding uses.
+    ///
+    /// # Errors
+    ///
+    /// Fails when an action name does not parse, or the sequence cannot be encoded.
     pub fn to_packet(&self, key_id: u8, layer: u8) -> Result<Vec<u8>> {
         match self {
             Self::One(name) => Ok(crate::protocol::Action::parse(name)?.to_packet(key_id, layer)),
@@ -85,6 +96,10 @@ impl Binding {
 
     /// Refuse anything the device or the writer cannot store, at load time
     /// rather than at flash time.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the binding has no actions or holds something the device or the writer cannot store.
     pub fn validate(&self) -> Result<()> {
         if self.names().is_empty() {
             anyhow::bail!("a binding with no actions does nothing; remove it or give it an action");

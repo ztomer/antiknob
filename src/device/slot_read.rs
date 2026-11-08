@@ -28,6 +28,7 @@ use anyhow::{Context, Result};
 /// device. The captured `03 fa 19 00 01` / `02` / `03` are how this repo knows
 /// the whole table comes back in three queries at width 25 -- one per LAYER --
 /// rather than one per slot, and that claim was previously checked nowhere.
+#[must_use]
 pub fn slot_table_query(group: u8, counter: u8) -> [u8; REPORT_LEN] {
     let mut payload = [0u8; REPORT_LEN];
     payload[0] = SLOT_TABLE_QUERY_CMD;
@@ -37,12 +38,15 @@ pub fn slot_table_query(group: u8, counter: u8) -> [u8; REPORT_LEN] {
     payload
 }
 
+/// # Errors
+///
+/// Fails when the query cannot be sent or no reply arrives.
 pub fn read_slot(dev: &HidDevice, group: u8, counter: u8) -> Result<Vec<u8>> {
     send_report(dev, &slot_table_query(group, counter))?;
 
     let mut buf = [0u8; REPORT_LEN];
     let n = dev
-        .read_timeout(&mut buf, SLOT_QUERY_TIMEOUT_MS as i32)
+        .read_timeout(&mut buf, SLOT_QUERY_TIMEOUT_MS)
         .context("Timed out reading slot dump from device")?;
     Ok(buf[..n].to_vec())
 }
@@ -63,6 +67,7 @@ pub fn read_slot(dev: &HidDevice, group: u8, counter: u8) -> Result<Vec<u8>> {
 ///
 /// Records are deduplicated by address, keeping the first seen, because the
 /// three bursts overlap.
+#[must_use]
 pub fn read_full_table(dev: &HidDevice) -> Vec<Vec<u8>> {
     let mut out: Vec<Vec<u8>> = Vec::new();
     let mut seen: Vec<(u8, u8)> = Vec::new();

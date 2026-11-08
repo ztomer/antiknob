@@ -1,9 +1,9 @@
-//! The house TUI is a PINNED git dependency on the gates_of_heck repo (OW.40).
+//! The house TUI is a PINNED git dependency on the `gates_of_heck` repo (OW.40).
 //!
 //! antiknob used to reach goh-tui by `path = "../gates_of_heck/crates/goh-tui"`,
 //! which made every build depend on a sibling checkout that CI, the push gate's
 //! export and a fresh clone did not have. Two things keep that from coming
-//! back: no manifest entry may point into a gates_of_heck checkout, and the
+//! back: no manifest entry may point into a `gates_of_heck` checkout, and the
 //! goh-tui dependency must name a `git` remote and a full 40-hex `rev`.
 //!
 //! Both read the manifest as TEXT rather than through a TOML parser: this test
@@ -65,5 +65,27 @@ fn goh_tui_is_a_git_dependency_pinned_to_a_full_rev() {
     assert!(
         rev.len() == 40 && rev.chars().all(|c| c.is_ascii_hexdigit()),
         "goh-tui's `rev` must be a full 40-hex commit sha, got {rev:?}: {line}"
+    );
+}
+
+/// `clippy::pedantic` is denied in the manifest (AK.PEDANTIC), so a plain
+/// `cargo clippy` is red on a new finding without the gate's `-D warnings`.
+/// The gate cannot tell a manifest that never had the table from one that
+/// lost it, so the table is held here.
+#[test]
+fn clippy_pedantic_is_denied_in_the_manifest() {
+    let manifest = manifest();
+    let table = manifest
+        .split("[lints.clippy]")
+        .nth(1)
+        .expect("Cargo.toml has no [lints.clippy] table");
+    let line = table
+        .lines()
+        .find(|l| l.trim_start().starts_with("pedantic"))
+        .expect("[lints.clippy] does not name pedantic");
+    let compact: String = line.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(
+        compact.contains("level=\"deny\""),
+        "clippy::pedantic must be level = \"deny\" (priority -1): {line}"
     );
 }

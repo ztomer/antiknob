@@ -126,8 +126,7 @@ fn device_action_to_host(action: &Action, original: &str) -> (HostAction, Option
                     return (
                         HostAction::None,
                         Some(format!(
-                            "'{}': no host media equivalent, left empty",
-                            original
+                            "'{original}': no host media equivalent, left empty"
                         )),
                     );
                 }
@@ -161,8 +160,7 @@ fn device_action_to_host(action: &Action, original: &str) -> (HostAction, Option
             None => (
                 HostAction::None,
                 Some(format!(
-                    "'{}': keycode has no CG mapping, left empty",
-                    original
+                    "'{original}': keycode has no CG mapping, left empty"
                 )),
             ),
         },
@@ -185,6 +183,7 @@ pub struct MigratedPreset {
 /// Convert one device-style action string ("cmd+c", "mute", "wheelup")
 /// to a host action, degrading to None when unparseable or unmappable.
 /// Used by the GUI keystroke recorder for host gestures.
+#[must_use]
 pub fn device_str_to_host_action(value: &str) -> HostAction {
     match Action::parse(value) {
         Ok(action) => device_action_to_host(&action, value).0,
@@ -202,7 +201,7 @@ fn migrate_slot(value: &str, warnings: &mut Vec<String>) -> HostAction {
             host
         }
         Err(e) => {
-            warnings.push(format!("'{}': {}, left empty", value, e));
+            warnings.push(format!("'{value}': {e}, left empty"));
             HostAction::None
         }
     }
@@ -210,6 +209,7 @@ fn migrate_slot(value: &str, warnings: &mut Vec<String>) -> HostAction {
 
 /// Migrate one preset. Never fails; problems land in `warnings` and the
 /// physical button is always reported (it has no host slot).
+#[must_use]
 pub fn migrate_preset(preset: &Preset) -> (MigratedPreset, Vec<String>) {
     let mut warnings = Vec::new();
     warnings.push(format!(
@@ -244,6 +244,7 @@ pub fn migrate_preset(preset: &Preset) -> (MigratedPreset, Vec<String>) {
 }
 
 /// Migrate all six presets to a host config (layers in preset order).
+#[must_use]
 pub fn migrate_all_presets() -> (HostConfig, Vec<(String, String)>, Vec<String>) {
     let mut layers = Vec::new();
     let mut leds = Vec::new();

@@ -29,6 +29,7 @@ impl KnobConfig {
     /// One list, so a caller cannot handle three gestures and forget the
     /// other two -- which is how hold+twist stayed unreachable even after
     /// its slots were known.
+    #[must_use]
     pub fn bindings(&self) -> Vec<(crate::protocol::KnobEvent, &Binding)> {
         use crate::protocol::KnobEvent as E;
         [
@@ -94,6 +95,7 @@ pub const STARTER_CONFIG: &str = include_str!("../config.yaml");
 /// macOS convention and the only directory the daemon already owns. The old
 /// default was the literal relative path `config.yaml`, so every command
 /// that took one worked from exactly one directory.
+#[must_use]
 pub fn default_device_config_path(home: &Path) -> PathBuf {
     home.join("Library/Application Support/antiknob/config.yaml")
 }
@@ -101,6 +103,10 @@ pub fn default_device_config_path(home: &Path) -> PathBuf {
 /// Resolve the layout path, seeding the starter file when nothing is there.
 ///
 /// Never overwrites: an existing file is the user's, however old.
+///
+/// # Errors
+///
+/// Fails when the starter layout cannot be written.
 pub fn resolve_device_config_path(home: &Path, explicit: Option<PathBuf>) -> Result<PathBuf> {
     if let Some(path) = explicit {
         return Ok(path);
@@ -122,6 +128,7 @@ impl DeviceConfig {
     /// key-ID space after the buttons, so a guessed count writes bindings
     /// into slots the firmware never reads and reports nothing wrong --
     /// which is exactly the defect `protocol::key_id_for_knob` documents.
+    #[must_use]
     pub fn button_count(&self) -> usize {
         self.rows * self.columns
     }
@@ -130,6 +137,7 @@ impl DeviceConfig {
     ///
     /// This is `read_slot`'s first parameter -- the device wants to be told
     /// how wide a layer is before it will walk the table.
+    #[must_use]
     pub fn slots_per_layer(&self) -> usize {
         self.button_count() + self.knobs * crate::firmware::GESTURES_PER_KNOB
     }
@@ -141,6 +149,7 @@ impl DeviceConfig {
     /// tell which device it will be flashed to, so the caller has to say --
     /// `upload --knob-only`. Before knob slots were derived from the layout
     /// this was invisible, because every knob binding went to 16/17/18.
+    #[must_use]
     pub fn knob_slots_start_at_the_first_button(&self) -> bool {
         self.button_count() == 0 && self.layers.iter().any(|l| !l.knobs.is_empty())
     }
@@ -154,6 +163,10 @@ impl DeviceConfig {
     /// downstream can detect that: both writes are well-formed and the
     /// device accepts both. The declared layout is the only place it can be
     /// caught, so it is caught here.
+    ///
+    /// # Errors
+    ///
+    /// Fails when a layer lists a different number of buttons than the layout declares.
     pub fn check_slot_layout(&self) -> Result<()> {
         let declared = self.button_count();
         for (idx, layer) in self.layers.iter().enumerate() {
@@ -183,6 +196,10 @@ impl DeviceConfig {
     /// onto someone else's slots in release or trap in debug. Caught here,
     /// where the numbers are quoted back, with checked arithmetic throughout
     /// so even the `rows * columns` product itself cannot be the trap.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the declared rows and columns overflow or exceed the slots the device has.
     pub fn check_slot_bounds(&self) -> Result<()> {
         let buttons = self
             .rows
@@ -209,14 +226,22 @@ impl DeviceConfig {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// Fails when the file cannot be read, parsed or validated.
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let content = fs::read_to_string(path.as_ref())
-            .with_context(|| format!("Failed to read config file at {:?}", path.as_ref()))?;
-        let config: Self = crate::yaml::from_str(&content)
-            .with_context(|| format!("Failed to parse YAML syntax in {:?}", path.as_ref()))?;
+        let content = fs::read_to_string(path.as_ref()).with_context(|| {
+            format!("Failed to read config file at {}", path.as_ref().display())
+        })?;
+        let config: Self = crate::yaml::from_str(&content).with_context(|| {
+            format!("Failed to parse YAML syntax in {}", path.as_ref().display())
+        })?;
         Ok(config)
     }
 
+    /// # Errors
+    ///
+    /// Fails when the configuration holds no layer or a layer or binding that does not validate.
     pub fn validate(&self) -> Result<()> {
         if self.layers.is_empty() {
             anyhow::bail!("Configuration must contain at least one layer.");
@@ -228,7 +253,7 @@ impl DeviceConfig {
             for row in &layer.buttons {
                 for key_str in row {
                     crate::protocol::Action::parse(key_str).with_context(|| {
-                        format!("Invalid button action '{}' in layer {}", key_str, idx)
+                        format!("Invalid button action '{key_str}' in layer {idx}")
                     })?;
                 }
             }

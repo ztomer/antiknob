@@ -1,10 +1,10 @@
 //! Regression tests for the HID thread-affinity crash class.
 //!
-//! hidapi's macOS backend binds its IOHIDManager sources to the CFRunLoop of
+//! hidapi's macOS backend binds its `IOHIDManager` sources to the `CFRunLoop` of
 //! whichever thread first ran `hid_init`. A later call from a *different*
-//! thread makes IOKit re-apply device matching against that stored runloop
+//! thread makes `IOKit` re-apply device matching against that stored runloop
 //! from the wrong thread and CoreFoundation traps inside `CFRunLoopAddSource`
-//! (EXC_BREAKPOINT / SIGTRAP). Calling it re-entrantly from a thread that is
+//! (`EXC_BREAKPOINT` / SIGTRAP). Calling it re-entrantly from a thread that is
 //! already dispatching its own runloop aborts instead (SIGABRT).
 //!
 //! Two instances of this one class shipped: the GUI calling hidapi on its

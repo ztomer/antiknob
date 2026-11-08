@@ -38,6 +38,10 @@ impl Drop for ConnectionGuard {
 }
 
 /// Standard Unix socket path in the user's Application Support directory.
+///
+/// # Errors
+///
+/// Fails when `HOME` is unset or the directory cannot be created.
 pub fn default_socket_path() -> Result<PathBuf> {
     let home = std::env::var("HOME").context("HOME not set")?;
     let dir = PathBuf::from(home)
@@ -58,6 +62,9 @@ pub struct SocketServer {
 }
 
 impl SocketServer {
+    /// # Errors
+    ///
+    /// Fails when the socket cannot be bound or its permissions cannot be set.
     pub fn start(socket_path: PathBuf, ctx: ApiContext) -> Result<Self> {
         // Clean up a stale socket file from a prior run. Only this server's
         // OWN path: the `/tmp` discovery symlink this used to manage was one
@@ -118,7 +125,7 @@ impl SocketServer {
                             .name(format!("antiknob-conn-{id}"))
                             .spawn(move || {
                                 let _guard = ConnectionGuard;
-                                handle_client(stream, conn_ctx);
+                                handle_client(stream, &conn_ctx);
                             })
                             .is_err()
                         {
@@ -143,6 +150,7 @@ impl SocketServer {
         })
     }
 
+    #[must_use]
     pub fn socket_path(&self) -> &Path {
         &self.socket_path
     }
@@ -158,7 +166,11 @@ impl Drop for SocketServer {
     }
 }
 
-/// Reads a line bounded by max_bytes to prevent unbounded memory allocation DoS.
+/// Reads a line bounded by `max_bytes` to prevent unbounded memory allocation `DoS`.
+///
+/// # Errors
+///
+/// Fails on an I/O error, or when a line outgrows `max_bytes`.
 pub fn read_bounded_line<R: BufRead>(
     reader: &mut R,
     max_bytes: usize,
@@ -172,7 +184,7 @@ pub fn read_bounded_line<R: BufRead>(
     if buf.len() > max_bytes {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            format!("Request line exceeds {} bytes limit", max_bytes),
+            format!("Request line exceeds {max_bytes} bytes limit"),
         ));
     }
     while buf.ends_with(b"\n") || buf.ends_with(b"\r") {
@@ -183,7 +195,7 @@ pub fn read_bounded_line<R: BufRead>(
     Ok(Some(s))
 }
 
-fn handle_client(mut stream: UnixStream, ctx: Arc<Mutex<ApiContext>>) {
+fn handle_client(mut stream: UnixStream, ctx: &Mutex<ApiContext>) {
     let timeout = Some(Duration::from_secs(SOCKET_IO_TIMEOUT_SECS));
     let _ = stream.set_read_timeout(timeout);
     let _ = stream.set_write_timeout(timeout);
@@ -307,6 +319,7 @@ pub fn process_json_rpc(ctx: &mut ApiContext, input: &str) -> Value {
 /// routinely absent and reported a running daemon as "not running". A
 /// daemon that does not answer is `answering: false` with the reason, never
 /// a tap reported as off.
+#[must_use]
 pub fn daemon_report(socket_path: &Path) -> Value {
     match call_daemon_socket(socket_path, &Command::GetStatus {}) {
         Ok(v) => json!({
@@ -326,6 +339,10 @@ pub fn daemon_report(socket_path: &Path) -> Value {
 }
 
 /// Send a command to the daemon socket and return the JSON result.
+///
+/// # Errors
+///
+/// Fails when the socket cannot be reached after the retries, or the reply is not valid JSON, or the daemon answers with an error.
 pub fn call_daemon_socket(socket_path: &Path, cmd: &Command) -> Result<Value> {
     let mut last_err = None;
     let mut stream_opt = None;
@@ -341,15 +358,12 @@ pub fn call_daemon_socket(socket_path: &Path, cmd: &Command) -> Result<Value> {
             }
         }
     }
-    let mut stream = match stream_opt {
-        Some(s) => s,
-        None => {
-            return Err(anyhow::anyhow!(
-                "Could not connect to socket at {}: {}",
-                socket_path.display(),
-                last_err.map(|e| e.to_string()).unwrap_or_default()
-            ));
-        }
+    let Some(mut stream) = stream_opt else {
+        return Err(anyhow::anyhow!(
+            "Could not connect to socket at {}: {}",
+            socket_path.display(),
+            last_err.map(|e| e.to_string()).unwrap_or_default()
+        ));
     };
 
     let timeout = Some(Duration::from_secs(SOCKET_CALL_TIMEOUT_SECS));
@@ -373,9 +387,8 @@ pub fn call_daemon_socket(socket_path: &Path, cmd: &Command) -> Result<Value> {
     stream.flush()?;
 
     let mut reader = BufReader::new(stream);
-    let response_line = match read_bounded_line(&mut reader, MAX_REQUEST_SIZE)? {
-        Some(l) => l,
-        None => anyhow::bail!("Daemon closed connection unexpectedly without response"),
+    let Some(response_line) = read_bounded_line(&mut reader, MAX_REQUEST_SIZE)? else {
+        anyhow::bail!("Daemon closed connection unexpectedly without response");
     };
 
     let resp: Value = serde_json::from_str(&response_line)?;
@@ -384,7 +397,7 @@ pub fn call_daemon_socket(socket_path: &Path, cmd: &Command) -> Result<Value> {
             .get("message")
             .and_then(Value::as_str)
             .unwrap_or("RPC error");
-        anyhow::bail!("{}", msg);
+        anyhow::bail!("{msg}");
     }
 
     Ok(resp.get("result").cloned().unwrap_or(Value::Null))

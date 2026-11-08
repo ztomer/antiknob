@@ -1,7 +1,7 @@
 //! Synthetic output for daemon active mode (slice 2b).
 //!
 //! macOS only: keys/scroll/brightness via CoreGraphics posts, media keys
-//! via NX systemDefined events, launch/open/quit via NSWorkspace. The
+//! via NX systemDefined events, launch/open/quit via `NSWorkspace`. The
 //! pure op planning lives in `host::output`; this module only performs.
 //! Untestable headless (every call touches the live session), so correctness
 //! rests on code inspection against the vk01-anticater reference values.
@@ -30,10 +30,7 @@ pub fn synthesize(op: &OutOp) {
         }
         OutOp::Quit { bundle_id, force } => {
             let n = mac::ws_quit(bundle_id, *force);
-            println!(
-                "[slot] quit {} (force={}): {} instance(s)",
-                bundle_id, force, n
-            );
+            println!("[slot] quit {bundle_id} (force={force}): {n} instance(s)");
         }
     }
 }
@@ -57,7 +54,7 @@ fn ok_as(ok: bool) -> &'static str {
 fn shellexpand(path: &str) -> String {
     if let Some(rest) = path.strip_prefix("~/") {
         if let Ok(home) = std::env::var("HOME") {
-            return format!("{}/{}", home, rest);
+            return format!("{home}/{rest}");
         }
     }
     path.to_string()
@@ -115,13 +112,12 @@ mod mac {
     }
 
     /// Mouse click at the current cursor location. Left/right go through
-    /// the wrapper; middle needs a raw OtherMouse event (kCGEventOtherMouse
+    /// the wrapper; middle needs a raw `OtherMouse` event (kCGEventOtherMouse
     /// Down/Up = 14/15, button 2), which the wrapper enum cannot express.
     pub fn synth_click(button: MouseButton) {
         let point = cg_source()
             .and_then(|src| CGEvent::new(src).ok())
-            .map(|ev| ev.location())
-            .unwrap_or(CGPoint { x: 0.0, y: 0.0 });
+            .map_or(CGPoint { x: 0.0, y: 0.0 }, |ev| ev.location());
         match button {
             MouseButton::Left => click_wrapped(
                 CGEventType::LeftMouseDown,
@@ -206,13 +202,12 @@ mod mac {
     }
 
     /// Launch via Launch Services (`open -b`): identical behavior to the
-    /// block-based NSWorkspace API without its completion-handler plumbing.
+    /// block-based `NSWorkspace` API without its completion-handler plumbing.
     pub fn ws_launch(bundle_id: &str) -> bool {
         std::process::Command::new("open")
             .args(["-b", bundle_id])
             .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
+            .is_ok_and(|s| s.success())
     }
 
     pub fn ws_open_url(url: &str) -> bool {

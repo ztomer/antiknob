@@ -50,7 +50,7 @@
 //!
 //! * `VENDOR_UI_MAP.md:137`'s elided frame, written with `...` in the source,
 //!   so there is no complete frame to decode.
-//! * Gesture-to-key-id for the **0x1189 CH57x** devices: the EXPERIMENT 1
+//! * Gesture-to-key-id for the **0x1189 `CH57x`** devices: the EXPERIMENT 1
 //!   capture is a VK01, and the mapping is applied across every VID/PID in
 //!   `SUPPORTED_DEVICES`.
 //! * **Byte 5 of a chained record** — open in the document, unresolved here.

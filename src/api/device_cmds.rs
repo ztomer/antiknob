@@ -8,7 +8,10 @@
 //! not bind a sequence, and `show-keys` was CLI-only, leaving one to guess
 //! names against a parser that refuses unknown ones.
 
-use super::*;
+use super::{
+    device, installed_button_count, json, led_mode_name, protocol, sleep, ApiContext, Context,
+    Duration, Result, DEVICE_LAYERS,
+};
 
 use crate::firmware::BIND_LAYERS;
 use crate::host::bind::flash_slot_bindings;
@@ -72,7 +75,7 @@ pub fn bind_slots(
     if let Some(engine) = &ctx.tap_engine {
         let mut lock = engine.lock().unwrap();
         let mut new_cfg = lock.config().clone();
-        new_cfg.bound_device_layers = flash_layers.clone();
+        new_cfg.bound_device_layers.clone_from(&flash_layers);
         lock.apply_config(new_cfg);
         let _ = crate::host::device_binding::record_bound_layers(&ctx.config_path, &flash_layers);
         let active = lock.layer_idx();
@@ -223,7 +226,7 @@ pub fn read_slots(
         for c in ctrs {
             match device::read_slot(dev, grp, c) {
                 Ok(bytes) => {
-                    let hex: Vec<String> = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+                    let hex: Vec<String> = bytes.iter().map(|b| format!("{b:02x}")).collect();
                     results.push(json!({
                         "group": grp,
                         "counter": c,
@@ -341,6 +344,7 @@ pub fn set_led(layer: u8, mode: String, color: Option<String>) -> Result<serde_j
 mod bind_slots_tests {
     use super::*;
     use crate::api::Command;
+    use crate::protocol::Action;
 
     #[test]
     fn singular_layer_is_honored() {

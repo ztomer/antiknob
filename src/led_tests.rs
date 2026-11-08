@@ -97,7 +97,11 @@ fn every_mode_the_device_has_is_named_and_buildable() {
 #[test]
 fn mode_number_names_its_index() {
     for (mode, name) in LED_MODE_NAMES.iter().enumerate() {
-        assert_eq!(led_mode_number(name), Some(mode as u8), "{name}");
+        assert_eq!(
+            led_mode_number(name),
+            Some(u8::try_from(mode).unwrap()),
+            "{name}"
+        );
     }
     for (spec, mode) in [
         ("static", 1u8),

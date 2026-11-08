@@ -55,6 +55,7 @@ pub struct SlotAction {
 ///
 /// This mattered: the search for the hold+twist slot started from "slots 7
 /// and 8 exist and are empty", which was the fabrication, not a finding.
+#[must_use]
 pub fn is_synthetic_default(record: &[u8]) -> bool {
     let Some((addr, action)) = parse_record(record) else {
         return false;
@@ -68,6 +69,7 @@ pub fn is_synthetic_default(record: &[u8]) -> bool {
 ///
 /// Byte 1 is `0xFE` on a write and `0xFA` on a read; everything the two
 /// share sits at the same offsets, which is why one parser serves both.
+#[must_use]
 pub fn parse_record(record: &[u8]) -> Option<(SlotAddr, SlotAction)> {
     if record.len() < 13 || record[0] != REPORT_ID {
         return None;
@@ -115,6 +117,7 @@ pub enum SlotVerdict {
 /// `parse_record` deliberately rejects `0xFD`, because the bytes it reads
 /// mean something else there. Addressing is the one thing all three commands
 /// agree on, so it gets its own reader.
+#[must_use]
 pub fn record_addr(record: &[u8]) -> Option<SlotAddr> {
     if record.len() < 7 || record[0] != REPORT_ID {
         return None;
@@ -129,6 +132,7 @@ pub fn record_addr(record: &[u8]) -> Option<SlotAddr> {
     Some(SlotAddr { key_id, layer })
 }
 
+#[must_use]
 pub fn verify(written: &[Vec<u8>], observed: &[Vec<u8>]) -> Vec<(SlotAddr, SlotVerdict)> {
     // Every record is compared WHOLE, whatever command wrote it. The `0xFE`
     // path used to compare only the fields `parse_record` decodes (kind,
@@ -153,6 +157,7 @@ pub fn verify(written: &[Vec<u8>], observed: &[Vec<u8>]) -> Vec<(SlotAddr, SlotV
 
 /// A one-line summary a user can act on, or `None` when every slot that
 /// came up in the dump matched and none is outright wrong.
+#[must_use]
 pub fn summarize(verdicts: &[(SlotAddr, SlotVerdict)]) -> Option<String> {
     let wrong: Vec<&SlotAddr> = verdicts
         .iter()

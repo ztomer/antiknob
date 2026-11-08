@@ -1,7 +1,7 @@
 //! Which application is in front, behind a seam.
 //!
 //! One call, one trait, one fake. The point is not that the OS call is
-//! complicated -- it is four lines of AppKit -- but that everything which
+//! complicated -- it is four lines of `AppKit` -- but that everything which
 //! *depends* on it becomes untestable the moment it is called directly.
 //! `virtual_layer` decides which bindings are live from the frontmost app;
 //! that decision has to be exercised against a browser, an editor and an
@@ -50,6 +50,7 @@ impl FrontmostApp for FakeApp {
 }
 
 /// The real source for this platform.
+#[must_use]
 pub fn system_source() -> Arc<dyn FrontmostApp> {
     #[cfg(target_os = "macos")]
     {

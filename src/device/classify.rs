@@ -20,6 +20,7 @@ fn looks_like_anticater(product: &str) -> bool {
 /// a matching PRODUCT STRING as well as a Bluetooth bus, so an Anticater with
 /// an unlisted PID plugged into USB was reported as Bluetooth, and the UI
 /// showed it as battery-powered.
+#[must_use]
 pub fn classify_device(
     vid: u16,
     pid: u16,
@@ -51,7 +52,7 @@ pub fn classify_device(
         let name = if product.is_empty() {
             format!("Anticater ({})", transport.display_name())
         } else {
-            format!("Anticater ({})", product)
+            format!("Anticater ({product})")
         };
         return Some((name, transport));
     }

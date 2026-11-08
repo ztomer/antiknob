@@ -42,6 +42,49 @@ pub fn canonical_mod(name: &str) -> &str {
     }
 }
 
+/// A modifier press the grab tap is holding back: everything needed to put it
+/// back into the event stream if no slot chord follows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Held {
+    pub code: u16,
+    /// The event's CGEventFlags, replayed verbatim.
+    pub flags: u64,
+    pub at_ms: u64,
+}
+
+/// What the grab tap does with one event (`TapEngine::decide`).
+///
+/// There is deliberately no "pass this past the held events" verdict: while
+/// anything is held, an event that is not consumed comes back as `Replay`,
+/// so the stream other applications see keeps the order it was typed in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Verdict {
+    /// Hand it on; nothing is held.
+    Pass,
+    /// Consume it; nobody downstream sees it.
+    Swallow,
+    /// Consume it for now: it may be the first half of a slot chord.
+    Hold,
+    /// Consume it, then post these held presses and a copy of it, in order.
+    Replay(Vec<Held>),
+}
+
+/// One `decide` answer: what to do with the event, and what it fired.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Step {
+    pub verdict: Verdict,
+    pub out: Vec<EngineEvent>,
+}
+
+impl Step {
+    fn bare(verdict: Verdict) -> Self {
+        Self {
+            verdict,
+            out: vec![],
+        }
+    }
+}
+
 pub struct TapEngine {
     engine: Engine,
     mods: BTreeSet<String>,
@@ -49,6 +92,11 @@ pub struct TapEngine {
     /// Codes whose press was consumed (non-empty dispatch output). Their
     /// releases are swallowed too; everything else passes through.
     consumed: HashSet<u16>,
+    /// Slot-chord modifier presses held back, oldest first (`decide`).
+    held: Vec<Held>,
+    /// Modifier codes whose held press a consumed chord absorbed: their
+    /// releases are swallowed, so no application sees half a keystroke.
+    consumed_mods: HashSet<u16>,
 }
 
 impl TapEngine {
@@ -67,6 +115,8 @@ impl TapEngine {
             mods: BTreeSet::new(),
             down: HashSet::new(),
             consumed: HashSet::new(),
+            held: Vec::new(),
+            consumed_mods: HashSet::new(),
         }
     }
 
@@ -156,6 +206,85 @@ impl TapEngine {
         self.consumed.remove(&code)
     }
 
+    /// The grab tap's whole decision for one key event (AK.LEAK).
+    ///
+    /// A slot chord is modifiers THEN a key, and the modifiers are events in
+    /// their own right: another application watching `FlagsChanged` sees
+    /// them even when the key is swallowed (Claude's Quick Entry opens on a
+    /// double-tapped Option, and two detents are two Option taps). So a
+    /// press of a slot-chord modifier, while every held modifier is one, is
+    /// HELD rather than passed. A consumed key then absorbs the held presses
+    /// (and their releases are swallowed); anything else replays them first.
+    /// `expire_held` replays them when no key follows in `MOD_HOLD_MS`.
+    pub fn decide(&mut self, code: u16, pressed: bool, flags: u64, now_ms: u64) -> Step {
+        if let Some(name) = mod_for_code(code) {
+            if pressed {
+                // A press means any earlier release was seen or lost; never
+                // let a stale entry swallow the release of THIS press.
+                self.consumed_mods.remove(&code);
+                self.mods.insert(name.to_string());
+                let holdable = self.mods.iter().all(|m| super::gesture::is_slot_mod(m))
+                    && !self.held.iter().any(|h| h.code == code);
+                if holdable {
+                    self.held.push(Held {
+                        code,
+                        flags,
+                        at_ms: now_ms,
+                    });
+                    return Step::bare(Verdict::Hold);
+                }
+                return self.pass(vec![]);
+            }
+            self.mods.remove(name);
+            if self.consumed_mods.remove(&code) {
+                return Step::bare(Verdict::Swallow);
+            }
+            return self.pass(vec![]);
+        }
+        if pressed {
+            let out = self.key(code, true, now_ms);
+            if out.is_empty() {
+                return self.pass(out);
+            }
+            self.consumed_mods
+                .extend(self.held.drain(..).map(|h| h.code));
+            return Step {
+                verdict: Verdict::Swallow,
+                out,
+            };
+        }
+        if self.release_swallow(code) {
+            return Step::bare(Verdict::Swallow);
+        }
+        self.pass(vec![])
+    }
+
+    /// The held presses to replay now, because `MOD_HOLD_MS` passed with no
+    /// key to complete a chord. Empty while nothing is due.
+    pub fn expire_held(&mut self, now_ms: u64) -> Vec<Held> {
+        match self.held.first() {
+            Some(h) if now_ms.saturating_sub(h.at_ms) >= crate::policy::MOD_HOLD_MS => {
+                std::mem::take(&mut self.held)
+            }
+            _ => vec![],
+        }
+    }
+
+    /// Pass, unless presses are held: then they go first, in order.
+    fn pass(&mut self, out: Vec<EngineEvent>) -> Step {
+        if self.held.is_empty() {
+            Step {
+                verdict: Verdict::Pass,
+                out,
+            }
+        } else {
+            Step {
+                verdict: Verdict::Replay(std::mem::take(&mut self.held)),
+                out,
+            }
+        }
+    }
+
     /// Timer tick for an armed double-tap window.
     pub fn poll_expiry(&mut self, now_ms: u64) -> Vec<EngineEvent> {
         self.engine.fire_expired_press(now_ms)
@@ -185,107 +314,5 @@ impl TapEngine {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::super::ChordSpec;
-    use super::*;
-
-    fn tap() -> TapEngine {
-        TapEngine::new(HostConfig::default_config())
-    }
-
-    /// Hold the modifiers every slot chord carries. CG keycodes: control
-    /// 59, option 58, shift 56. Shift joined the set after `ctrl+alt+F18`
-    /// was found colliding with another app's global shortcut on real
-    /// hardware; this helper is the single place the tests say so.
-    fn slot_mods(t: &mut TapEngine) {
-        t.key(59, true, 0);
-        t.key(58, true, 0);
-        t.key(56, true, 0);
-    }
-
-    #[test]
-    fn modifiers_tracked_and_released() {
-        let mut t = tap();
-        assert_eq!(t.key(59, true, 0), vec![]);
-        assert_eq!(t.key(55, true, 0), vec![]);
-        t.key(59, false, 0);
-        // Twist-R with only cmd held: not a slot chord, passes through.
-        assert_eq!(t.key(79, true, 10), vec![]);
-        // And ctrl+alt WITHOUT shift is the chord this build moved off, so
-        // it must pass through too -- otherwise the move bought nothing.
-        let mut t2 = tap();
-        t2.key(59, true, 0);
-        t2.key(58, true, 0);
-        assert_eq!(t2.key(79, true, 10), vec![]);
-    }
-
-    #[test]
-    fn autorepeat_presses_suppressed_until_release() {
-        let mut t = tap();
-        slot_mods(&mut t);
-        let first = t.key(79, true, 0);
-        assert_ne!(first.len(), 0);
-        // Held-key repeats: no output.
-        assert_eq!(t.key(79, true, 50), vec![]);
-        assert_eq!(t.key(79, true, 100), vec![]);
-        // Release re-arms: next press dispatches again.
-        t.key(79, false, 150);
-        assert_eq!(t.key(79, true, 200), first);
-    }
-
-    #[test]
-    fn slot_dispatch_end_to_end_through_tap() {
-        let mut t = tap();
-        slot_mods(&mut t);
-        let out = t.key(106, true, 0);
-        assert!(matches!(
-            out[0],
-            EngineEvent::Fire(super::super::engine::FiredAction::Scroll { lines: -3 })
-        ));
-    }
-
-    #[test]
-    fn recorded_layer_hotkey_cycles_exact_match_only() {
-        let mut cfg = HostConfig::default_config();
-        cfg.layer_hotkey = Some(ChordSpec {
-            key: 97,
-            mods: vec!["cmd".to_string(), "opt".to_string()],
-            label: "F6".to_string(),
-        });
-        let mut t = TapEngine::new(cfg);
-        // Partial modifier set: no cycle (would hijack prefixes).
-        t.key(55, true, 0);
-        assert_eq!(t.key(97, true, 10), vec![]);
-        t.key(97, false, 15);
-        // Exact set (opt is alt): cycles forward.
-        t.key(58, true, 20);
-        assert_eq!(t.key(97, true, 30), vec![EngineEvent::LayerChanged(1)]);
-    }
-
-    #[test]
-    fn swallow_policy_consumed_press_and_release_only() {
-        let mut t = tap();
-        slot_mods(&mut t);
-        // Consumed press -> release swallowed.
-        assert_ne!(t.key(79, true, 0).len(), 0);
-        assert!(t.release_swallow(79));
-        // Second release: nothing to swallow.
-        assert!(!t.release_swallow(79));
-        // Pass-through press -> release passes through.
-        assert_eq!(t.key(8, true, 10).len(), 0);
-        assert!(!t.release_swallow(8));
-        // Modifier releases never swallow (but do update mod state).
-        assert!(!t.release_swallow(59));
-        assert_eq!(t.key(79, true, 20).len(), 0);
-    }
-
-    #[test]
-    fn press_expiry_flows_through_poll() {
-        let mut t = tap();
-        slot_mods(&mut t);
-        assert_eq!(t.key(64, true, 1000), vec![EngineEvent::NoOp]);
-        assert_eq!(t.poll_expiry(1100), vec![]);
-        let fired = t.poll_expiry(1300);
-        assert!(matches!(fired[0], EngineEvent::Fire(_)));
-    }
-}
+#[path = "tap_tests.rs"]
+mod tests;

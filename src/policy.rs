@@ -45,6 +45,18 @@ pub const SOCKET_CALL_TIMEOUT_SECS: u64 = 30;
 /// them waits anything out.
 pub const LOOP_TICK_MS: u64 = 50;
 
+/// How long the grab tap holds back a slot-chord modifier press, in
+/// milliseconds, waiting to see whether the rest of a slot chord follows.
+/// The knob sends a chord as a zero-delay chain (one entry per modifier,
+/// then the key), so the whole chord lands well inside this; a person's
+/// lone modifier press is replayed when it runs out, or at once when any
+/// other key arrives. Paced by the hold-expiry loop, `MOD_HOLD_TICK_MS`.
+pub const MOD_HOLD_MS: u64 = 60;
+
+/// Poll interval of the hold-expiry loop, in milliseconds. Finer than
+/// `LOOP_TICK_MS` because a held modifier is a person's keystroke waiting.
+pub const MOD_HOLD_TICK_MS: u64 = 5;
+
 /// Connect retries for one-shot client calls: the daemon may be mid-start
 /// when the first attempt lands. This many tries, this far apart, then the
 /// "could not connect" error below.

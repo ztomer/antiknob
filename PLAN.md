@@ -156,7 +156,19 @@ sitting. Exit: each item below has a recorded measurement in VENDOR_UI_MAP
   but hold+twist CW also opened the Claude chat. **Ruling: keep shift**
   (the unshifted chord collides). Not met: "no other app reacting"; the
   leak is AK.LEAK (Claude's own shortcut is Ctrl+Backspace, and no Karabiner
-  rule or Service claims F16-F20, so the trigger is unidentified). Changing the chord touches `SLOT_SPECS`,
+  rule or Service claims F16-F20, so the trigger is unidentified).
+  *AK.LEAK found 2026-11-08:* the key was always swallowed; the chord's
+  MODIFIER events were not. A synthesised `ctrl-alt-shift-F18` at the HID tap
+  reached the session tap as six `FlagsChanged` events (F18 itself absent),
+  so every detent is one Option tap, and Claude desktop's Quick Entry
+  defaults to `double-tap-option`. That is also the 2026-09-08 "collision"
+  that put shift in the chord. Fixed in the grab tap (`TapEngine::decide`):
+  slot-chord modifier presses are held up to `MOD_HOLD_MS`, absorbed by a
+  consumed chord (their releases swallowed) and replayed in order otherwise;
+  class test `a_slot_chord_never_leaves_the_tap`. Re-run on the daemon: the
+  chord leaves nothing, a non-slot `ctrl-alt-shift-c` arrives whole.
+  *Left for a person:* hold+twist CW and twist CW on the real knob with
+  Claude running, and confirm Quick Entry stays shut. Changing the chord touches `SLOT_SPECS`,
   `host::gesture::SLOT_MODS` and their pinning tests together.
 * **H.3 Vendor encodings, static route** (owner 2026-11-01, superseding the
   drop at bb27b0f: "we have the anticater binary, you can just figure out

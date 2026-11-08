@@ -21,11 +21,19 @@
 //!   always a missing grant, so the failure asks macOS which one and names
 //!   the switch that turns it on (see `permissions`).
 
+use antiknob::host::tap::{Held, Verdict};
 use core_foundation::runloop::CFRunLoop;
 use core_graphics::event::{
-    CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement, CGEventType,
-    CallbackResult, EventField,
+    CGEvent, CGEventFlags, CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement,
+    CGEventTapProxy, CGEventType, CallbackResult, EventField,
 };
+use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+
+/// Stamped into `EVENT_SOURCE_USER_DATA` of every event the tap puts back,
+/// so a replay posted from outside the callback (`replay_held`, which posts
+/// at the HID location this tap sits on) passes straight through instead of
+/// being held a second time. ASCII "antiknob".
+const REPLAY_MARK: i64 = 0x616E_7469_6B6E_6F62;
 
 /// One physical key transition, in CG keycodes -- the only thing the daemon
 /// ever wanted from an input library.
@@ -33,15 +41,6 @@ use core_graphics::event::{
 pub struct KeyEvent {
     pub code: u16,
     pub pressed: bool,
-}
-
-/// What the tap should do with an event it was shown.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Decision {
-    /// Hand it on to whoever is listening next.
-    Pass,
-    /// Consume it; nobody downstream sees it.
-    Swallow,
 }
 
 /// Modifier keycodes, paired with the flag bits that say whether they are
@@ -107,15 +106,55 @@ pub fn decode(event_type: CGEventType, code: u16, flags: u64) -> Option<KeyEvent
 
 /// Watch the keyboard without ever consuming anything.
 pub fn listen(mut on_key: impl FnMut(KeyEvent) + Send + 'static) -> Result<(), String> {
-    run_tap(CGEventTapOptions::ListenOnly, move |ev| {
+    run_tap(CGEventTapOptions::ListenOnly, move |ev, _flags| {
         on_key(ev);
-        Decision::Pass
+        Verdict::Pass
     })
 }
 
-/// Watch the keyboard and consume what the callback claims.
-pub fn grab(on_key: impl FnMut(KeyEvent) -> Decision + Send + 'static) -> Result<(), String> {
+/// Watch the keyboard and consume, hold or replay what the callback says.
+/// The callback is also given the event's raw CGEventFlags, which a held
+/// modifier press needs to be replayed verbatim.
+pub fn grab(on_key: impl FnMut(KeyEvent, u64) -> Verdict + Send + 'static) -> Result<(), String> {
     run_tap(CGEventTapOptions::Default, on_key)
+}
+
+/// A held modifier press, rebuilt as the `FlagsChanged` event it was.
+fn held_event(h: &Held) -> Option<CGEvent> {
+    let source = CGEventSource::new(CGEventSourceStateID::Private).ok()?;
+    let ev = CGEvent::new_keyboard_event(source, h.code, true).ok()?;
+    ev.set_type(CGEventType::FlagsChanged);
+    ev.set_flags(CGEventFlags::from_bits_retain(h.flags));
+    ev.set_integer_value_field(EventField::EVENT_SOURCE_USER_DATA, REPLAY_MARK);
+    Some(ev)
+}
+
+/// Put held presses back into the stream from OUTSIDE the tap callback (the
+/// hold ran out with no key to finish a chord). Posted at the HID location,
+/// ahead of every other tap, and marked so this tap lets them through.
+pub fn replay_held(held: &[Held]) {
+    for ev in held.iter().filter_map(held_event) {
+        ev.post(CGEventTapLocation::HID);
+    }
+}
+
+/// Apply a verdict inside the callback. A replay posts the held presses and
+/// then a copy of the current event through the tap proxy, which inserts
+/// them right after this tap and in posting order, and drops the original:
+/// passing the original instead would let it overtake what was held.
+fn apply(verdict: &Verdict, proxy: CGEventTapProxy, event: &CGEvent) -> CallbackResult {
+    match verdict {
+        Verdict::Pass => CallbackResult::Keep,
+        Verdict::Swallow | Verdict::Hold => CallbackResult::Drop,
+        Verdict::Replay(held) => {
+            for ev in held.iter().filter_map(held_event) {
+                ev.post_from_tap(proxy);
+            }
+            event.set_integer_value_field(EventField::EVENT_SOURCE_USER_DATA, REPLAY_MARK);
+            event.post_from_tap(proxy);
+            CallbackResult::Drop
+        }
+    }
 }
 
 /// Install the tap and pump this thread's run loop until it stops.
@@ -127,7 +166,7 @@ pub fn grab(on_key: impl FnMut(KeyEvent) -> Decision + Send + 'static) -> Result
 /// report, so the supervisor is given something to react to.
 fn run_tap(
     options: CGEventTapOptions,
-    on_key: impl FnMut(KeyEvent) -> Decision + Send + 'static,
+    on_key: impl FnMut(KeyEvent, u64) -> Verdict + Send + 'static,
 ) -> Result<(), String> {
     let on_key = std::sync::Mutex::new(on_key);
 
@@ -140,7 +179,7 @@ fn run_tap(
             CGEventType::KeyUp,
             CGEventType::FlagsChanged,
         ],
-        move |_proxy, event_type, event| {
+        move |proxy, event_type, event| {
             if matches!(
                 event_type,
                 CGEventType::TapDisabledByTimeout | CGEventType::TapDisabledByUserInput
@@ -149,11 +188,15 @@ fn run_tap(
                 return CallbackResult::Keep;
             }
 
+            if event.get_integer_value_field(EventField::EVENT_SOURCE_USER_DATA) == REPLAY_MARK {
+                return CallbackResult::Keep;
+            }
             let code = event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE);
             let Ok(code) = u16::try_from(code) else {
                 return CallbackResult::Keep;
             };
-            let Some(key) = decode(event_type, code, event.get_flags().bits()) else {
+            let flags = event.get_flags().bits();
+            let Some(key) = decode(event_type, code, flags) else {
                 return CallbackResult::Keep;
             };
 
@@ -162,10 +205,8 @@ fn run_tap(
             let Ok(mut cb) = on_key.lock() else {
                 return CallbackResult::Keep;
             };
-            match cb(key) {
-                Decision::Pass => CallbackResult::Keep,
-                Decision::Swallow => CallbackResult::Drop,
-            }
+            let verdict = cb(key, flags);
+            apply(&verdict, proxy, event)
         },
         CFRunLoop::run_current,
     );

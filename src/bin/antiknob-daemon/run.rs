@@ -8,12 +8,13 @@ use antiknob::host::engine::{EngineEvent, FiredAction};
 use antiknob::host::output::plan;
 use antiknob::host::tap::TapEngine;
 use antiknob::host::HostConfig;
-use antiknob::policy::{LOOP_TICK_MS, TAP_REBUILD_DELAY_SECS};
+use antiknob::policy::{LOOP_TICK_MS, MOD_HOLD_TICK_MS, TAP_REBUILD_DELAY_SECS};
 use goh_tui::{OK, START, WARN};
 
 use super::synth::synthesize;
 use super::tray::{TrayAction, TrayUi};
-use crate::keytap::{self, Decision, KeyEvent};
+use crate::keytap::{self, KeyEvent};
+use antiknob::host::tap::Verdict;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, RecvTimeoutError};
@@ -336,22 +337,50 @@ pub(crate) fn run_active(
         });
     }
 
+    // ONE clock for every timestamp the engine compares: key presses, the
+    // double-tap expiry and the modifier hold. The grab loop used to restart
+    // its own clock on every tap rebuild while the timer kept the first one,
+    // so after a rebuild a press looked ages old to the expiry check.
+    let epoch = Instant::now();
+
     // Double-tap expiry has no event to ride on when the user stops
     // touching the knob, so poll it on a timer. Same timer also picks up
     // external config edits (instant apply).
     let timer_tap = Arc::clone(&tap);
     let watch_path: PathBuf = config_path.to_path_buf();
     std::thread::spawn(move || {
-        let start = Instant::now();
         let mut watch = ConfigWatch::new(&watch_path);
         loop {
             std::thread::sleep(Duration::from_millis(LOOP_TICK_MS));
-            let now_ms = start.elapsed().as_millis() as u64;
+            let now_ms = epoch.elapsed().as_millis() as u64;
             if let Ok(mut t) = timer_tap.lock() {
                 maybe_reload(&mut t, &mut watch);
                 let out = t.poll_expiry(now_ms);
                 handle_events(out, true, t.config());
             }
+        }
+    });
+
+    // A held slot-chord modifier press that no key completed goes back into
+    // the stream when its hold runs out (AK.LEAK; `TapEngine::decide`).
+    // Posted with the lock released, so the tap callback is never blocked
+    // behind a post that re-enters it.
+    let hold_tap = Arc::clone(&tap);
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_millis(MOD_HOLD_TICK_MS));
+        let now_ms = epoch.elapsed().as_millis() as u64;
+        let due = hold_tap
+            .lock()
+            .map(|mut t| t.expire_held(now_ms))
+            .unwrap_or_default();
+        if !due.is_empty() {
+            if verbose {
+                println!(
+                    "[hold] replay {:?}",
+                    due.iter().map(|h| h.code).collect::<Vec<_>>()
+                );
+            }
+            keytap::replay_held(&due);
         }
     });
 
@@ -366,7 +395,6 @@ pub(crate) fn run_active(
                 h.active = true;
                 h.error = None;
             }
-            let start = Instant::now();
             let thread_tap = Arc::clone(&grab_tap);
             // Counted and logged HERE, in the grab callback, because this is
             // the mode the daemon actually runs in. `--verbose` used to log
@@ -375,14 +403,14 @@ pub(crate) fn run_active(
             // nothing in the one mode that needed it, and its silence read
             // as a dead tap rather than as a missing instrument.
             let ev_health = Arc::clone(&grab_health);
-            let res = keytap::grab(move |ev: KeyEvent| -> Decision {
+            let res = keytap::grab(move |ev: KeyEvent, flags: u64| -> Verdict {
                 let KeyEvent { code, pressed } = ev;
-                let now_ms = start.elapsed().as_millis() as u64;
+                let now_ms = epoch.elapsed().as_millis() as u64;
                 if let Ok(mut h) = ev_health.lock() {
                     h.events_seen += 1;
                 }
                 let Ok(mut t) = thread_tap.lock() else {
-                    return Decision::Pass;
+                    return Verdict::Pass;
                 };
                 // Logged AFTER the lock so the held modifiers can be shown:
                 // a slot chord is a keycode AND its mods, and a log of bare
@@ -390,38 +418,36 @@ pub(crate) fn run_active(
                 // mods not seen" -- the two failures that look identical
                 // from outside.
                 let mods_now = t.held_mods();
-                let decision = if pressed {
-                    let out = t.key(code, true, now_ms);
-                    if out.is_empty() {
-                        Decision::Pass
-                    } else {
-                        handle_events(out, true, t.config());
-                        Decision::Swallow
-                    }
-                } else if t.release_swallow(code) {
-                    Decision::Swallow
-                } else {
-                    Decision::Pass
-                };
-                // The SWALLOW decision is the half that matters when a chord
-                // also reaches another application: "we saw it" and "we
-                // consumed it" are different claims, and only the second says
-                // whether the system still gets the keystroke. Logging the
-                // first alone sent this session chasing a phantom collision.
+                let step = t.decide(code, pressed, flags, now_ms);
+                if !step.out.is_empty() {
+                    handle_events(step.out, true, t.config());
+                }
+                // The verdict is the half that matters when a chord also
+                // reaches another application: "we saw it" and "we consumed
+                // it" are different claims, and only the second says whether
+                // the system still gets the keystroke. Logging the first
+                // alone sent this session chasing a phantom collision -- and
+                // logging only the KEY's verdict hid that the chord's
+                // modifiers were passing (AK.LEAK).
                 if verbose {
+                    let shown = match &step.verdict {
+                        Verdict::Pass => "pass".to_string(),
+                        Verdict::Swallow => "SWALLOW".to_string(),
+                        Verdict::Hold => "HOLD".to_string(),
+                        Verdict::Replay(h) => format!(
+                            "replay {:?} then pass",
+                            h.iter().map(|h| h.code).collect::<Vec<_>>()
+                        ),
+                    };
                     println!(
                         "[key] code={} {} mods={:?} -> {}",
                         code,
                         if pressed { "down" } else { "up" },
                         mods_now,
-                        if matches!(decision, Decision::Swallow) {
-                            "SWALLOW"
-                        } else {
-                            "pass"
-                        }
+                        shown
                     );
                 }
-                decision
+                step.verdict
             });
             let reason = match res {
                 Err(e) => e,

@@ -68,15 +68,25 @@ pub fn slot_chord(gesture: Gesture) -> (u16, [&'static str; 3]) {
 /// SHIFT is here because `ctrl+alt` alone collided. Measured 2026-09-08 on
 /// this machine: with the knob bound to `ctrl-alt-F18/F19/F20`, twisting or
 /// hold-twisting ran the host action AND opened another application's quick
-/// window -- something else on the system claims those three, while F16 and
-/// F17 were clean. Rebinding one gesture to a bare `z` stopped it, which is
-/// what identified the chord rather than the gesture as the trigger.
+/// window. That window turned out (AK.LEAK, 2026-11-08) to be Claude's Quick
+/// Entry on a double-tapped Option: the tap swallowed the key but passed the
+/// chord's modifier events, so each detent was an Option tap. The grab tap
+/// now holds those back (`TapEngine::decide`); shift stays by owner ruling.
 ///
 /// Three modifiers instead of two is the cheap dodge: it keeps all five
 /// chords in one family (easier to reason about than a mix of F-key ranges)
 /// and avoids the F13-F15 alternative, where F14/F15 are brightness on Apple
-/// keyboards. If this collides too, move the KEYS, not the modifiers.
+/// keyboards. A chord another app reacts to is a tap defect, not a reason to
+/// move keys: `tap_tests::a_slot_chord_never_leaves_the_tap` is the gate.
 const SLOT_MODS: [&str; 3] = ["ctrl", "alt", "shift"];
+
+/// True when `name` (a canonical modifier name) is one of the modifiers every
+/// slot chord carries. The grab tap holds these back until it knows whether a
+/// slot chord follows, because the modifier half of a chord is as visible to
+/// other applications as the key half (AK.LEAK).
+pub fn is_slot_mod(name: &str) -> bool {
+    SLOT_MODS.contains(&name)
+}
 
 /// True when an incoming chord is exactly one of the five bound slot
 /// chords (keycode plus ctrl+alt, no more, no less).

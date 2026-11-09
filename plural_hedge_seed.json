@@ -1,0 +1,145 @@
+{
+ "why": "goh plural-hedge (GOH.PLURALHEDGE): a hedged plural (`file(s)`) in a string literal -- this repository's findings on the day the check landed, keyed by its root commit. At or under its count warns; over it, unseeded, or an entry a full run finds clean is red. Fix the site through the tui lib's counted/noun helper and delete or lower its entry in the same commit: done is an empty list. A seed entry lives in its own repository's tree or goh's private store, never another repository's (GOH.SEEDPRIVATE).",
+ "entries": [
+  {
+   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
+   "repo": "antiknob",
+   "path": "src/api/device_cmds.rs",
+   "count": 1,
+   "reason": "unreviewed: 1 hedged plural: line 434"
+  },
+  {
+   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
+   "repo": "antiknob",
+   "path": "src/api/dispatch.rs",
+   "count": 1,
+   "reason": "unreviewed: 1 hedged plural: line 233"
+  },
+  {
+   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
+   "repo": "antiknob",
+   "path": "src/bin/antiknob-daemon/main.rs",
+   "count": 1,
+   "reason": "unreviewed: 1 hedged plural: line 232"
+  },
+  {
+   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
+   "repo": "antiknob",
+   "path": "src/bin/antiknob-daemon/run.rs",
+   "count": 2,
+   "reason": "unreviewed: 2 hedged plurals: lines 169, 185"
+  },
+  {
+   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
+   "repo": "antiknob",
+   "path": "src/bin/antiknob-daemon/synth.rs",
+   "count": 1,
+   "reason": "unreviewed: 1 hedged plural: line 33"
+  },
+  {
+   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
+   "repo": "antiknob",
+   "path": "src/bin/antiknob/binding.rs",
+   "count": 5,
+   "reason": "unreviewed: 5 hedged plurals: lines 53, 94, 108, 175, 228"
+  },
+  {
+   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
+   "repo": "antiknob",
+   "path": "src/bin/antiknob/cmds.rs",
+   "count": 6,
+   "reason": "unreviewed: 6 hedged plurals: lines 136, 146, 235, 241, 383, 426"
+  },
+  {
+   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
+   "repo": "antiknob",
+   "path": "src/bin/antiknob/diag.rs",
+   "count": 4,
+   "reason": "unreviewed: 4 hedged plurals: lines 42, 54, 122, 145"
+  },
+  {
+   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
+   "repo": "antiknob",
+   "path": "src/bin/antiknob/probe.rs",
+   "count": 7,
+   "reason": "unreviewed: 7 hedged plurals: lines 79, 86, 125, 183, 193, 213, 219"
+  },
+  {
+   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
+   "repo": "antiknob",
+   "path": "src/config.rs",
+   "count": 2,
+   "reason": "unreviewed: 2 hedged plurals: lines 176, 217"
+  },
+  {
+   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
+   "repo": "antiknob",
+   "path": "src/config_tests.rs",
+   "count": 1,
+   "reason": "unreviewed: 1 hedged plural: line 200"
+  },
+  {
+   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
+   "repo": "antiknob",
+   "path": "src/device/led_state.rs",
+   "count": 1,
+   "reason": "unreviewed: 1 hedged plural: line 69"
+  },
+  {
+   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
+   "repo": "antiknob",
+   "path": "src/device/mode.rs",
+   "count": 4,
+   "reason": "unreviewed: 4 hedged plurals: lines 226, 230, 237, 248"
+  },
+  {
+   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
+   "repo": "antiknob",
+   "path": "src/device/mode_tests.rs",
+   "count": 4,
+   "reason": "unreviewed: 4 hedged plurals: lines 105, 108, 111, 139"
+  },
+  {
+   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
+   "repo": "antiknob",
+   "path": "src/device/verify.rs",
+   "count": 2,
+   "reason": "unreviewed: 2 hedged plurals: lines 177, 184"
+  },
+  {
+   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
+   "repo": "antiknob",
+   "path": "src/host/bind.rs",
+   "count": 1,
+   "reason": "unreviewed: 1 hedged plural: line 113"
+  },
+  {
+   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
+   "repo": "antiknob",
+   "path": "src/host/device_binding.rs",
+   "count": 3,
+   "reason": "unreviewed: 3 hedged plurals: lines 157, 168, 185"
+  },
+  {
+   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
+   "repo": "antiknob",
+   "path": "src/host/gesture_probe.rs",
+   "count": 1,
+   "reason": "unreviewed: 1 hedged plural: line 136"
+  },
+  {
+   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
+   "repo": "antiknob",
+   "path": "tools/check_swift_rust_model_parity.py",
+   "count": 14,
+   "reason": "unreviewed: 14 hedged plurals: lines 249, 285, 291, 307, 320, 327, 336, 355, 362, 371, 391, 415, 426, 443"
+  },
+  {
+   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
+   "repo": "antiknob",
+   "path": "ui/Tests/AntiknobUITests/StatusPresentationTests.swift",
+   "count": 1,
+   "reason": "unreviewed: 1 hedged plural: line 296"
+  }
+ ]
+}

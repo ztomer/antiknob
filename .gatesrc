@@ -56,3 +56,9 @@ GOH_RED_RUN=1
 
 # The one plan (goh roadmap, GOH.ROADMAPGATE): open entries only; debt in roadmap_seed.json.
 GOH_ROADMAP=PLAN.md
+
+# THE HOUSE RUFF SET (goh RUFF.RULES, gates/ruff_house.py): this repo's own ruff rules plus the
+# house's, each tracked .py held to its count in tools/py_lint_ceilings.json, seeded 2026-11-11
+# at that day's findings. A ceiling may only fall: over it is red with the findings, under it is
+# red until the lower number is written, and one for a file that is gone is stale.
+GOH_PY_LINT_CEILINGS=tools/py_lint_ceilings.json

@@ -5,8 +5,9 @@
 # (push_gate.sh) so a fix there reaches every repo without a re-install.
 { # parse-guard -- bash reads this group whole before running it (tests/test_parse_guard.py)
 set -euo pipefail
-
 GOH="${GOH_DIR:-${GOH:-$HOME/Projects/gates_of_heck}}"
+[ ! -f "$GOH/lib/bash5.sh" ] || { . "$GOH/lib/bash5.sh" && goh_bash5 "$@"; }   # an older GOH has none
+
 push_gate="$GOH/gates/push_gate.sh"
 # No fallback to gating the working tree: that is a different object than the push. Name the remedy
 # instead of a bare "No such file or directory" (upstreamed from ztools, 2026-10-05).

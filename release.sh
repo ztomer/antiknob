@@ -50,7 +50,7 @@ command -v diskutil >/dev/null || die "diskutil required (macOS only)"
 # and the warning is the only notice before it goes away.
 command -v rsync >/dev/null || die "rsync required"
 
-git diff --quiet || die "working tree is dirty — commit or stash first"
+GIT_OPTIONAL_LOCKS=0 git diff --quiet || die "working tree is dirty — commit or stash first"
 git diff --cached --quiet || die "staged changes present — commit first"
 [ "$(git branch --show-current)" = "main" ] || die "not on main"
 [ -z "$(git log --oneline origin/main..HEAD 2>/dev/null)" ] || die "main has unpushed commits — push first"

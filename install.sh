@@ -160,7 +160,7 @@ step "Start at login with: ${DAEMON_EXE} --install-login-item"
 LOGIN_ITEM="com.antiknob.daemon"
 if launchctl print "gui/$(id -u)/${LOGIN_ITEM}" >/dev/null 2>&1; then
     info "Restarting the login-item daemon on the new build..."
-    "${DAEMON_EXE}" --install-login-item >/dev/null
+    "${DAEMON_EXE}" --install-login-item
     sleep 2
 fi
 

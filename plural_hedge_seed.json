@@ -60,13 +60,6 @@
   {
    "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
    "repo": "antiknob",
-   "path": "src/bin/antiknob/probe.rs",
-   "count": 7,
-   "reason": "unreviewed: 7 hedged plurals: lines 79, 86, 125, 183, 193, 213, 219"
-  },
-  {
-   "root": "d07f1ed58b1eda5bf6e0626abe6ebfc84ec8b1a9",
-   "repo": "antiknob",
    "path": "src/config.rs",
    "count": 2,
    "reason": "unreviewed: 2 hedged plurals: lines 176, 217"

@@ -20,7 +20,7 @@ hidapi = "2.6"
 # so a goh push cannot move what this repo builds; bump it deliberately, with
 # the lock, when the crate's API or the stylerc it reads moves. The pin is
 # held by tests/dependency_pins.rs, which refuses a path coming back.
-goh-tui = { git = "https://github.com/ztomer/gates_of_heck.git", rev = "18be8660386b775e6be4ca739544a141cd17a855" }
+goh-tui = { git = "https://github.com/ztomer/gates_of_heck.git", rev = "2eb7526c855ddb6735ec238c4ea1b10fb7c04a1c" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # 0.25, not 0.19: it carries the safe CGEventTap wrapper the daemon's

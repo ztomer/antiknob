@@ -76,14 +76,20 @@ pub fn run_map(keys: &[u8], layer: u8, capture_secs: u64, devices: &[String]) ->
 
     goh_tui::outln!("{START} Reading the current contents of the candidate slots first...");
     let before = snapshot(&plan, layer)?;
-    println!("        {} slot(s) captured for restore.", before.len());
+    println!(
+        "        {} captured for restore.",
+        goh_tui::counted(before.len(), "slot")
+    );
 
     let verdicts = arm(&plan, layer)?;
     let confirmed = verdicts
         .iter()
         .filter(|(_, v)| *v == device::verify::SlotVerdict::Confirmed)
         .count();
-    goh_tui::outln!("{START} Armed {}/{} marker(s):", confirmed, verdicts.len());
+    goh_tui::outln!(
+        "{START} Armed {confirmed}/{}:",
+        goh_tui::counted(verdicts.len(), "marker")
+    );
     for s in &plan {
         println!("        key {} -> {}", s.key_id, s.marker_name);
     }
@@ -122,9 +128,9 @@ pub fn run_map(keys: &[u8], layer: u8, capture_secs: u64, devices: &[String]) ->
         println!("        Re-run and make sure a gesture happens inside the window.");
     } else {
         goh_tui::outln!(
-            "{OK} {} of {} key(s) are driven by a gesture.",
+            "{OK} {} of {} driven by a gesture.",
             fired.len(),
-            plan.len()
+            goh_tui::counted(plan.len(), "key")
         );
         for s in &plan {
             if !fired.contains(&s.key_id) {
@@ -149,8 +155,8 @@ pub fn run_map(keys: &[u8], layer: u8, capture_secs: u64, devices: &[String]) ->
                     .collect::<Result<Vec<_>, _>>()
                     .unwrap_or_default();
                 println!(
-                    "        `protocol::key_id_for_knob`, which for the declared {buttons} \
-                     button(s)"
+                    "        `protocol::key_id_for_knob`, which for the declared {}",
+                    goh_tui::counted(buttons, "button")
                 );
                 println!("        says the knob is at {expected:?}.");
             }
@@ -180,8 +186,8 @@ pub fn run(
         .context("cannot read the slot table; refusing to probe blind")?;
     let in_use = gesture_probe::usages_in_use(&table);
     println!(
-        "        {} usage(s) this device already emits; markers avoid every one.",
-        in_use.len()
+        "        {} this device already emits; markers avoid every one.",
+        goh_tui::counted(in_use.len(), "usage")
     );
 
     let probe = gesture_probe::plan_with_control_avoiding(control, candidates, &in_use)
@@ -190,7 +196,10 @@ pub fn run(
 
     goh_tui::outln!("{START} Reading the current contents of the candidate slots first...");
     let before = snapshot(&plan, layer)?;
-    println!("        {} slot(s) captured for restore.", before.len());
+    println!(
+        "        {} captured for restore.",
+        goh_tui::counted(before.len(), "slot")
+    );
 
     // Confirm the markers actually landed. Without this a gesture that
     // produces nothing is ambiguous: unbound slot, or a write that missed?
@@ -210,13 +219,22 @@ pub fn run(
         .collect();
     if !fabricated.is_empty() {
         goh_tui::outln!(
-            "{START} Slot(s) {:?} hold the firmware's synthetic default, not a",
-            fabricated
+            "{START} {} {:?} {} the firmware's synthetic default, not a",
+            goh_tui::noun(fabricated.len(), "Slot"),
+            fabricated,
+            if fabricated.len() == 1 {
+                "holds"
+            } else {
+                "hold"
+            }
         );
         println!("        configured binding. Every key id answers this device, so their");
         println!("        existing is not evidence that a gesture drives them.");
     }
-    goh_tui::outln!("{START} Armed {}/{} marker(s):", confirmed, verdicts.len());
+    goh_tui::outln!(
+        "{START} Armed {confirmed}/{}:",
+        goh_tui::counted(verdicts.len(), "marker")
+    );
     println!(
         "        slot {} -> {}   (CONTROL: a gesture already known to work)",
         probe.control.key_id, probe.control.marker_name

@@ -34,7 +34,7 @@ case "${1:-}" in
     "$GOH/gates/py_staged.sh" --all .
     # The Swift half is its own SPM package under ui/, with its own .gatesrc.
     "$GOH/gates/swift_gate.sh" ./ui
-    # Layer 3: genuinely local checks (cargo test + cargo audit).
+    # Layer 3: genuinely local checks (cargo test; the audit is layer 1's).
     ./tools/repo_gates.sh
     ;;
 esac

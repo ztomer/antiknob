@@ -6,19 +6,18 @@
 #      socket path (hidapi off its thread) survived several green pushes:
 #      `./tools/gate.sh --full` reported success while `cargo test` crashed
 #      about one run in four. Tests belong in the gate, not in a habit.
-#   2. cargo audit -- house Rust rule. `audit.toml` carries the deny list
-#      that makes it fail on unmaintained/unsound, plus the ignore ratchet.
 #
-# BOTH cargo steps are pinned, differently, because they are different kinds
-# of command. `cargo test` gets `--locked`, so cargo fails with its own
-# message naming `Cargo.lock` rather than re-resolving and rewriting it --
-# which is how a manifest-only dependency edit reaches a green gate.
+# NO `cargo audit` here (GOH.AUDITONCE, 2026-11-17): goh's rust_gate.sh
+# (layer 1, tools/gate.sh) already audits this repo's Cargo.lock through
+# goh's advisory-db wrapper, with the deny list on its command line, this
+# repo's `.cargo/audit.toml` ignore ratchet, and goh's shared advisory
+# rulings. A second, raw audit here judged the same lock without the shared
+# rulings and refused the v0.130.0 pin push on RUSTSEC-2026-0543 (chrono via
+# rmcp), which the gate's own audit had passed.
 #
-# `cargo audit` gets NO such flag, and that is measured rather than assumed:
-# `cargo audit --locked` exits non-zero with "error: unexpected argument
-# '--locked' found", and its only path option is `-f/--file`, whose default
-# is already `Cargo.lock`. It reads a lockfile and never resolves one, so
-# there is nothing for it to launder.
+# `cargo test` gets `--locked`, so cargo fails with its own message naming
+# `Cargo.lock` rather than re-resolving and rewriting it -- which is how a
+# manifest-only dependency edit reaches a green gate.
 set -euo pipefail
 
 GOH="${GOH_DIR:-${GOH:-$HOME/Projects/gates_of_heck}}"
@@ -63,16 +62,6 @@ if cargo test --all-targets --all-features --locked --quiet; then
     ok "test suite"
 else
     die "test suite failed"
-fi
-
-info "dependency audit"
-if ! command -v cargo-audit >/dev/null 2>&1; then
-    die "cargo-audit not installed: cargo install cargo-audit"
-fi
-if cargo audit; then
-    ok "dependency audit"
-else
-    die "dependency audit failed (see audit.toml for the ignore ratchet)"
 fi
 
 ok "all repo gates passed"

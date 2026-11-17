@@ -100,8 +100,8 @@ jobs:
       # for this repo that can only mean layer detection broke. Both checked
       # under bash, 2026-10-05.
       #
-      # cargo-audit is this repo's own requirement (tools/repo_gates.sh), not
-      # a gates_of_heck one, so it is the one install named here. `--locked`
+      # cargo-audit is named here for rust_gate.sh's audit step (layer 1;
+      # tools/repo_gates.sh no longer runs its own), so it is installed here. `--locked`
       # on every cargo install, because a tool install that re-resolves is a
       # dependency change nobody reviewed.
       - name: Install the tools the gate requires
